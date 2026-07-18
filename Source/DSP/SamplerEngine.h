@@ -25,6 +25,7 @@ public:
     void reset() noexcept
     {
         s1 = s2 = 0.0f;
+        s1_2 = s2_2 = 0.0f;
     }
 
     void setCutoffAndType(float cutoffHz, Type type, bool is24dB) noexcept
@@ -33,7 +34,7 @@ public:
         const float T = 1.0f / (float)sampleRate;
         const float wa = (2.0f / T) * std::tan(wd * T * 0.5f);
         g = wa * T * 0.5f;
-        R = 0.7071f; // Q=0.707
+        R = 0.7071f;
         filterType = type;
         twoPole = is24dB;
     }
@@ -49,7 +50,6 @@ public:
         float out = (filterType == HighPass) ? hp : lp;
         if (twoPole)
         {
-            // 2段直列 24dB/oct
             const float hp2 = (out - (2.0f * R + g) * s1_2 - s2_2) / (1.0f + 2.0f * R * g + g * g);
             const float bp2 = g * hp2 + s1_2;
             s1_2 = g * hp2 + bp2;
@@ -122,7 +122,7 @@ private:
 
     double sampleRate = 44100.0;
     std::array<SampleSlot, NUM_SLOTS> slots;
-    std::array<SamplerVoice, NUM_VOICES> voices;
+    std::array<PicoVoice, NUM_VOICES> voices;
 
     TptSvfFilter filterL_HP, filterR_HP;
     TptSvfFilter filterL_LP, filterR_LP;

@@ -1,11 +1,11 @@
 // ==========================================
 // File: SamplerVoice.cpp
-// SamplerVoice レンダリング実装
+// PicoVoice レンダリング実装
 // ==========================================
 #include "SamplerVoice.h"
 
-void SamplerVoice::startNote(int midiNoteNumber, float noteVelocity, int slotIdx,
-                             const SampleSlot& slot, const SamplerVoiceParams& p) noexcept
+void PicoVoice::startNote(int midiNoteNumber, float noteVelocity, int slotIdx,
+                          const SampleSlot& slot, const SamplerVoiceParams& p) noexcept
 {
     midiNote = midiNoteNumber;
     velocity = noteVelocity;
@@ -30,7 +30,7 @@ void SamplerVoice::startNote(int midiNoteNumber, float noteVelocity, int slotIdx
     envValue = 0.0f;
 }
 
-void SamplerVoice::stopNote(bool allowTailOff) noexcept
+void PicoVoice::stopNote(bool allowTailOff) noexcept
 {
     if (!allowTailOff)
     {
@@ -43,8 +43,8 @@ void SamplerVoice::stopNote(bool allowTailOff) noexcept
     }
 }
 
-void SamplerVoice::renderNextBlock(juce::AudioBuffer<float>& outputBuffer, int startSample, int numSamples,
-                                    const SampleSlot& slot, const SamplerVoiceParams& p) noexcept
+void PicoVoice::renderNextBlock(juce::AudioBuffer<float>& outputBuffer, int startSample, int numSamples,
+                                 const SampleSlot& slot, const SamplerVoiceParams& p) noexcept
 {
     if (!active) return;
 
@@ -61,7 +61,6 @@ void SamplerVoice::renderNextBlock(juce::AudioBuffer<float>& outputBuffer, int s
     const int bufLen = buffer->getNumSamples();
     const int numCh = buffer->getNumChannels();
 
-    // サンプル範囲とループポイントの算出
     const int smpStart = (int)(bufLen * juce::jlimit(0.0f, 0.99f, p.sampleStartRatio));
     const int smpEnd   = (int)(bufLen * juce::jlimit(0.01f, 1.0f, p.sampleEndRatio));
     const int lpStart  = (int)(bufLen * juce::jlimit(0.0f, 0.99f, p.loopStartRatio));
@@ -69,12 +68,10 @@ void SamplerVoice::renderNextBlock(juce::AudioBuffer<float>& outputBuffer, int s
     const int lpEnd    = std::min(smpEnd, lpStart + lpLen);
     const int xfadeLen = juce::jmax(1, (int)(lpLen * juce::jlimit(0.0f, 0.5f, p.crossfadeRatio)));
 
-    // ピッチと速度に基づく再生インクリメント算出
     const float pitchModSt = (float)stOffset + (p.fineTune / 100.0f);
     const double pitchRatio = std::pow(2.0, (double)pitchModSt / 12.0);
     const double pitchInc = pitchRatio * (double)p.speed;
 
-    // 等パワーパンニングとゲインの計算
     const float pan = juce::jlimit(-1.0f, 1.0f, p.pan);
     const float gainL = std::sqrt(0.5f * (1.0f - pan)) * velocity * juce::Decibels::decibelsToGain(p.slotGainDb);
     const float gainR = std::sqrt(0.5f * (1.0f + pan)) * velocity * juce::Decibels::decibelsToGain(p.slotGainDb);
@@ -85,7 +82,6 @@ void SamplerVoice::renderNextBlock(juce::AudioBuffer<float>& outputBuffer, int s
 
     for (int s = 0; s < numSamples; ++s)
     {
-        // 1. エンベロープ段階進行
         switch (envStage)
         {
         case EnvStage::Attack:
@@ -110,7 +106,6 @@ void SamplerVoice::renderNextBlock(juce::AudioBuffer<float>& outputBuffer, int s
 
         if (!active) break;
 
-        // 2. ループ/ワンショット範囲チェッカー
         if (p.isLooping)
         {
             if (readPosition >= (double)lpEnd)
@@ -148,7 +143,6 @@ void SamplerVoice::renderNextBlock(juce::AudioBuffer<float>& outputBuffer, int s
             sL = sR = lagrange3rdInterpolate(chL[i0], chL[i1], chL[i2], chL[i3], frac);
         }
 
-        // ループ端クロスフェード処理
         if (p.isLooping && readPosition >= (double)(lpEnd - xfadeLen))
         {
             const float xfFactor = (float)(readPosition - (double)(lpEnd - xfadeLen)) / (float)xfadeLen;

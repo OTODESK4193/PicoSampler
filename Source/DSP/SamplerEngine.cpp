@@ -23,7 +23,6 @@ void SamplerEngine::handleMidi(const juce::MidiBuffer& midi, const Params& p) no
             }
             case LayerMode:
             {
-                // 音域範囲内のスロットをすべてトリガー (最大8)
                 for (int slotIdx = 0; slotIdx < NUM_SLOTS; ++slotIdx)
                 {
                     const auto& meta = slots[(size_t)slotIdx].getMetadata();
@@ -36,7 +35,6 @@ void SamplerEngine::handleMidi(const juce::MidiBuffer& midi, const Params& p) no
             }
             case RandomMode:
             {
-                // ロード済みスロットの中からランダムに1つ選択
                 std::vector<int> readySlots;
                 for (int i = 0; i < NUM_SLOTS; ++i)
                 {
@@ -117,7 +115,6 @@ void SamplerEngine::renderNextBlock(juce::AudioBuffer<float>& outputBuffer, cons
     const int numSamples = outputBuffer.getNumSamples();
     const int numCh = outputBuffer.getNumChannels();
 
-    // 1. 各ボイスのレンダリング
     for (size_t i = 0; i < NUM_VOICES; ++i)
     {
         auto& v = voices[i];
@@ -136,7 +133,6 @@ void SamplerEngine::renderNextBlock(juce::AudioBuffer<float>& outputBuffer, cons
         }
     }
 
-    // 2. TPT SVF マスターフィルター処理
     filterL_HP.setCutoffAndType(p.masterHpfHz, TptSvfFilter::HighPass, p.is24dBFilter);
     filterR_HP.setCutoffAndType(p.masterHpfHz, TptSvfFilter::HighPass, p.is24dBFilter);
     filterL_LP.setCutoffAndType(p.masterLpfHz, TptSvfFilter::LowPass, p.is24dBFilter);

@@ -29,10 +29,10 @@ struct SamplerVoiceParams
     float crossfadeRatio = 0.05f;
 };
 
-class SamplerVoice
+class PicoVoice
 {
 public:
-    SamplerVoice() = default;
+    PicoVoice() = default;
 
     void prepare(double sr) noexcept
     {

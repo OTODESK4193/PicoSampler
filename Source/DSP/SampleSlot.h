@@ -42,6 +42,13 @@ public:
         int loopStart = 0;
         int loopLength = 0;
         float crossfadeSec = 0.05f;
+
+        // 比率ベースフィールド (WaveformDisplay / SamplerEngine 用)
+        float sampleStartRatio = 0.0f;
+        float sampleEndRatio = 1.0f;
+        float loopStartRatio = 0.2f;
+        float loopLengthRatio = 0.5f;
+        float crossfadeRatio = 0.05f;
     };
 
     SampleSlot() = default;
@@ -52,7 +59,6 @@ public:
         hostSampleRate = targetSampleRate > 1000.0 ? targetSampleRate : 44100.0;
     }
 
-    // ファイルロード＆インジェスト（バックグラウンドスレッドで呼び出し）
     bool loadFromFile(const juce::File& file, int rootKeyOverride = -1);
 
     void clear()
@@ -69,7 +75,6 @@ public:
     const Metadata& getMetadata() const noexcept { return meta; }
     Metadata& getMetadata() noexcept { return meta; }
 
-    // 指定された半音オフセット (-12 ~ +11) に最も近いアンカーバッファを取得
     const juce::AudioBuffer<float>* getAnchorBuffer(int stOffsetFromRoot) const noexcept
     {
         const int idx = juce::jlimit(0, kNumAnchors - 1, stOffsetFromRoot + 12);

@@ -1,6 +1,6 @@
 // ==========================================
 // File: ValueKnob.h
-// 右クリックで数値直接入力ポップアップ対応ノブ (Granularより移植)
+// 右クリックで数値直接入力ポップアップ対応ノブ
 // ==========================================
 #pragma once
 
@@ -38,7 +38,8 @@ private:
         editor->onReturnKey = [this, editor]()
         {
             setValue(editor->getText().getDoubleValue(), juce::sendNotificationSync);
-            juce::CallOutBox::dismissCurrentlyActive();
+            if (auto* box = editor->findParentComponentOfClass<juce::CallOutBox>())
+                box->exitModalState(0);
         };
 
         juce::CallOutBox::launchAsynchronously(std::unique_ptr<juce::Component>(editor), getScreenBounds(), nullptr);

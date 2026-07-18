@@ -1,6 +1,6 @@
 // ==========================================
 // File: WaveformDisplay.cpp
-// WaveformDisplay 実装
+// WaveformDisplay 実装 (Triangle 描画修正)
 // ==========================================
 #include "WaveformDisplay.h"
 
@@ -71,11 +71,17 @@ void WaveformDisplay::paint(juce::Graphics& g)
 
     g.setColour(juce::Colours::yellow);
     g.drawLine(sX, 0.0f, sX, h, 2.0f);
-    g.fillTriangle(sX, 0.0f, sX + 6.0f, 0.0f, sX, 8.0f);
+
+    juce::Path triS;
+    triS.addTriangle(sX, 0.0f, sX + 6.0f, 0.0f, sX, 8.0f);
+    g.fillPath(triS);
 
     g.setColour(juce::Colours::orange);
     g.drawLine(eX, 0.0f, eX, h, 2.0f);
-    g.fillTriangle(eX, 0.0f, eX - 6.0f, 0.0f, eX, 8.0f);
+
+    juce::Path triE;
+    triE.addTriangle(eX, 0.0f, eX - 6.0f, 0.0f, eX, 8.0f);
+    g.fillPath(triE);
 
     // 4. ループStart / End & クロスフェード描画 (緑/ミント)
     if (meta.isLooping)
@@ -84,7 +90,6 @@ void WaveformDisplay::paint(juce::Graphics& g)
         const float leX = (meta.loopStartRatio + meta.loopLengthRatio) * w;
         const float xfX = (meta.loopStartRatio + meta.loopLengthRatio - meta.crossfadeRatio) * w;
 
-        // クロスフェード領域表示
         g.setColour(PicoColors::mint.withAlpha(0.15f));
         g.fillRect(xfX, 0.0f, leX - xfX, h);
 
@@ -122,7 +127,6 @@ void WaveformDisplay::mouseDown(const juce::MouseEvent& e)
 
     const float w = (float)getWidth();
     const float mouseX = (float)e.x;
-    const float normX = juce::jlimit(0.0f, 1.0f, mouseX / w);
     const auto& meta = currentSlot->getMetadata();
 
     const float sX = meta.sampleStartRatio * w;
