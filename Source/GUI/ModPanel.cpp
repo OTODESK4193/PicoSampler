@@ -110,11 +110,6 @@ ModPanel::ModPanel(PicoSamplerAudioProcessor& processor)
     setMatrixPage(0);
 }
 
-ModPanel::ModPanel(juce::AudioProcessorValueTreeState& apvts)
-    : procPtr(nullptr), vts(apvts)
-{
-}
-
 void ModPanel::setupKnob(ValueKnob& s, const juce::String& paramID, juce::Colour accent)
 {
     s.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);

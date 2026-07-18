@@ -18,7 +18,6 @@ class ModPanel : public juce::Component
 {
 public:
     explicit ModPanel(PicoSamplerAudioProcessor& processor);
-    explicit ModPanel(juce::AudioProcessorValueTreeState& apvts);
     ~ModPanel() override = default;
 
     void paint(juce::Graphics& g) override;

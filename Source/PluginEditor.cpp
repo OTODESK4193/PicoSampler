@@ -9,7 +9,7 @@ PicoSamplerAudioProcessorEditor::PicoSamplerAudioProcessorEditor(PicoSamplerAudi
     : AudioProcessorEditor(&p), audioProcessor(p),
       mainPanel(p.getAPVTS()),
       arpPanel(p.getAPVTS()),
-      modPanel(p.getAPVTS()),
+      modPanel(p),
       fxPanel(p),
       configPanel(p.getAPVTS())
 {
