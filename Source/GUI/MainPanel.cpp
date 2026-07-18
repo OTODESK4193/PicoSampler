@@ -1,6 +1,6 @@
 // ==========================================
 // File: MainPanel.cpp
-// MainPanel 実装 (2段目MASTER移動 ＆ 英語ダイアログ & REVERSEボタン)
+// MainPanel 実装 (下線重ね解消, 2行2列ボタン, Ceilingノブ)
 // ==========================================
 #include "MainPanel.h"
 
@@ -30,13 +30,13 @@ MainPanel::MainPanel(juce::AudioProcessorValueTreeState& apvts) : vts(apvts)
     addAndMakeVisible(btnLoop);
     addAndMakeVisible(btnStretch);
     addAndMakeVisible(btnReverse);
+    addAndMakeVisible(btnSnap);
 
     // ADSR Link Button
     addAndMakeVisible(btnLinkEnv);
     btnLinkEnv.onClick = [this] {
         if (!isEnvLinked)
         {
-            // 英語ダイアログ（文字化け完全回避）
             juce::AlertWindow::showOkCancelBox(
                 juce::MessageBoxIconType::QuestionIcon,
                 "Link Envelope Parameters",
@@ -99,6 +99,7 @@ MainPanel::MainPanel(juce::AudioProcessorValueTreeState& apvts) : vts(apvts)
     // Master ノブ
     hpfAttach = std::make_unique<Attachment>(vts, "masterHPF", knobMasterHpf.knob);
     lpfAttach = std::make_unique<Attachment>(vts, "masterLPF", knobMasterLpf.knob);
+    ceilingAttach = std::make_unique<Attachment>(vts, "ceiling", knobCeiling.knob);
     outGainAttach = std::make_unique<Attachment>(vts, "outGain", knobOutGain.knob);
 
     addAndMakeVisible(knobSampleStart);
@@ -118,6 +119,7 @@ MainPanel::MainPanel(juce::AudioProcessorValueTreeState& apvts) : vts(apvts)
 
     addAndMakeVisible(knobMasterHpf);
     addAndMakeVisible(knobMasterLpf);
+    addAndMakeVisible(knobCeiling);
     addAndMakeVisible(knobOutGain);
 
     bindSlotParameters(0);
@@ -133,6 +135,7 @@ void MainPanel::bindSlotParameters(int slotIdx)
     loopAttach.reset();
     stretchAttach.reset();
     reverseAttach.reset();
+    snapAttach.reset();
 
     const juce::String s = juce::String(slotIdx);
 
@@ -158,6 +161,7 @@ void MainPanel::bindSlotParameters(int slotIdx)
     loopAttach    = std::make_unique<ButtonAttach>(vts, "isLooping_" + s, btnLoop);
     stretchAttach = std::make_unique<ButtonAttach>(vts, "isStretchMode_" + s, btnStretch);
     reverseAttach = std::make_unique<ButtonAttach>(vts, "isReverse_" + s, btnReverse);
+    snapAttach    = std::make_unique<ButtonAttach>(vts, "isSnap_" + s, btnSnap);
 }
 
 void MainPanel::updateStates()
@@ -196,68 +200,72 @@ void MainPanel::paint(juce::Graphics& g)
         g.setFont(juce::FontOptions(12.0f, juce::Font::bold));
         g.drawText(name, x, y, w, 14, juce::Justification::left);
         g.setColour(accent.withAlpha(0.35f));
-        g.fillRect(x, y + 16, w, 1);
+        g.fillRect(x, y + 16, w, 1); // 下線は y + 16 にクリアに配置
     };
 
-    // ゆとりのある Y 座標でセパレーター描画
-    drawSectionHeader("ACTIVE SLOT",   20,  12, 340, PicoColors::mint);
-    drawSectionHeader("PLAYBACK MODE", 400, 12, 280, PicoColors::babyBlue);
+    // セパレーター下線 (Y=26)
+    drawSectionHeader("ACTIVE SLOT",   20,  10, 360, PicoColors::mint);
+    drawSectionHeader("PLAYBACK MODE", 420, 10, 260, PicoColors::babyBlue);
 
-    // 1段目: SAMPLE / LOOP, PITCH, ENVELOPE
-    drawSectionHeader("SAMPLE / LOOP", 20,  78, 420, PicoColors::peach);
-    drawSectionHeader("PITCH",         460, 78, 220, PicoColors::lavender);
-    drawSectionHeader("ENVELOPE",      700, 78, 360, PicoColors::pink);
+    // 1段目: SAMPLE / LOOP, PITCH, ENVELOPE (Y=80)
+    drawSectionHeader("SAMPLE / LOOP", 20,  80, 440, PicoColors::peach);
+    drawSectionHeader("PITCH",         480, 80, 210, PicoColors::lavender);
+    drawSectionHeader("ENVELOPE",      710, 80, 350, PicoColors::pink);
 
-    // 2段目: MASTER (広大な余裕)
-    drawSectionHeader("MASTER",        20,  206, 340, PicoColors::mint);
+    // 2段目: MASTER (Y=206)
+    drawSectionHeader("MASTER",        20,  206, 440, PicoColors::mint);
 }
 
 void MainPanel::resized()
 {
-    // Slot 1-8 Buttons (ゆとり配置)
+    // ボタンの Y 座標を下線（Y=26）の完全に下の Y=32 に配置してクリアに分離！
+    const int btnY = 32;
+
     for (int i = 0; i < 8; ++i)
     {
-        btnSlots[(size_t)i].setBounds(110 + i * 32, 8, 29, 24);
+        btnSlots[(size_t)i].setBounds(115 + i * 31, btnY, 28, 22);
     }
 
-    // Mode Buttons
-    btnSingle.setBounds(515, 8, 78, 24);
-    btnLayer.setBounds(598, 8, 78, 24);
-    btnRandom.setBounds(681, 8, 78, 24);
+    btnSingle.setBounds(525, btnY, 70, 22);
+    btnLayer.setBounds(600, btnY, 70, 22);
+    btnRandom.setBounds(675, btnY, 70, 22);
 
-    const int knobY1 = 104;
+    const int knobY1 = 106;
     const int knobW = 60;
     const int knobH = 78;
 
     // --- 1段目 ---
-    // SAMPLE / LOOP (5ノブ + LOOP / STRETCH / REVERSE ボタン)
+    // SAMPLE / LOOP (5ノブ + 2行2列ボタン: LOOP, STRETCH, REVERSE, SNAP)
     knobSampleStart.setBounds(20 + 0 * 56, knobY1, knobW, knobH);
     knobSampleEnd.setBounds(20 + 1 * 56,   knobY1, knobW, knobH);
     knobLoopStart.setBounds(20 + 2 * 56,   knobY1, knobW, knobH);
     knobLoopEnd.setBounds(20 + 3 * 56,     knobY1, knobW, knobH);
     knobCrossfade.setBounds(20 + 4 * 56,   knobY1, knobW, knobH);
 
-    btnLoop.setBounds(300, knobY1 + 0, 64, 22);
-    btnStretch.setBounds(300, knobY1 + 26, 64, 22);
-    btnReverse.setBounds(300, knobY1 + 52, 64, 22);
+    // 2行2列 ボタン配置 (見切れ完全回避 & 余裕)
+    btnLoop.setBounds(305, knobY1 + 4, 66, 24);
+    btnStretch.setBounds(376, knobY1 + 4, 76, 24);
+    btnReverse.setBounds(305, knobY1 + 36, 66, 24);
+    btnSnap.setBounds(376, knobY1 + 36, 66, 24);
 
     // PITCH (3ノブ)
-    knobOctave.setBounds(460 + 0 * 70,   knobY1, knobW, knobH);
-    knobSemitone.setBounds(460 + 1 * 70, knobY1, knobW, knobH);
-    knobFineTune.setBounds(460 + 2 * 70, knobY1, knobW, knobH);
+    knobOctave.setBounds(480 + 0 * 68,   knobY1, knobW, knobH);
+    knobSemitone.setBounds(480 + 1 * 68, knobY1, knobW, knobH);
+    knobFineTune.setBounds(480 + 2 * 68, knobY1, knobW, knobH);
 
     // ENVELOPE (4ノブ + LINK ボタン)
-    knobAttack.setBounds(700 + 0 * 68,  knobY1, knobW, knobH);
-    knobDecay.setBounds(700 + 1 * 68,   knobY1, knobW, knobH);
-    knobSustain.setBounds(700 + 2 * 68, knobY1, knobW, knobH);
-    knobRelease.setBounds(700 + 3 * 68, knobY1, knobW, knobH);
+    knobAttack.setBounds(710 + 0 * 64,  knobY1, knobW, knobH);
+    knobDecay.setBounds(710 + 1 * 64,   knobY1, knobW, knobH);
+    knobSustain.setBounds(710 + 2 * 64, knobY1, knobW, knobH);
+    knobRelease.setBounds(710 + 3 * 64, knobY1, knobW, knobH);
 
-    btnLinkEnv.setBounds(978, knobY1 + 24, 56, 24);
+    btnLinkEnv.setBounds(975, knobY1 + 24, 56, 24);
 
     // --- 2段目 ---
-    // MASTER (3ノブ: ゆったり配置)
+    // MASTER (4ノブ: HPF, LPF, Ceiling, Gain)
     const int knobY2 = 232;
-    knobMasterHpf.setBounds(20 + 0 * 80, knobY2, knobW, knobH);
-    knobMasterLpf.setBounds(20 + 1 * 80, knobY2, knobW, knobH);
-    knobOutGain.setBounds(20 + 2 * 80,   knobY2, knobW, knobH);
+    knobMasterHpf.setBounds(20 + 0 * 75, knobY2, knobW, knobH);
+    knobMasterLpf.setBounds(20 + 1 * 75, knobY2, knobW, knobH);
+    knobCeiling.setBounds(20 + 2 * 75,   knobY2, knobW, knobH);
+    knobOutGain.setBounds(20 + 3 * 75,   knobY2, knobW, knobH);
 }

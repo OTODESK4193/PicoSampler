@@ -1,6 +1,6 @@
 // ==========================================
 // File: SamplerEngine.cpp
-// サンプラーエンジン (KeyRange発音条件の完全反映)
+// サンプラーエンジン (BrickLimiter適用)
 // ==========================================
 #include "SamplerEngine.h"
 
@@ -146,6 +146,9 @@ void SamplerEngine::renderNextBlock(juce::AudioBuffer<float>& outputBuffer, cons
     filterL_LP.setCutoffAndType(p.masterLpfHz, TptSvfFilter::LowPass, p.is24dBFilter);
     filterR_LP.setCutoffAndType(p.masterLpfHz, TptSvfFilter::LowPass, p.is24dBFilter);
 
+    limiter.setReleaseMs(p.limReleaseMs);
+    const float ceilingLin = juce::Decibels::decibelsToGain(p.ceilingDb);
+
     float* outL = outputBuffer.getWritePointer(0);
     float* outR = numCh > 1 ? outputBuffer.getWritePointer(1) : outL;
     const float masterGain = juce::Decibels::decibelsToGain(p.outGainDb);
@@ -158,7 +161,12 @@ void SamplerEngine::renderNextBlock(juce::AudioBuffer<float>& outputBuffer, cons
         float r = filterR_HP.processSample(outR[s]);
         r = filterR_LP.processSample(r);
 
-        outL[s] = l * masterGain;
-        outR[s] = r * masterGain;
+        l *= masterGain;
+        r *= masterGain;
+
+        limiter.process(l, r, ceilingLin);
+
+        outL[s] = l;
+        outR[s] = r;
     }
 }

@@ -1,6 +1,6 @@
 // ==========================================
 // File: WaveformDisplay.h
-// 波形表示コンポーネント (解析演出 ＆ LoopEnd / 4点ドラッグ連動対応)
+// 波形表示コンポーネント (ZeroCrossingスナップ定義追加)
 // ==========================================
 #pragma once
 
@@ -33,6 +33,8 @@ public:
     void mouseDown(const juce::MouseEvent& e) override;
     void mouseDrag(const juce::MouseEvent& e) override;
     void mouseUp(const juce::MouseEvent& e) override;
+
+    float findZeroCrossingRatio(float targetRatio) const noexcept;
 
 private:
     void timerCallback() override;

@@ -1,6 +1,6 @@
 // ==========================================
 // File: WaveformDisplay.cpp
-// WaveformDisplay 実装 (safe APVTS パラメーター読み出しヌルガード)
+// WaveformDisplay 実装 (Reverse波形描画反転 & ゼロクロススナップ)
 // ==========================================
 #include "WaveformDisplay.h"
 
@@ -25,7 +25,7 @@ void WaveformDisplay::paint(juce::Graphics& g)
     g.setColour(PicoColors::knobTrack);
     g.drawRoundedRectangle(0.0f, 0.0f, w, h, 6.0f, 1.0f);
 
-    // 2. 解析中演出 (isAnalyzing)
+    // 2. 解析中演出
     if (currentSlot && currentSlot->isAnalyzing())
     {
         g.setColour(PicoColors::mint);
@@ -69,13 +69,23 @@ void WaveformDisplay::paint(juce::Graphics& g)
     const float* samples = buffer.getReadPointer(0);
     if (!samples) return;
 
+    const juce::String s = juce::String(activeSlot);
+    auto getParamFloat = [this](const juce::String& name, float def) {
+        if (!vts) return def;
+        if (auto* p = vts->getRawParameterValue(name)) return p->load();
+        return def;
+    };
+
+    bool isReverse = getParamFloat("isReverse_" + s, 0.0f) > 0.5f;
+
     const float stepX = 4.0f;
     const int numCols = (int)(w / stepX);
     const int samplesPerCol = juce::jmax(1, numSamples / numCols);
 
     for (int col = 0; col < numCols; ++col)
     {
-        const int startIdx = col * samplesPerCol;
+        const int actualCol = isReverse ? (numCols - 1 - col) : col;
+        const int startIdx = actualCol * samplesPerCol;
         float minVal = 0.0f, maxVal = 0.0f, energy = 0.0f;
 
         for (int i = 0; i < samplesPerCol && (startIdx + i) < numSamples; ++i)
@@ -95,14 +105,7 @@ void WaveformDisplay::paint(juce::Graphics& g)
         g.drawLine(x, yMin, x, yMax, 2.0f);
     }
 
-    // 4. APVTS パラメーターからのリアルタイム描画 (safe 読み込み)
-    const juce::String s = juce::String(activeSlot);
-    auto getParamFloat = [this](const juce::String& name, float def) {
-        if (!vts) return def;
-        if (auto* p = vts->getRawParameterValue(name)) return p->load();
-        return def;
-    };
-
+    // 4. マーカー位置計算 (isReverse による描画反転の同期)
     float startRatio = getParamFloat("sampleStart_" + s, 0.0f);
     float endRatio   = getParamFloat("sampleEnd_" + s, 1.0f);
     float loopStart  = getParamFloat("loopStart_" + s, 0.2f);
@@ -110,9 +113,13 @@ void WaveformDisplay::paint(juce::Graphics& g)
     float crossfade  = getParamFloat("crossfade_" + s, 0.05f);
     bool isLooping   = getParamFloat("isLooping_" + s, 0.0f) > 0.5f;
 
-    // サンプルStart / End マーカー描画
-    const float sX = startRatio * w;
-    const float eX = endRatio * w;
+    float drawStartR = isReverse ? (1.0f - endRatio)   : startRatio;
+    float drawEndR   = isReverse ? (1.0f - startRatio) : endRatio;
+    float drawLpSr   = isReverse ? (1.0f - loopEnd)    : loopStart;
+    float drawLpEr   = isReverse ? (1.0f - loopStart)  : loopEnd;
+
+    const float sX = drawStartR * w;
+    const float eX = drawEndR * w;
 
     g.setColour(juce::Colours::yellow);
     g.drawLine(sX, 0.0f, sX, h, 2.0f);
@@ -128,15 +135,14 @@ void WaveformDisplay::paint(juce::Graphics& g)
     triE.addTriangle(eX, 0.0f, eX - 6.0f, 0.0f, eX, 8.0f);
     g.fillPath(triE);
 
-    // ループStart / End & クロスフェード描画
     if (isLooping)
     {
         const float lpMarginY = h * 0.175f;
         const float lpH       = h * 0.65f;
 
-        const float lsX = loopStart * w;
-        const float leX = loopEnd * w;
-        const float xfX = (loopEnd - crossfade) * w;
+        const float lsX = drawLpSr * w;
+        const float leX = drawLpEr * w;
+        const float xfX = (drawLpEr - crossfade) * w;
 
         g.setColour(PicoColors::mint.withAlpha(0.18f));
         g.fillRect(xfX, lpMarginY, std::max(1.0f, leX - xfX), lpH);
@@ -148,6 +154,49 @@ void WaveformDisplay::paint(juce::Graphics& g)
         g.fillEllipse(lsX - 3.5f, lpMarginY - 3.0f, 7.0f, 7.0f);
         g.fillEllipse(leX - 3.5f, lpMarginY - 3.0f, 7.0f, 7.0f);
     }
+}
+
+float WaveformDisplay::findZeroCrossingRatio(float targetRatio) const noexcept
+{
+    if (!currentSlot || !currentSlot->isReady()) return targetRatio;
+
+    const auto& buffer = currentSlot->getOriginalBuffer();
+    const int numSamples = buffer.getNumSamples();
+    if (numSamples < 2) return targetRatio;
+
+    const float* samples = buffer.getReadPointer(0);
+    if (!samples) return targetRatio;
+
+    const int targetIdx = juce::jlimit(0, numSamples - 1, (int)(targetRatio * (float)numSamples));
+    const int searchRange = std::min(2048, numSamples / 10);
+
+    int bestIdx = targetIdx;
+    int minDistance = searchRange + 1;
+
+    for (int d = 0; d < searchRange; ++d)
+    {
+        int left = targetIdx - d;
+        int right = targetIdx + d;
+
+        if (left >= 0 && left < numSamples - 1)
+        {
+            if (samples[left] * samples[left + 1] <= 0.0f || std::abs(samples[left]) < 1.0e-4f)
+            {
+                bestIdx = left;
+                break;
+            }
+        }
+        if (right >= 0 && right < numSamples - 1)
+        {
+            if (samples[right] * samples[right + 1] <= 0.0f || std::abs(samples[right]) < 1.0e-4f)
+            {
+                bestIdx = right;
+                break;
+            }
+        }
+    }
+
+    return (float)bestIdx / (float)numSamples;
 }
 
 bool WaveformDisplay::isInterestedInFileDrag(const juce::StringArray& files)
@@ -184,21 +233,27 @@ void WaveformDisplay::mouseDown(const juce::MouseEvent& e)
         return def;
     };
 
+    const bool isReverse   = getParamFloat("isReverse_" + s, 0.0f) > 0.5f;
     const float startRatio = getParamFloat("sampleStart_" + s, 0.0f);
     const float endRatio   = getParamFloat("sampleEnd_" + s, 1.0f);
     const float loopStart  = getParamFloat("loopStart_" + s, 0.2f);
     const float loopEnd    = getParamFloat("loopEnd_" + s, 0.7f);
     const bool isLooping   = getParamFloat("isLooping_" + s, 0.0f) > 0.5f;
 
-    const float sX  = startRatio * w;
-    const float eX  = endRatio * w;
-    const float lsX = loopStart * w;
-    const float leX = loopEnd * w;
+    const float drawStartR = isReverse ? (1.0f - endRatio)   : startRatio;
+    const float drawEndR   = isReverse ? (1.0f - startRatio) : endRatio;
+    const float drawLpSr   = isReverse ? (1.0f - loopEnd)    : loopStart;
+    const float drawLpEr   = isReverse ? (1.0f - loopStart)  : loopEnd;
 
-    if (isLooping && std::abs(mouseX - lsX) < 8.0f) activeDrag = DragTarget::LoopStart;
-    else if (isLooping && std::abs(mouseX - leX) < 8.0f) activeDrag = DragTarget::LoopEnd;
-    else if (std::abs(mouseX - sX) < 10.0f) activeDrag = DragTarget::SampleStart;
-    else if (std::abs(mouseX - eX) < 10.0f) activeDrag = DragTarget::SampleEnd;
+    const float sX  = drawStartR * w;
+    const float eX  = drawEndR * w;
+    const float lsX = drawLpSr * w;
+    const float leX = drawLpEr * w;
+
+    if (isLooping && std::abs(mouseX - lsX) < 8.0f) activeDrag = isReverse ? DragTarget::LoopEnd : DragTarget::LoopStart;
+    else if (isLooping && std::abs(mouseX - leX) < 8.0f) activeDrag = isReverse ? DragTarget::LoopStart : DragTarget::LoopEnd;
+    else if (std::abs(mouseX - sX) < 10.0f) activeDrag = isReverse ? DragTarget::SampleEnd : DragTarget::SampleStart;
+    else if (std::abs(mouseX - eX) < 10.0f) activeDrag = isReverse ? DragTarget::SampleStart : DragTarget::SampleEnd;
     else activeDrag = DragTarget::None;
 }
 
@@ -207,7 +262,7 @@ void WaveformDisplay::mouseDrag(const juce::MouseEvent& e)
     if (activeDrag == DragTarget::None || !currentSlot || !vts) return;
 
     const float w = (float)getWidth();
-    const float normX = juce::jlimit(0.0f, 1.0f, (float)e.x / w);
+    float normX = juce::jlimit(0.0f, 1.0f, (float)e.x / w);
     const juce::String s = juce::String(activeSlot);
 
     auto getParamFloat = [this](const juce::String& name, float def) {
@@ -215,6 +270,9 @@ void WaveformDisplay::mouseDrag(const juce::MouseEvent& e)
         if (auto* p = vts->getRawParameterValue(name)) return p->load();
         return def;
     };
+
+    const bool isSnap = getParamFloat("isSnap_" + s, 0.0f) > 0.5f;
+    if (isSnap) normX = findZeroCrossingRatio(normX);
 
     const float startVal = getParamFloat("sampleStart_" + s, 0.0f);
     const float endVal   = getParamFloat("sampleEnd_" + s, 1.0f);

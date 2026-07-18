@@ -1,6 +1,6 @@
 // ==========================================
 // File: MainPanel.h
-// メイン操作パネル (2段目MASTER移動 ＆ REVERSE, LoopEnd, 英語ダイアログ)
+// メイン操作パネル (2行2列ボタン ＆ Master Ceilingノブ対応)
 // ==========================================
 #pragma once
 
@@ -55,10 +55,11 @@ private:
     juce::TextButton btnLayer  { "LAYER" };
     juce::TextButton btnRandom { "RANDOM" };
 
-    // Loop, Stretch & Reverse Toggles
+    // Loop, Stretch, Reverse & Snap Toggles (2列2行)
     GlowToggle btnLoop    { "LOOP" };
     GlowToggle btnStretch { "STRETCH" };
     GlowToggle btnReverse { "REVERSE" };
+    GlowToggle btnSnap    { "SNAP" };
 
     // ADSR Link Toggle
     GlowToggle btnLinkEnv { "LINK" };
@@ -80,9 +81,10 @@ private:
     LabeledKnob knobSustain  { "Sustain", PicoColors::pink };
     LabeledKnob knobRelease  { "Release", PicoColors::pink };
 
-    LabeledKnob knobMasterHpf { "HPF",  PicoColors::mint };
-    LabeledKnob knobMasterLpf { "LPF",  PicoColors::mint };
-    LabeledKnob knobOutGain   { "Gain", PicoColors::mint };
+    LabeledKnob knobMasterHpf { "HPF",     PicoColors::mint };
+    LabeledKnob knobMasterLpf { "LPF",     PicoColors::mint };
+    LabeledKnob knobCeiling   { "Ceiling", PicoColors::mint };
+    LabeledKnob knobOutGain   { "Gain",    PicoColors::mint };
 
     int currentBoundSlot = -1;
 
@@ -93,10 +95,12 @@ private:
     std::unique_ptr<ButtonAttach> loopAttach;
     std::unique_ptr<ButtonAttach> stretchAttach;
     std::unique_ptr<ButtonAttach> reverseAttach;
+    std::unique_ptr<ButtonAttach> snapAttach;
 
     std::unique_ptr<Attachment> outGainAttach;
     std::unique_ptr<Attachment> hpfAttach;
     std::unique_ptr<Attachment> lpfAttach;
+    std::unique_ptr<Attachment> ceilingAttach;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MainPanel)
 };

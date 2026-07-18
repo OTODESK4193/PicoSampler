@@ -1,6 +1,6 @@
 // ==========================================
 // File: PluginProcessor.cpp
-// PicoSampler メインプロセッサ実装 (safe APVTS パラメーター読み込みガード)
+// PicoSampler メインプロセッサ実装 (isSnap & limRelease パラメータ追加)
 // ==========================================
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
@@ -54,6 +54,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout PicoSamplerAudioProcessor::c
         params.push_back(std::make_unique<juce::AudioParameterBool>("isLooping_" + s, "Looping " + s, false));
         params.push_back(std::make_unique<juce::AudioParameterBool>("isStretchMode_" + s, "Stretch Mode " + s, false));
         params.push_back(std::make_unique<juce::AudioParameterBool>("isReverse_" + s, "Reverse " + s, false));
+        params.push_back(std::make_unique<juce::AudioParameterBool>("isSnap_" + s, "Snap " + s, true));
 
         params.push_back(std::make_unique<juce::AudioParameterInt>("slotLowNote_" + s, "Low Note " + s, 0, 127, 0));
         params.push_back(std::make_unique<juce::AudioParameterInt>("slotHighNote_" + s, "High Note " + s, 0, 127, 127));
@@ -84,6 +85,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout PicoSamplerAudioProcessor::c
     params.push_back(std::make_unique<juce::AudioParameterChoice>("filterSlope", "Filter Slope", juce::StringArray{ "12dB", "24dB" }, 0));
     params.push_back(std::make_unique<juce::AudioParameterChoice>("colorTheme", "Color Theme", juce::StringArray{ "Midnight", "Sakura", "Ocean", "Forest", "Sunset", "Mono" }, 0));
     params.push_back(std::make_unique<juce::AudioParameterInt>("poly", "Polyphony", 1, 32, 32));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("limRelease", "Limiter Release", juce::NormalisableRange<float>(1.0f, 500.0f, 1.0f, 0.3f), 50.0f));
 
     // ModMatrix 16スロット
     for (int i = 1; i <= 16; ++i)
@@ -170,6 +172,8 @@ void PicoSamplerAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
     engineP.masterLpfHz = getParamFloat("masterLPF", 20000.0f);
     engineP.is24dBFilter = (int)getParamFloat("filterSlope", 0.0f) > 0;
     engineP.outGainDb = getParamFloat("outGain", 0.0f);
+    engineP.ceilingDb = getParamFloat("ceiling", -0.1f);
+    engineP.limReleaseMs = getParamFloat("limRelease", 50.0f);
     engineP.polyphonyLimit = (int)getParamFloat("poly", 32.0f);
 
     for (int i = 0; i < 8; ++i)

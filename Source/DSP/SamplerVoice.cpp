@@ -1,6 +1,6 @@
 // ==========================================
 // File: SamplerVoice.cpp
-// PicoVoice レンダリング実装 (ヌルポインタ・無効チャネル鉄壁ガード)
+// PicoVoice レンダリング実装 (チューニング・鍵盤音階完全整合 & ヌル安全)
 // ==========================================
 #include "SamplerVoice.h"
 
@@ -22,7 +22,8 @@ void PicoVoice::startNote(int midiNoteNumber, float noteVelocity, int slotIdx,
 
     const auto& meta = slot.getMetadata();
     const int stOffset = midiNoteNumber - meta.rootKey + (p.octave * 12) + p.semitone;
-    const auto* buffer = slot.getAnchorBuffer(stOffset);
+
+    const auto* buffer = p.isStretchMode ? slot.getAnchorBuffer(stOffset) : &slot.getOriginalBuffer();
 
     if (!buffer || buffer->getNumSamples() < 4 || buffer->getNumChannels() < 1)
     {
@@ -76,11 +77,7 @@ void PicoVoice::renderNextBlock(juce::AudioBuffer<float>& outputBuffer, int star
     const auto& meta = slot.getMetadata();
     const int stOffset = midiNote - meta.rootKey + (p.octave * 12) + p.semitone;
 
-    const int anchorIdx = juce::jlimit(0, SampleSlot::kNumAnchors - 1, stOffset + 12);
-    const int anchorSemis = anchorIdx - 12;
-    const float residualSemis = (float)(stOffset - anchorSemis) + (p.fineTune / 100.0f);
-
-    const auto* buffer = slot.getAnchorBuffer(stOffset);
+    const auto* buffer = p.isStretchMode ? slot.getAnchorBuffer(stOffset) : &slot.getOriginalBuffer();
 
     if (!buffer || buffer->getNumSamples() < 4 || buffer->getNumChannels() < 1)
     {
@@ -99,8 +96,21 @@ void PicoVoice::renderNextBlock(juce::AudioBuffer<float>& outputBuffer, int star
     const int xfadeLen = juce::jmax(1, (int)(lpLen * juce::jlimit(0.0f, 0.5f, p.crossfadeRatio)));
 
     double pitchInc = (double)p.speed;
-    const double pitchRatio = std::pow(2.0, (double)residualSemis / 12.0);
-    pitchInc *= pitchRatio;
+
+    if (p.isStretchMode)
+    {
+        const int anchorIdx = juce::jlimit(0, SampleSlot::kNumAnchors - 1, stOffset + 12);
+        const int anchorSemis = anchorIdx - 12;
+        const float residualSemis = (float)(stOffset - anchorSemis) + (p.fineTune / 100.0f);
+        const double pitchRatio = std::pow(2.0, (double)residualSemis / 12.0);
+        pitchInc *= pitchRatio;
+    }
+    else
+    {
+        // Repitch モード: 原音バッファからのダイレクトな pitchRatio リサンプリング再生
+        const double pitchRatio = std::pow(2.0, (double)(stOffset * 100 + p.fineTune) / 1200.0);
+        pitchInc *= pitchRatio;
+    }
 
     if (p.isReverse) pitchInc = -pitchInc;
 
