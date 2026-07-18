@@ -53,6 +53,8 @@ public:
         float rateFreeHz = 4.0f;
         int octaves = 1;            // 1..4
         int offset = 0;             // -12..+12 半音
+        int repeat = 1;             // 1..4 (ステップリピート)
+        float accent = 0.0f;        // -1.0..+1.0 (ベロシティグラデーション)
         float swing = 0.0f;         // 0.0..0.75 (スイング)
         int durMode = 0;
         float gatePct = 0.8f;       // 0.1..1.0
@@ -82,7 +84,7 @@ private:
     };
 
     void handleIncomingMidi(const juce::MidiBuffer& midi, bool latch) noexcept;
-    void rebuildSequence(int pattern, int octaves, int offset, int key, int scale) noexcept;
+    void rebuildSequence(int pattern, int octaves, int offset, int key, int scale, int repeat, float accent) noexcept;
     int calculateStepSamples(const Params& p, int numSamples) const noexcept;
     int calculateGateSamples(const Params& p, int stepSamples) const noexcept;
     void stopAllActiveNotes(juce::MidiBuffer& outMidi, int sampleOffset) noexcept;

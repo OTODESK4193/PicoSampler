@@ -94,10 +94,22 @@ juce::AudioProcessorValueTreeState::ParameterLayout PicoSamplerAudioProcessor::c
     params.push_back(std::make_unique<juce::AudioParameterFloat>("arpRateFree", "Arp Rate Free", 1.0f, 30.0f, 8.0f));
     params.push_back(std::make_unique<juce::AudioParameterInt>("arpOctaves", "Arp Octaves", 1, 4, 1));
     params.push_back(std::make_unique<juce::AudioParameterInt>("arpOffset", "Arp Offset", -12, 12, 0));
+    params.push_back(std::make_unique<juce::AudioParameterInt>("arpRepeat", "Arp Repeat", 1, 4, 1));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("arpAccent", "Arp Accent", -1.0f, 1.0f, 0.0f));
     params.push_back(std::make_unique<juce::AudioParameterFloat>("arpSwing", "Arp Swing", 0.0f, 0.75f, 0.0f));
     params.push_back(std::make_unique<juce::AudioParameterFloat>("arpGate", "Arp Gate", 0.1f, 1.0f, 0.8f));
     params.push_back(std::make_unique<juce::AudioParameterChoice>("key", "Root Key", juce::StringArray{ "Auto", "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" }, 0));
     params.push_back(std::make_unique<juce::AudioParameterChoice>("scale", "Scale", ScaleQuantizer::getScaleNames(), 0));
+
+    // PicoFilter (CleanSVF, Vowel, Comb)
+    params.push_back(std::make_unique<juce::AudioParameterBool>("fltEnable", "Filter Enable", false));
+    params.push_back(std::make_unique<juce::AudioParameterChoice>("fltModel", "Filter Model", juce::StringArray{ "Clean SVF", "Vowel Formant", "Comb Filter" }, 0));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("fltCutoff", "Filter Cutoff", 20.0f, 20000.0f, 2000.0f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("fltRes", "Filter Resonance", 0.1f, 10.0f, 0.707f));
+    params.push_back(std::make_unique<juce::AudioParameterChoice>("fltType", "Filter Type", juce::StringArray{ "LowPass", "BandPass", "HighPass", "Notch" }, 0));
+    params.push_back(std::make_unique<juce::AudioParameterChoice>("fltSlope", "Filter Slope", juce::StringArray{ "12dB/oct", "24dB/oct" }, 0));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("fltFormant", "Filter Formant", 0.0f, 1.0f, 0.0f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("fltCombMix", "Filter Comb Mix", 0.0f, 1.0f, 0.5f));
 
     // FX 5スロット
     for (int i = 1; i <= 5; ++i)
@@ -114,6 +126,7 @@ void PicoSamplerAudioProcessor::prepareToPlay(double sampleRate, int samplesPerB
 {
     samplerEngine.prepare(sampleRate);
     arpeggiator.prepare(sampleRate);
+    mainFilter.prepare(sampleRate, samplesPerBlock);
 }
 
 void PicoSamplerAudioProcessor::releaseResources() {}
@@ -197,6 +210,8 @@ void PicoSamplerAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
     arpParams.rateFreeHz = getParamFloat("arpRateFree", 4.0f);
     arpParams.octaves    = (int)getParamFloat("arpOctaves", 1.0f);
     arpParams.offset     = (int)getParamFloat("arpOffset", 0.0f);
+    arpParams.repeat     = (int)getParamFloat("arpRepeat", 1.0f);
+    arpParams.accent     = getParamFloat("arpAccent", 0.0f);
     arpParams.swing      = getParamFloat("arpSwing", 0.0f);
     arpParams.gatePct    = getParamFloat("arpGate", 0.8f);
     arpParams.key        = (int)getParamFloat("key", 0.0f);
@@ -223,6 +238,19 @@ void PicoSamplerAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
     }
 
     samplerEngine.renderNextBlock(buffer, engineParams, &visualizerData);
+
+    // PicoFilter (CleanSVF, Vowel, Comb) 適用
+    PicoFilter::Params fltParams;
+    fltParams.enable  = getParamFloat("fltEnable", 0.0f) > 0.5f;
+    fltParams.model   = (int)getParamFloat("fltModel", 0.0f);
+    fltParams.cutoff  = getParamFloat("fltCutoff", 2000.0f);
+    fltParams.res     = getParamFloat("fltRes", 0.707f);
+    fltParams.type    = (int)getParamFloat("fltType", 0.0f);
+    fltParams.slope   = (int)getParamFloat("fltSlope", 0.0f);
+    fltParams.formant = getParamFloat("fltFormant", 0.0f);
+    fltParams.combMix = getParamFloat("fltCombMix", 0.5f);
+
+    mainFilter.process(buffer, fltParams);
 }
 
 void PicoSamplerAudioProcessor::reanalyzeSlot(int slotIdx)

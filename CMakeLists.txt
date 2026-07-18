@@ -63,6 +63,8 @@ target_sources(PicoSampler PRIVATE
     Source/DSP/SampleVisualizerData.h
     Source/DSP/Arpeggiator.h
     Source/DSP/Arpeggiator.cpp
+    Source/DSP/PicoFilter.h
+    Source/DSP/PicoFilter.cpp
     Source/DSP/FxChain.h
     Source/DSP/ModMatrix.h
     Source/DSP/TptSvfFilter.h
@@ -75,6 +77,8 @@ target_sources(PicoSampler PRIVATE
     Source/GUI/WaveformDisplay.cpp
     Source/GUI/KeyRangeMapComponent.h
     Source/GUI/KeyRangeMapComponent.cpp
+    Source/GUI/FilterCurveComponent.h
+    Source/GUI/FilterCurveComponent.cpp
     Source/GUI/MainPanel.h
     Source/GUI/MainPanel.cpp
     Source/GUI/SlotPanel.h

@@ -168,14 +168,13 @@ void PicoSamplerAudioProcessorEditor::resized()
 
     // 3. タブボタン群 (Y=322)
     const int tabY = 322;
-    const int tabW = 92;
     const int tabH = 26;
 
-    btnTabMain.setBounds(20,               tabY, tabW, tabH);
-    btnTabArp.setBounds(20 + (tabW + 8),   tabY, tabW, tabH);
-    btnTabMod.setBounds(20 + (tabW + 8)*2, tabY, tabW, tabH);
-    btnTabFx.setBounds(20 + (tabW + 8)*3,  tabY, tabW, tabH);
-    btnTabConfig.setBounds(20 + (tabW + 8)*4, tabY, tabW, tabH);
+    btnTabMain.setBounds(20,  tabY, 70,  tabH);
+    btnTabArp.setBounds(98,   tabY, 115, tabH);
+    btnTabMod.setBounds(221,  tabY, 70,  tabH);
+    btnTabFx.setBounds(299,   tabY, 70,  tabH);
+    btnTabConfig.setBounds(377, tabY, 80,  tabH);
 
     btnReAnalyze.setBounds(1080 - 215, 10, 95, 26);
     btnPresets.setBounds(1080 - 110, 10, 90, 26);
@@ -223,5 +222,6 @@ void PicoSamplerAudioProcessorEditor::timerCallback()
 
     keyRangeMap.updateKeyRanges(ranges, roots, readyStates, activeIdx);
     keyRangeMap.setPlayingNotes(audioProcessor.getSamplerEngine().getPlayingNotes());
+    arpPanel.updateFilterCurveDisplay();
     repaint(0, 0, 700, 44);
 }

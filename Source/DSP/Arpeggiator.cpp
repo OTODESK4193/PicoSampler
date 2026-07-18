@@ -68,7 +68,7 @@ void Arpeggiator::process(juce::MidiBuffer& midi, int numSamples, const Params& 
     }
 
     // 4. アルペジオシーケンスのビルド
-    rebuildSequence(p.pattern, p.octaves, p.offset, p.key, p.scale);
+    rebuildSequence(p.pattern, p.octaves, p.offset, p.key, p.scale, p.repeat, p.accent);
     if (playSequence.empty()) return;
 
     const int stepSamples = calculateStepSamples(p, numSamples);
@@ -199,7 +199,7 @@ void Arpeggiator::handleIncomingMidi(const juce::MidiBuffer& midi, bool latch) n
     }
 }
 
-void Arpeggiator::rebuildSequence(int pattern, int octaves, int offset, int key, int scale) noexcept
+void Arpeggiator::rebuildSequence(int pattern, int octaves, int offset, int key, int scale, int repeat, float accent) noexcept
 {
     const auto& src = heldNotes.empty() ? latchedNotes : heldNotes;
     if (src.empty()) { playSequence.clear(); return; }
@@ -307,6 +307,42 @@ void Arpeggiator::rebuildSequence(int pattern, int octaves, int offset, int key,
                 ped.push_back(pedal);
             }
             playSequence = ped;
+        }
+    }
+
+    if (playSequence.empty()) return;
+
+    // Repeat (ステップリピート 1..4) の適用
+    if (repeat > 1)
+    {
+        std::vector<NoteInfo> repSeq;
+        for (const auto& n : playSequence)
+        {
+            for (int r = 0; r < repeat; ++r)
+            {
+                repSeq.push_back(n);
+            }
+        }
+        playSequence = repSeq;
+    }
+
+    // Accent / Ramp (ベロシティグラデーション -1.0..+1.0) の適用
+    if (std::abs(accent) > 0.01f && playSequence.size() > 1)
+    {
+        const float total = (float)playSequence.size();
+        for (size_t idx = 0; idx < playSequence.size(); ++idx)
+        {
+            const float progress = (float)idx / std::max(1.0f, total - 1.0f);
+            float factor = 1.0f;
+            if (accent > 0.0f)
+            {
+                factor = 1.0f + progress * accent;
+            }
+            else
+            {
+                factor = 1.0f + (1.0f - progress) * accent;
+            }
+            playSequence[idx].velocity = juce::jlimit(0.05f, 1.0f, playSequence[idx].velocity * factor);
         }
     }
 }

@@ -50,7 +50,20 @@ void SamplerEngine::handleMidi(const juce::MidiBuffer& midi, const Params& p) no
                 }
                 if (!readySlots.empty())
                 {
-                    const int chosen = readySlots[(size_t)rng.nextInt((int)readySlots.size())];
+                    int chosen = readySlots[0];
+                    if (readySlots.size() > 1)
+                    {
+                        std::vector<int> filtered;
+                        for (int sIdx : readySlots)
+                        {
+                            if (sIdx != lastRandomSlot) filtered.push_back(sIdx);
+                        }
+                        if (!filtered.empty())
+                            chosen = filtered[(size_t)rng.nextInt((int)filtered.size())];
+                        else
+                            chosen = readySlots[(size_t)rng.nextInt((int)readySlots.size())];
+                    }
+                    lastRandomSlot = chosen;
                     triggerSlotNote(chosen, note, vel, p);
                 }
                 break;

@@ -397,6 +397,8 @@ if %errorlevel% neq 0 goto :VCEnd</Command>
     <ClInclude Include="D:\VST_Project\PicoSampler\Source\DSP\SampleVisualizerData.h" />
     <ClInclude Include="D:\VST_Project\PicoSampler\Source\DSP\Arpeggiator.h" />
     <ClCompile Include="D:\VST_Project\PicoSampler\Source\DSP\Arpeggiator.cpp" />
+    <ClInclude Include="D:\VST_Project\PicoSampler\Source\DSP\PicoFilter.h" />
+    <ClCompile Include="D:\VST_Project\PicoSampler\Source\DSP\PicoFilter.cpp" />
     <ClInclude Include="D:\VST_Project\PicoSampler\Source\DSP\FxChain.h" />
     <ClInclude Include="D:\VST_Project\PicoSampler\Source\DSP\ModMatrix.h" />
     <ClInclude Include="D:\VST_Project\PicoSampler\Source\DSP\TptSvfFilter.h" />
@@ -407,6 +409,8 @@ if %errorlevel% neq 0 goto :VCEnd</Command>
     <ClCompile Include="D:\VST_Project\PicoSampler\Source\GUI\WaveformDisplay.cpp" />
     <ClInclude Include="D:\VST_Project\PicoSampler\Source\GUI\KeyRangeMapComponent.h" />
     <ClCompile Include="D:\VST_Project\PicoSampler\Source\GUI\KeyRangeMapComponent.cpp" />
+    <ClInclude Include="D:\VST_Project\PicoSampler\Source\GUI\FilterCurveComponent.h" />
+    <ClCompile Include="D:\VST_Project\PicoSampler\Source\GUI\FilterCurveComponent.cpp" />
     <ClInclude Include="D:\VST_Project\PicoSampler\Source\GUI\MainPanel.h" />
     <ClCompile Include="D:\VST_Project\PicoSampler\Source\GUI\MainPanel.cpp" />
     <ClInclude Include="D:\VST_Project\PicoSampler\Source\GUI\SlotPanel.h" />

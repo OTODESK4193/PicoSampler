@@ -7,6 +7,7 @@
 #include <JuceHeader.h>
 #include "DSP/SamplerEngine.h"
 #include "DSP/Arpeggiator.h"
+#include "DSP/PicoFilter.h"
 #include "DSP/ModMatrix.h"
 #include "DSP/FxChain.h"
 #include "DSP/SampleVisualizerData.h"
@@ -57,6 +58,7 @@ private:
     juce::AudioProcessorValueTreeState apvts;
     SamplerEngine samplerEngine;
     Arpeggiator arpeggiator;
+    PicoFilter mainFilter;
     ModMatrix modMatrix;
     FxChain fxChain;
     SampleVisualizerData visualizerData;

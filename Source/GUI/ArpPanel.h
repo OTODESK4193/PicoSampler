@@ -1,6 +1,7 @@
 // ==========================================
 // File: ArpPanel.h
-// アルペジエイター ＆ スケール量子化設定パネル (Swing ノブ追加 ＆ 動的UI視認性向上)
+// アルペジエイター ＆ スケール量子化 ＆ フィルター(CleanSVF/Vowel/Comb) パネル
+// (Filter Curve 表示統合完全移植)
 // ==========================================
 #pragma once
 
@@ -9,6 +10,7 @@
 #include "ArcDial.h"
 #include "ValueKnob.h"
 #include "GlowToggle.h"
+#include "FilterCurveComponent.h"
 
 class ArpPanel : public juce::Component
 {
@@ -18,6 +20,7 @@ public:
 
     void paint(juce::Graphics& g) override;
     void resized() override;
+    void updateFilterCurveDisplay() noexcept;
 
 private:
     struct LabeledKnob : public juce::Component
@@ -46,6 +49,7 @@ private:
 
     juce::AudioProcessorValueTreeState& vts;
 
+    // --- ARP ---
     GlowToggle btnEnable { "ARP ON" };
     GlowToggle btnLatch  { "LATCH" };
     GlowToggle btnSync   { "SYNC" };
@@ -60,6 +64,22 @@ private:
     LabeledKnob knobGate     { "Gate",     PicoColors::lavender };
     LabeledKnob knobOffset   { "Offset",   PicoColors::lavender };
     LabeledKnob knobSwing    { "Swing",    PicoColors::mint };
+    LabeledKnob knobRepeat   { "Repeat",   PicoColors::mint };
+    LabeledKnob knobAccent   { "Accent",   PicoColors::pink };
+
+    // --- FILTER ---
+    GlowToggle btnFilterEnable { "FILTER ON" };
+
+    juce::ComboBox comboFilterModel;
+    juce::ComboBox comboFilterType;
+    juce::ComboBox comboFilterSlope;
+
+    LabeledKnob knobFilterCutoff  { "Cutoff",  PicoColors::mint };
+    LabeledKnob knobFilterRes     { "Reso",    PicoColors::mint };
+    LabeledKnob knobFilterFormant { "Formant", PicoColors::peach };
+    LabeledKnob knobFilterCombMix { "Comb Mix",PicoColors::peach };
+
+    FilterCurveComponent filterCurveComp;
 
     using Attachment = juce::AudioProcessorValueTreeState::SliderAttachment;
     using ComboAttach = juce::AudioProcessorValueTreeState::ComboBoxAttachment;

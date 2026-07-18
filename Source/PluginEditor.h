@@ -9,6 +9,7 @@
 #include "GUI/ArcDial.h"
 #include "GUI/WaveformDisplay.h"
 #include "GUI/KeyRangeMapComponent.h"
+#include "DSP/PicoFilter.h"
 #include "GUI/MainPanel.h"
 #include "GUI/ArpPanel.h"
 #include "GUI/ModPanel.h"
@@ -38,7 +39,7 @@ private:
 
     // Header Toolbar Buttons
     juce::TextButton btnTabMain   { "MAIN" };
-    juce::TextButton btnTabArp    { "ARP" };
+    juce::TextButton btnTabArp    { "ARP / FILTER" };
     juce::TextButton btnTabMod    { "MOD" };
     juce::TextButton btnTabFx     { "FX" };
     juce::TextButton btnTabConfig { "CONFIG" };

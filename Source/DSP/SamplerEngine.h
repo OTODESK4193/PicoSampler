@@ -124,6 +124,7 @@ private:
     int findOldestVoice() const noexcept;
 
     double sr = 44100.0;
+    int lastRandomSlot = -1;
     std::array<SampleSlot, NUM_SLOTS> slots;
     std::array<PicoVoice, NUM_VOICES> voices;
 

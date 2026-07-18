@@ -22,6 +22,9 @@
     <ClCompile Include="D:\VST_Project\PicoSampler\Source\DSP\Arpeggiator.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="D:\VST_Project\PicoSampler\Source\DSP\PicoFilter.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="D:\VST_Project\PicoSampler\Source\GUI\ArcDial.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -29,6 +32,9 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="D:\VST_Project\PicoSampler\Source\GUI\KeyRangeMapComponent.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\VST_Project\PicoSampler\Source\GUI\FilterCurveComponent.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="D:\VST_Project\PicoSampler\Source\GUI\MainPanel.cpp">
@@ -132,6 +138,9 @@
     <ClInclude Include="D:\VST_Project\PicoSampler\Source\DSP\Arpeggiator.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="D:\VST_Project\PicoSampler\Source\DSP\PicoFilter.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="D:\VST_Project\PicoSampler\Source\DSP\FxChain.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -151,6 +160,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="D:\VST_Project\PicoSampler\Source\GUI\KeyRangeMapComponent.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="D:\VST_Project\PicoSampler\Source\GUI\FilterCurveComponent.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="D:\VST_Project\PicoSampler\Source\GUI\MainPanel.h">
