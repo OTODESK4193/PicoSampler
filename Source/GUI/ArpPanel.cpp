@@ -93,6 +93,8 @@ ArpPanel::ArpPanel(juce::AudioProcessorValueTreeState& apvts) : vts(apvts)
     comboAttachments.push_back(std::make_unique<ComboAttach>(vts, "fltType", comboFilterType));
     comboAttachments.push_back(std::make_unique<ComboAttach>(vts, "fltSlope", comboFilterSlope));
 
+    comboFilterModel.onChange = [this] { updateFilterUIState(); };
+
     knobFilterCutoff.knob.setDoubleClickReturnValue(true, 2000.0);
     knobFilterRes.knob.setDoubleClickReturnValue(true, 0.707);
     knobFilterFormant.knob.setDoubleClickReturnValue(true, 0.0);
@@ -109,7 +111,7 @@ ArpPanel::ArpPanel(juce::AudioProcessorValueTreeState& apvts) : vts(apvts)
     attachments.push_back(std::make_unique<Attachment>(vts, "fltCombMix", knobFilterCombMix.knob));
 
     addAndMakeVisible(filterCurveComp);
-    updateFilterCurveDisplay();
+    updateFilterUIState();
 }
 
 void ArpPanel::updateFilterCurveDisplay() noexcept
@@ -136,6 +138,43 @@ void ArpPanel::updateFilterCurveDisplay() noexcept
     filterCurveComp.updateFilterState(fp);
 }
 
+void ArpPanel::updateFilterUIState() noexcept
+{
+    updateFilterCurveDisplay();
+
+    auto* pModel = vts.getRawParameterValue("fltModel");
+    if (pModel == nullptr) return;
+    const int modelIdx = (int)pModel->load();
+
+    if (modelIdx == 0) // Clean SVF
+    {
+        comboFilterType.setEnabled(true);
+        comboFilterSlope.setEnabled(true);
+        knobFilterCutoff.setEnabled(true);
+        knobFilterRes.setEnabled(true);
+        knobFilterFormant.setEnabled(false);
+        knobFilterCombMix.setEnabled(false);
+    }
+    else if (modelIdx == 1) // Vowel Formant
+    {
+        comboFilterType.setEnabled(false);
+        comboFilterSlope.setEnabled(false);
+        knobFilterCutoff.setEnabled(true);
+        knobFilterRes.setEnabled(true);
+        knobFilterFormant.setEnabled(true);
+        knobFilterCombMix.setEnabled(false);
+    }
+    else if (modelIdx == 2) // Comb Filter
+    {
+        comboFilterType.setEnabled(false);
+        comboFilterSlope.setEnabled(false);
+        knobFilterCutoff.setEnabled(true);
+        knobFilterRes.setEnabled(true);
+        knobFilterFormant.setEnabled(false);
+        knobFilterCombMix.setEnabled(true);
+    }
+}
+
 void ArpPanel::paint(juce::Graphics& g)
 {
     g.fillAll(PicoColors::bgDk);
@@ -151,7 +190,7 @@ void ArpPanel::paint(juce::Graphics& g)
 
     drawSectionHeader("ARPEGGIATOR SETTINGS", 20, 8, 480, PicoColors::lavender);
     drawSectionHeader("SCALE QUANTIZER",     520, 8, 300, PicoColors::mint);
-    drawSectionHeader("MAIN FILTER (CleanSVF / Vowel / Comb)", 20, 148, 800, PicoColors::mint);
+    drawSectionHeader("MAIN FILTER (CleanSVF / Vowel / Comb)", 20, 148, 1040, PicoColors::mint);
 }
 
 void ArpPanel::resized()
@@ -179,16 +218,16 @@ void ArpPanel::resized()
     comboScale.setBounds(638, 30, 180, 26);
 
     // --- FILTER セクション ---
-    btnFilterEnable.setBounds(20, 172, 95, 26);
-    comboFilterModel.setBounds(122, 172, 115, 26);
-    comboFilterType.setBounds(244, 172, 95, 26);
-    comboFilterSlope.setBounds(346, 172, 85, 26);
+    btnFilterEnable.setBounds(20, 172, 90, 26);
+    comboFilterModel.setBounds(118, 172, 115, 26);
+    comboFilterType.setBounds(241, 172, 110, 26);
+    comboFilterSlope.setBounds(359, 172, 90, 26);
 
     const int fltKnobY = 206;
-    knobFilterCutoff.setBounds(20, fltKnobY, 58, knobH);
-    knobFilterRes.setBounds(84, fltKnobY, 58, knobH);
+    knobFilterCutoff.setBounds(20,  fltKnobY, 58, knobH);
+    knobFilterRes.setBounds(84,  fltKnobY, 58, knobH);
     knobFilterFormant.setBounds(148, fltKnobY, 58, knobH);
     knobFilterCombMix.setBounds(212, fltKnobY, 58, knobH);
 
-    filterCurveComp.setBounds(280, 172, 538, 110);
+    filterCurveComp.setBounds(460, 172, 600, 110);
 }

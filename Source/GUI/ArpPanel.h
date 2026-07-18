@@ -21,6 +21,7 @@ public:
     void paint(juce::Graphics& g) override;
     void resized() override;
     void updateFilterCurveDisplay() noexcept;
+    void updateFilterUIState() noexcept;
 
 private:
     struct LabeledKnob : public juce::Component

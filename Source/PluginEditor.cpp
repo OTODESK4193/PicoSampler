@@ -222,6 +222,6 @@ void PicoSamplerAudioProcessorEditor::timerCallback()
 
     keyRangeMap.updateKeyRanges(ranges, roots, readyStates, activeIdx);
     keyRangeMap.setPlayingNotes(audioProcessor.getSamplerEngine().getPlayingNotes());
-    arpPanel.updateFilterCurveDisplay();
+    arpPanel.updateFilterUIState();
     repaint(0, 0, 700, 44);
 }
