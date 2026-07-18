@@ -1,8 +1,50 @@
 // ==========================================
 // File: MainPanel.cpp
-// MainPanel 実装 (PITCH & MASTER 下段配置, Gain->Ceiling順ノブ, 下線重なり解消)
+// MainPanel 実装 (RootKeyノブをPITCHエリアへ移設 & Auto~C8表示対応)
 // ==========================================
 #include "MainPanel.h"
+
+static int noteNameToMidiNumber(const juce::String& name)
+{
+    if (name.containsIgnoreCase("Auto")) return -1;
+    
+    // JUCE 標準オクターブ表記パース
+    static const juce::StringArray noteNames = { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" };
+    juce::String str = name.trim().toUpperCase();
+
+    int octave = 4;
+    juce::String notePart = str;
+
+    // オクターブ番号の検索
+    for (int i = 0; i < str.length(); ++i)
+    {
+        if (str[i] == '-' || (str[i] >= '0' && str[i] <= '9'))
+        {
+            octave = str.substring(i).getIntValue();
+            notePart = str.substring(0, i).trim();
+            break;
+        }
+    }
+
+    if (notePart.endsWith("B") && notePart.length() == 2 && notePart[0] != 'A' && notePart[0] != 'C')
+    {
+        // 変ホ記号 (フラット) 変換
+        char key = notePart[0];
+        if (key == 'D') notePart = "C#";
+        else if (key == 'E') notePart = "D#";
+        else if (key == 'G') notePart = "F#";
+        else if (key == 'A') notePart = "G#";
+        else if (key == 'B') notePart = "A#";
+    }
+
+    for (int i = 0; i < 12; ++i)
+    {
+        if (noteNames[i] == notePart)
+            return (octave + 1) * 12 + i;
+    }
+
+    return juce::jlimit(-1, 127, name.getIntValue());
+}
 
 MainPanel::MainPanel(juce::AudioProcessorValueTreeState& apvts) : vts(apvts)
 {
@@ -31,6 +73,15 @@ MainPanel::MainPanel(juce::AudioProcessorValueTreeState& apvts) : vts(apvts)
     addAndMakeVisible(btnStretch);
     addAndMakeVisible(btnReverse);
     addAndMakeVisible(btnSnap);
+
+    // RootKey ノブのテキスト表示関数設定 (-1 = Auto, 0-127 = C-1~G9)
+    knobRootKey.knob.textFromValueFunction = [](double val) {
+        const int v = (int)val;
+        return (v < 0) ? juce::String("Auto") : juce::MidiMessage::getMidiNoteName(v, true, true, 4);
+    };
+    knobRootKey.knob.valueFromTextFunction = [](const juce::String& text) {
+        return (double)noteNameToMidiNumber(text);
+    };
 
     // ADSR Link Button
     addAndMakeVisible(btnLinkEnv);
@@ -108,6 +159,7 @@ MainPanel::MainPanel(juce::AudioProcessorValueTreeState& apvts) : vts(apvts)
     addAndMakeVisible(knobLoopEnd);
     addAndMakeVisible(knobCrossfade);
 
+    addAndMakeVisible(knobRootKey);
     addAndMakeVisible(knobOctave);
     addAndMakeVisible(knobSemitone);
     addAndMakeVisible(knobFineTune);
@@ -149,6 +201,7 @@ void MainPanel::bindSlotParameters(int slotIdx)
     bind(knobLoopEnd,     "loopEnd");
     bind(knobCrossfade,   "crossfade");
 
+    bind(knobRootKey,  "rootKey");
     bind(knobOctave,   "octave");
     bind(knobSemitone, "pitchSt");
     bind(knobFineTune, "fineTune");
@@ -210,8 +263,8 @@ void MainPanel::paint(juce::Graphics& g)
     drawSectionHeader("ENVELOPE",      550, 80, 500, PicoColors::pink);
 
     // 2段目: PITCH, MASTER (Y=206)
-    drawSectionHeader("PITCH",         20,  206, 280, PicoColors::lavender);
-    drawSectionHeader("MASTER",        340, 206, 420, PicoColors::mint);
+    drawSectionHeader("PITCH",         20,  206, 300, PicoColors::lavender);
+    drawSectionHeader("MASTER",        360, 206, 420, PicoColors::mint);
 }
 
 void MainPanel::resized()
@@ -244,7 +297,7 @@ void MainPanel::resized()
     btnReverse.setBounds(345, knobY1 + 36, 66, 24);
     btnSnap.setBounds(416, knobY1 + 36, 66, 24);
 
-    // ENVELOPE (4ノブ + LINK ボタン: 広大なゆとり)
+    // ENVELOPE (4ノブ + LINK ボタン)
     knobAttack.setBounds(550 + 0 * 82,  knobY1, knobW, knobH);
     knobDecay.setBounds(550 + 1 * 82,   knobY1, knobW, knobH);
     knobSustain.setBounds(550 + 2 * 82, knobY1, knobW, knobH);
@@ -254,14 +307,15 @@ void MainPanel::resized()
 
     // --- 2段目 ---
     const int knobY2 = 232;
-    // PITCH (3ノブ: 左側)
-    knobOctave.setBounds(20 + 0 * 75,   knobY2, knobW, knobH);
-    knobSemitone.setBounds(20 + 1 * 75, knobY2, knobW, knobH);
-    knobFineTune.setBounds(20 + 2 * 75, knobY2, knobW, knobH);
+    // PITCH (4ノブ: Root, Octave, Semi, Fine)
+    knobRootKey.setBounds(20 + 0 * 75,  knobY2, knobW, knobH);
+    knobOctave.setBounds(20 + 1 * 75,   knobY2, knobW, knobH);
+    knobSemitone.setBounds(20 + 2 * 75, knobY2, knobW, knobH);
+    knobFineTune.setBounds(20 + 3 * 75, knobY2, knobW, knobH);
 
-    // MASTER (4ノブ: HPF, LPF, Gain, Ceiling の順！)
-    knobMasterHpf.setBounds(340 + 0 * 75, knobY2, knobW, knobH);
-    knobMasterLpf.setBounds(340 + 1 * 75, knobY2, knobW, knobH);
-    knobOutGain.setBounds(340 + 2 * 75,   knobY2, knobW, knobH);
-    knobCeiling.setBounds(340 + 3 * 75,   knobY2, knobW, knobH);
+    // MASTER (4ノブ: HPF, LPF, Gain, Ceiling の順)
+    knobMasterHpf.setBounds(360 + 0 * 75, knobY2, knobW, knobH);
+    knobMasterLpf.setBounds(360 + 1 * 75, knobY2, knobW, knobH);
+    knobOutGain.setBounds(360 + 2 * 75,   knobY2, knobW, knobH);
+    knobCeiling.setBounds(360 + 3 * 75,   knobY2, knobW, knobH);
 }

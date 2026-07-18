@@ -1,6 +1,6 @@
 // ==========================================
 // File: PluginEditor.cpp
-// PicoSampler メインエディタ GUI 実装 (画面レイアウト調整 & 波形連動)
+// PicoSampler メインエディタ GUI 実装 (ReAnalyzeボタン機能)
 // ==========================================
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
@@ -25,6 +25,10 @@ PicoSamplerAudioProcessorEditor::PicoSamplerAudioProcessorEditor(PicoSamplerAudi
         addAndMakeVisible(*b);
     }
 
+    btnReAnalyze.setColour(juce::TextButton::buttonColourId, PicoColors::knobTrack);
+    btnReAnalyze.setColour(juce::TextButton::textColourOffId, PicoColors::mint);
+    addAndMakeVisible(btnReAnalyze);
+
     btnPresets.setColour(juce::TextButton::buttonColourId, PicoColors::knobTrack);
     btnPresets.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
     addAndMakeVisible(btnPresets);
@@ -34,6 +38,13 @@ PicoSamplerAudioProcessorEditor::PicoSamplerAudioProcessorEditor(PicoSamplerAudi
     btnTabMod.onClick    = [this] { setActiveTab(2); };
     btnTabFx.onClick     = [this] { setActiveTab(3); };
     btnTabConfig.onClick = [this] { setActiveTab(4); };
+
+    btnReAnalyze.onClick = [this] {
+        const int activeIdx = (int)audioProcessor.getAPVTS().getRawParameterValue("activeSlot")->load();
+        audioProcessor.reanalyzeSlot(activeIdx);
+        repaint();
+    };
+
     btnPresets.onClick   = [this] { presetBrowser.setVisible(!presetBrowser.isVisible()); };
 
     addAndMakeVisible(mainPanel);
@@ -166,7 +177,8 @@ void PicoSamplerAudioProcessorEditor::resized()
     btnTabFx.setBounds(20 + (tabW + 8)*3,  tabY, tabW, tabH);
     btnTabConfig.setBounds(20 + (tabW + 8)*4, tabY, tabW, tabH);
 
-    btnPresets.setBounds(1080 - 100, 10, 80, 26);
+    btnReAnalyze.setBounds(1080 - 215, 10, 95, 26);
+    btnPresets.setBounds(1080 - 110, 10, 90, 26);
 
     // 4. パネル領域 (Y=356)
     const auto panelBounds = juce::Rectangle<int>(0, 356, 1080, 344);

@@ -1,6 +1,6 @@
 // ==========================================
 // File: MainPanel.h
-// メイン操作パネル (RootKeyノブ追加 & 数値常時表示対応)
+// メイン操作パネル (RootKeyノブをPITCHエリアへ移設 & 表示カスタマイズ)
 // ==========================================
 #pragma once
 
@@ -67,13 +67,14 @@ private:
     bool isEnvLinked = false;
 
     // Labeled Knobs
-    LabeledKnob knobRootKey     { "Root",   PicoColors::peach };   // ★ 追加
     LabeledKnob knobSampleStart { "Start",   PicoColors::peach };
     LabeledKnob knobSampleEnd   { "End",     PicoColors::peach };
     LabeledKnob knobLoopStart   { "L-Start", PicoColors::peach };
     LabeledKnob knobLoopEnd     { "L-End",   PicoColors::peach };
     LabeledKnob knobCrossfade   { "X-Fade",  PicoColors::peach };
 
+    // PITCH エリア (Root, Octave, Semi, Fine)
+    LabeledKnob knobRootKey   { "Root",   PicoColors::lavender };
     LabeledKnob knobOctave    { "Octave", PicoColors::lavender };
     LabeledKnob knobSemitone  { "Semi",   PicoColors::lavender };
     LabeledKnob knobFineTune  { "Fine",   PicoColors::lavender };

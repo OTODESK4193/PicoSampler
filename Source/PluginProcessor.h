@@ -1,6 +1,6 @@
 // ==========================================
 // File: PluginProcessor.h
-// PicoSampler メインプロセッサ定義
+// PicoSampler メインプロセッサ定義 (reanalyzeSlot メソッド追加)
 // ==========================================
 #pragma once
 
@@ -44,12 +44,15 @@ public:
 
     void run() override; // スレッド処理 (ファイルロード)
 
+    void reanalyzeSlot(int slotIdx); // ★ スロットの再解析・再配置
+
     juce::AudioProcessorValueTreeState& getAPVTS() { return apvts; }
     SamplerEngine& getSamplerEngine() { return samplerEngine; }
     SampleVisualizerData& getVisualizerData() { return visualizerData; }
 
 private:
     juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
+    float getParamFloat(const juce::String& paramId, float defaultVal = 0.0f) const;
 
     juce::AudioProcessorValueTreeState apvts;
     SamplerEngine samplerEngine;

@@ -1,6 +1,6 @@
 // ==========================================
 // File: PluginEditor.h
-// PicoSampler メインエディタ GUI 定義 (KeyRangeMapコンポーネont独立追加)
+// PicoSampler メインエディタ GUI 定義 (btnReAnalyze ボタン追加)
 // ==========================================
 #pragma once
 
@@ -42,6 +42,8 @@ private:
     juce::TextButton btnTabMod    { "MOD" };
     juce::TextButton btnTabFx     { "FX" };
     juce::TextButton btnTabConfig { "CONFIG" };
+
+    juce::TextButton btnReAnalyze { "REANALYZE" }; // ★ 追加
     juce::TextButton btnPresets   { "PRESETS" };
 
     // Panels

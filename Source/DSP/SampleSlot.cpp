@@ -1,6 +1,6 @@
 // ==========================================
 // File: SampleSlot.cpp
-// スロット管理実装 (fileSampleRate保持 & Stretch事前レンダリング修正)
+// スロット管理実装 (reanalyze 実装)
 // ==========================================
 #include "SampleSlot.h"
 #include "PitchAnalyzer.h"
@@ -30,7 +30,7 @@ bool SampleSlot::loadFromFile(const juce::File& file)
 
     metadata.filePath = file.getFullPathName();
     metadata.fileName = file.getFileName();
-    metadata.fileSampleRate = reader->sampleRate;  // ★ ファイルのサンプルレートを保持
+    metadata.fileSampleRate = reader->sampleRate;
 
     // Pitch & Feature Analysis
     auto analysis = PitchAnalyzer::analyzeOmni(originalBuffer, reader->sampleRate, PitchAnalyzer::Auto, metadata.fileName);
@@ -43,6 +43,31 @@ bool SampleSlot::loadFromFile(const juce::File& file)
     analyzing.store(false, std::memory_order_release);
     ready.store(true, std::memory_order_release);
     return true;
+}
+
+void SampleSlot::reanalyze(int materialMode, int rootKeyOverride)
+{
+    if (originalBuffer.getNumSamples() < 4) return;
+
+    ready.store(false, std::memory_order_release);
+    analyzing.store(true, std::memory_order_release);
+
+    if (rootKeyOverride >= 0)
+    {
+        metadata.rootKey = rootKeyOverride;
+        metadata.centsOffset = 0.0f;
+    }
+    else
+    {
+        auto analysis = PitchAnalyzer::analyzeOmni(originalBuffer, metadata.fileSampleRate, materialMode, metadata.fileName);
+        metadata.rootKey = (analysis.rootNote >= 0) ? analysis.rootNote : 60;
+        metadata.centsOffset = analysis.centsOffset;
+    }
+
+    renderAnchors();
+
+    analyzing.store(false, std::memory_order_release);
+    ready.store(true, std::memory_order_release);
 }
 
 void SampleSlot::renderAnchors()

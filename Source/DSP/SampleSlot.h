@@ -1,6 +1,6 @@
 // ==========================================
 // File: SampleSlot.h
-// スロット管理 (fileSampleRate 保持 & rootKey 手動オーバーライド対応)
+// スロット管理 (reanalyze メソッド追加 & fileSampleRate 保持)
 // ==========================================
 #pragma once
 
@@ -20,7 +20,7 @@ public:
         juce::String fileName;
         int rootKey = 60;
         float centsOffset = 0.0f;
-        double fileSampleRate = 44100.0;  // ★ ファイル元のサンプルレートを保持
+        double fileSampleRate = 44100.0;
         float sampleStartRatio = 0.0f;
         float sampleEndRatio = 1.0f;
         float loopStartRatio = 0.2f;
@@ -35,6 +35,7 @@ public:
 
     void prepare(double sr) noexcept { engineSampleRate = sr > 1000.0 ? sr : 44100.0; }
     bool loadFromFile(const juce::File& file);
+    void reanalyze(int materialMode = 0, int rootKeyOverride = -1);
     void clear();
 
     bool isReady() const noexcept { return ready.load(std::memory_order_relaxed); }

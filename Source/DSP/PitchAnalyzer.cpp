@@ -6,6 +6,7 @@
 #include <cmath>
 #include <regex>
 #include <algorithm>
+#include <vector>
 
 PitchAnalyzer::AnalysisResult PitchAnalyzer::analyzeOmni(const juce::AudioBuffer<float>& buffer,
                                                           double sampleRate,
@@ -30,14 +31,61 @@ PitchAnalyzer::AnalysisResult PitchAnalyzer::analyzeOmni(const juce::AudioBuffer
         for (int i = 0; i < numSamples; ++i) mono[(size_t)i] += r[i] / (float)numCh;
     }
 
-    // 3. YIN アルゴリズムによる超精密基音検出 (オクターブ・倍音飛び防止)
-    float detectedHz = analyzePitchYin(mono.data(), numSamples, sampleRate, 20.0f, 1500.0f);
-    if (detectedHz <= 0.0f)
+    // 3. マルチフレーム (複数ウィンドウ) でアタック以降の安定部分を解析
+    // 冒頭のアタック過渡期をスキップし、音量が安定している区間からフレームを複数抽出
+    std::vector<float> detectedPitches;
+    std::vector<float> detectedCentsList;
+
+    const int frameSize = (int)std::min((double)numSamples, sampleRate * 0.15); // 約150msフレーム
+    const int hopSize = frameSize / 2;
+    
+    // 冒頭 5% をスキップしてエネルギーの高いフレームをスキャン
+    const int startOffset = (int)(numSamples * 0.05);
+
+    for (int pos = startOffset; pos + frameSize <= numSamples; pos += hopSize)
     {
-        detectedHz = analyzePitch(mono.data(), numSamples, sampleRate, 30.0f);
+        // フレームの RMS 計算
+        float rms = 0.0f;
+        for (int i = 0; i < frameSize; ++i)
+        {
+            float s = mono[(size_t)(pos + i)];
+            rms += s * s;
+        }
+        rms = std::sqrt(rms / (float)frameSize);
+
+        // 無音に近いフレームはスキップ
+        if (rms < 0.015f) continue;
+
+        float c = 0.0f;
+        float hz = analyzePitchYin(mono.data() + pos, frameSize, sampleRate, 25.0f, 2000.0f);
+        if (hz > 0.0f)
+        {
+            detectedPitches.push_back(hz);
+            hzToMidiNote(hz, c);
+            detectedCentsList.push_back(c);
+        }
     }
 
+    float detectedHz = 0.0f;
     float dspCents = 0.0f;
+
+    if (!detectedPitches.empty())
+    {
+        // ピッチの中央値 (Median) を採用して外れ値/オクターブ跳びを排除
+        std::vector<float> sortedPitches = detectedPitches;
+        std::sort(sortedPitches.begin(), sortedPitches.end());
+        detectedHz = sortedPitches[sortedPitches.size() / 2];
+
+        std::vector<float> sortedCents = detectedCentsList;
+        std::sort(sortedCents.begin(), sortedCents.end());
+        dspCents = sortedCents[sortedCents.size() / 2];
+    }
+    else
+    {
+        // フォールバック: 全体でYINピッチ検出
+        detectedHz = analyzePitchYin(mono.data(), numSamples, sampleRate, 25.0f, 2000.0f);
+    }
+
     int dspKey = (detectedHz > 0.0f) ? (int)std::round(hzToMidiNote(detectedHz, dspCents)) : -1;
 
     // 4. 解析優先順位 & ダブルチェック
@@ -67,18 +115,18 @@ PitchAnalyzer::AnalysisResult PitchAnalyzer::analyzeOmni(const juce::AudioBuffer
     return res;
 }
 
-// YIN ピッチ検出アルゴリズムの実装 (倍音誤判定・オクターブエラーゼロ化)
+// YIN ピッチ検出アルゴリズムの実装 (オクターブ・サブハーモニクス跳び防止強化)
 float PitchAnalyzer::analyzePitchYin(const float* samples, int numSamples, double sampleRate, float minFreq, float maxFreq)
 {
-    const int W = (int)(sampleRate / std::max(10.0f, minFreq)); // 最大ラグ Window
-    if (numSamples <= W * 2) return 0.0f;
-
+    const int maxLag = (int)(sampleRate / std::max(10.0f, minFreq));
     const int minLag = (int)(sampleRate / std::min((float)sampleRate * 0.45f, maxFreq));
-    const int maxLag = W;
+
+    if (numSamples <= maxLag + minLag) return 0.0f;
 
     std::vector<float> d((size_t)maxLag, 0.0f);
 
     // 1. 差分関数 (Difference Function)
+    const int W = numSamples - maxLag;
     for (int t = 1; t < maxLag; ++t)
     {
         float sum = 0.0f;
@@ -102,19 +150,21 @@ float PitchAnalyzer::analyzePitchYin(const float* samples, int numSamples, doubl
     }
 
     // 3. 閾値落ち込み判定 (Absolute Threshold)
-    const float threshold = 0.12f; // 低音ベース基音を捕捉する標準YIN閾値
+    // 最初の谷 (高周波/高音の基本波) を最優先探求してサブハーモニクス(低音誤検出)を防止
+    const float threshold = 0.15f; 
     int tau = -1;
 
     for (int t = minLag; t < maxLag; ++t)
     {
         if (dPrime[(size_t)t] < threshold)
         {
+            // ローカルミニマムに達するまで進む
             while (t + 1 < maxLag && dPrime[(size_t)(t + 1)] < dPrime[(size_t)t])
             {
                 t++;
             }
             tau = t;
-            break;
+            break; // 最短ラグ(高音)で条件を満たした時点で確定！サブハーモニクス無視
         }
     }
 
@@ -130,7 +180,7 @@ float PitchAnalyzer::analyzePitchYin(const float* samples, int numSamples, doubl
                 tau = t;
             }
         }
-        if (minVal > 0.45f) return 0.0f;
+        if (minVal > 0.40f) return 0.0f;
     }
 
     if (tau <= 0) return 0.0f;
@@ -231,51 +281,10 @@ int PitchAnalyzer::parseKeyFromFileName(const juce::String& fileName, bool& outI
 
     std::string str = fileName.toStdString();
 
-    // 1. 直前が音階表記に合致する表記パターン (例: "Lev_Bass_Sustained_A#_04.wav", "Bass_C_36.wav")
-    std::regex keyWithSampleNumRegex(R"((?:^|[\s_\-\(\)\[\]])([A-G][#b]?)(?:_|\-|\s)(\d{1,3})(?:[\s_\-\(\)\[\]\.]|$))", std::regex::icase);
+    // 1. 直前にスペースや区切りがあり、正確なオクターブ表記 (例: "C2", "A#1", "Eb4", "D-1", "A#_1", "C_2")
+    std::regex octKeyRegex(R"((?:^|[\s_\-\(\)\[\]])([A-G][#b]?)(?:_|\-|\s)?(-?\d)(m|maj|min|minor|major)?(?:\_|\-|\s|\.|\)|$))", std::regex::icase);
     std::smatch match;
 
-    if (std::regex_search(str, match, keyWithSampleNumRegex))
-    {
-        std::string noteName = match[1].str();
-        int sampleIndexNum = std::stoi(match[2].str());
-
-        if (!noteName.empty()) noteName[0] = (char)std::toupper(noteName[0]);
-        if (noteName.length() >= 2 && noteName[1] == 'b')
-        {
-            switch (noteName[0]) {
-                case 'D': noteName = "C#"; break;
-                case 'E': noteName = "D#"; break;
-                case 'G': noteName = "F#"; break;
-                case 'A': noteName = "G#"; break;
-                case 'B': noteName = "A#"; break;
-            }
-        }
-
-        static const std::vector<std::string> notes = { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" };
-        int noteIdx = -1;
-        for (size_t i = 0; i < notes.size(); ++i) {
-            if (notes[i] == noteName) { noteIdx = (int)i; break; }
-        }
-
-        if (noteIdx >= 0)
-        {
-            const bool hasUnderscoreNum = (str.find("_" + match[2].str()) != std::string::npos);
-            if (sampleIndexNum >= 12 && sampleIndexNum <= 110 && !hasUnderscoreNum)
-            {
-                return sampleIndexNum;
-            }
-            else
-            {
-                // A#1 = 34, C1 = 24
-                if (noteIdx >= 9) return 24 + noteIdx; // A1=33, A#1=34
-                return 36 + noteIdx;                  // C2=36
-            }
-        }
-    }
-
-    // 2. 直後に数字が直結している正確なオクターブ表記 (例: "C2", "A#1", "Eb4", "D-1")
-    std::regex octKeyRegex(R"((?:^|[\s_\-\(\)\[\]])([A-G][#b]?)(-?\d)(m|maj|min|minor|major)?(?:\_|\-|\s|\.|\)|$))", std::regex::icase);
     if (std::regex_search(str, match, octKeyRegex))
     {
         std::string noteName = match[1].str();

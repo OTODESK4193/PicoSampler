@@ -1,37 +1,45 @@
 // ==========================================
 // File: PluginProcessor.cpp
-// PicoSampler メインプロセッサ実装 (isSnap & limRelease パラメータ追加)
+// PicoSampler メインプロセッサ実装 (safe APVTS パラメーターガード & reanalyzeSlot 対応)
 // ==========================================
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
 
 PicoSamplerAudioProcessor::PicoSamplerAudioProcessor()
-    : AudioProcessor(BusesProperties().withInput("Input", juce::AudioChannelSet::stereo(), true)
-                                      .withOutput("Output", juce::AudioChannelSet::stereo(), true)),
-      Thread("PicoSamplerIngestThread"),
+    : AudioProcessor(BusesProperties().withOutput("Output", juce::AudioChannelSet::stereo(), true)),
+      Thread("PicoSampleLoaderThread"),
       apvts(*this, nullptr, "Parameters", createParameterLayout())
 {
+    samplerEngine.prepare(44100.0);
     startThread();
 }
 
 PicoSamplerAudioProcessor::~PicoSamplerAudioProcessor()
 {
-    stopThread(5000);
+    stopThread(2000);
+}
+
+float PicoSamplerAudioProcessor::getParamFloat(const juce::String& paramId, float defaultVal) const
+{
+    if (auto* p = apvts.getRawParameterValue(paramId))
+        return p->load();
+    return defaultVal;
 }
 
 juce::AudioProcessorValueTreeState::ParameterLayout PicoSamplerAudioProcessor::createParameterLayout()
 {
     std::vector<std::unique_ptr<juce::RangedAudioParameter>> params;
 
-    // Mode & Master
+    // Global Parameters
     params.push_back(std::make_unique<juce::AudioParameterChoice>("samplerMode", "Sampler Mode", juce::StringArray{ "Single", "Layer", "Random" }, 0));
     params.push_back(std::make_unique<juce::AudioParameterInt>("activeSlot", "Active Slot", 0, 7, 0));
-    params.push_back(std::make_unique<juce::AudioParameterFloat>("masterHPF", "Master HPF", juce::NormalisableRange<float>(20.0f, 2000.0f, 1.0f, 0.3f), 20.0f));
-    params.push_back(std::make_unique<juce::AudioParameterFloat>("masterLPF", "Master LPF", juce::NormalisableRange<float>(200.0f, 20000.0f, 1.0f, 0.3f), 20000.0f));
-    params.push_back(std::make_unique<juce::AudioParameterFloat>("outGain", "Master Gain", juce::NormalisableRange<float>(-36.0f, 12.0f, 0.1f), 0.0f));
-    params.push_back(std::make_unique<juce::AudioParameterFloat>("ceiling", "Limiter Ceiling", juce::NormalisableRange<float>(-12.0f, 0.0f, 0.1f), -0.1f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("outGain", "Output Gain", -36.0f, 12.0f, 0.0f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("masterHPF", "Master HPF", 20.0f, 2000.0f, 20.0f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("masterLPF", "Master LPF", 200.0f, 20000.0f, 20000.0f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("ceiling", "Limiter Ceiling", -12.0f, 0.0f, 0.0f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("limRelease", "Limiter Release", 1.0f, 500.0f, 50.0f));
 
-    // 8スロット別パラメータ
+    // Slots 1-8 Parameters
     for (int i = 0; i < 8; ++i)
     {
         const juce::String s = juce::String(i);
@@ -83,39 +91,15 @@ juce::AudioProcessorValueTreeState::ParameterLayout PicoSamplerAudioProcessor::c
         params.push_back(std::make_unique<juce::AudioParameterFloat>("fx" + s + "Amount", "FX" + s + " Amount", 0.0f, 1.0f, 0.0f));
     }
 
-    // Config
-    params.push_back(std::make_unique<juce::AudioParameterChoice>("materialMode", "Material Mode", juce::StringArray{ "Auto", "Crisp", "Smooth", "Formant" }, 0));
-    params.push_back(std::make_unique<juce::AudioParameterChoice>("filterSlope", "Filter Slope", juce::StringArray{ "12dB", "24dB" }, 0));
-    params.push_back(std::make_unique<juce::AudioParameterChoice>("colorTheme", "Color Theme", juce::StringArray{ "Midnight", "Sakura", "Ocean", "Forest", "Sunset", "Mono" }, 0));
-    params.push_back(std::make_unique<juce::AudioParameterInt>("poly", "Polyphony", 1, 32, 32));
-    params.push_back(std::make_unique<juce::AudioParameterFloat>("limRelease", "Limiter Release", juce::NormalisableRange<float>(1.0f, 500.0f, 1.0f, 0.3f), 50.0f));
-
-    // ModMatrix 16スロット
-    for (int i = 1; i <= 16; ++i)
-    {
-        const juce::String s = juce::String(i);
-        params.push_back(std::make_unique<juce::AudioParameterChoice>("mod" + s + "Src", "Mod" + s + " Src", ModMatrix::getSourceNames(), 0));
-        params.push_back(std::make_unique<juce::AudioParameterChoice>("mod" + s + "Dst", "Mod" + s + " Dst", ModMatrix::getDestNames(), 0));
-        params.push_back(std::make_unique<juce::AudioParameterFloat>("mod" + s + "Amt", "Mod" + s + " Amt", -1.0f, 1.0f, 0.0f));
-        params.push_back(std::make_unique<juce::AudioParameterBool>("mod" + s + "Uni", "Mod" + s + " Uni", false));
-    }
-
     return { params.begin(), params.end() };
 }
 
 void PicoSamplerAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
 {
-    juce::ignoreUnused(samplesPerBlock);
     samplerEngine.prepare(sampleRate);
-    arpeggiator.prepare(sampleRate);
-    modMatrix.prepare(sampleRate);
-    fxChain.prepareToPlay(sampleRate);
 }
 
-void PicoSamplerAudioProcessor::releaseResources()
-{
-    samplerEngine.reset();
-}
+void PicoSamplerAudioProcessor::releaseResources() {}
 
 bool PicoSamplerAudioProcessor::isBusesLayoutSupported(const BusesLayout& layouts) const
 {
@@ -128,75 +112,42 @@ bool PicoSamplerAudioProcessor::isBusesLayoutSupported(const BusesLayout& layout
 void PicoSamplerAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages)
 {
     juce::ScopedNoDenormals noDenormals;
-    const int numSamples = buffer.getNumSamples();
 
-    // 1. Host BPM 取得
-    double bpm = 120.0;
-    if (auto* ph = getPlayHead())
-    {
-        if (auto pos = ph->getPosition())
-        {
-            if (pos->getBpm().hasValue()) bpm = *pos->getBpm();
-        }
-    }
+    buffer.clear();
 
-    auto getParamFloat = [this](const juce::String& name, float defVal) {
-        if (auto* p = apvts.getRawParameterValue(name)) return p->load();
-        return defVal;
-    };
+    const int modeVal = (int)getParamFloat("samplerMode", 0.0f);
+    const int activeSlotIdx = (int)getParamFloat("activeSlot", 0.0f);
 
-    // 2. Arpeggiator 処理
-    Arpeggiator::Params arpP;
-    arpP.enable = getParamFloat("arpEnable", 0.0f) > 0.5f;
-    arpP.latch  = getParamFloat("arpLatch", 0.0f) > 0.5f;
-    arpP.sync   = getParamFloat("arpSync", 1.0f) > 0.5f;
-    arpP.pattern = (int)getParamFloat("arpPattern", 0.0f);
-    arpP.rateSync = (int)getParamFloat("arpRateSync", 6.0f);
-    arpP.rateFreeHz = getParamFloat("arpRateFree", 4.0f);
-    arpP.octaves = (int)getParamFloat("arpOctaves", 1.0f);
-    arpP.gatePct = getParamFloat("arpGate", 0.8f);
-    arpP.key = (int)getParamFloat("key", 0.0f);
-    arpP.scale = (int)getParamFloat("scale", 0.0f);
-    arpP.bpm = bpm;
-
-    arpeggiator.process(midiMessages, numSamples, arpP);
-
-    // 3. ModMatrix 処理
-    modMatrix.handleMidi(midiMessages);
-    ModMatrix::Params modP;
-    modP.bpm = bpm;
-    modMatrix.processBlock(numSamples, modP);
-
-    // 4. Sampler Engine 処理
-    SamplerEngine::Params engineP;
-    engineP.mode = (SamplerEngine::PlaybackMode)(int)getParamFloat("samplerMode", 0.0f);
-    engineP.activeSlot = (int)getParamFloat("activeSlot", 0.0f);
-    engineP.masterHpfHz = getParamFloat("masterHPF", 20.0f);
-    engineP.masterLpfHz = getParamFloat("masterLPF", 20000.0f);
-    engineP.is24dBFilter = (int)getParamFloat("filterSlope", 0.0f) > 0;
-    engineP.outGainDb = getParamFloat("outGain", 0.0f);
-    engineP.ceilingDb = getParamFloat("ceiling", -0.1f);
-    engineP.limReleaseMs = getParamFloat("limRelease", 50.0f);
-    engineP.polyphonyLimit = (int)getParamFloat("poly", 32.0f);
+    SamplerEngine::Params engineParams;
+    engineParams.mode = static_cast<SamplerEngine::PlaybackMode>(modeVal);
+    engineParams.activeSlot = activeSlotIdx;
+    engineParams.outGainDb = getParamFloat("outGain", 0.0f);
+    engineParams.masterHpfHz = getParamFloat("masterHPF", 20.0f);
+    engineParams.masterLpfHz = getParamFloat("masterLPF", 20000.0f);
+    engineParams.ceilingDb = getParamFloat("ceiling", 0.0f);
+    engineParams.limReleaseMs = getParamFloat("limRelease", 50.0f);
 
     for (int i = 0; i < 8; ++i)
     {
         const juce::String s = juce::String(i);
-        auto& sp = engineP.slotParams[(size_t)i];
-        sp.attack = getParamFloat("attack_" + s, 0.01f);
-        sp.decay = getParamFloat("decay_" + s, 0.3f);
+        auto& sp = engineParams.slotParams[(size_t)i];
+        sp.attack  = getParamFloat("attack_" + s, 0.01f);
+        sp.decay   = getParamFloat("decay_" + s, 0.3f);
         sp.sustain = getParamFloat("sustain_" + s, 1.0f);
         sp.release = getParamFloat("release_" + s, 0.3f);
-        sp.octave = (int)getParamFloat("octave_" + s, 0.0f);
+
+        sp.octave   = (int)getParamFloat("octave_" + s, 0.0f);
         sp.semitone = (int)getParamFloat("pitchSt_" + s, 0.0f);
         sp.fineTune = getParamFloat("fineTune_" + s, 0.0f);
-        sp.pan = getParamFloat("pan_" + s, 0.0f);
+        sp.pan      = getParamFloat("pan_" + s, 0.0f);
         sp.slotGainDb = getParamFloat("slotGain_" + s, 0.0f);
+
         sp.sampleStartRatio = getParamFloat("sampleStart_" + s, 0.0f);
-        sp.sampleEndRatio = getParamFloat("sampleEnd_" + s, 1.0f);
-        sp.loopStartRatio = getParamFloat("loopStart_" + s, 0.2f);
-        sp.loopEndRatio = getParamFloat("loopEnd_" + s, 0.7f);
-        sp.crossfadeRatio = getParamFloat("crossfade_" + s, 0.05f);
+        sp.sampleEndRatio   = getParamFloat("sampleEnd_" + s, 1.0f);
+        sp.loopStartRatio   = getParamFloat("loopStart_" + s, 0.2f);
+        sp.loopEndRatio     = getParamFloat("loopEnd_" + s, 0.7f);
+        sp.crossfadeRatio   = getParamFloat("crossfade_" + s, 0.05f);
+
         sp.isLooping = getParamFloat("isLooping_" + s, 0.0f) > 0.5f;
         sp.isStretchMode = getParamFloat("isStretchMode_" + s, 0.0f) > 0.5f;
         sp.isReverse = getParamFloat("isReverse_" + s, 0.0f) > 0.5f;
@@ -205,20 +156,18 @@ void PicoSamplerAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
         sp.highNote = (int)getParamFloat("slotHighNote_" + s, 127.0f);
     }
 
-    buffer.clear();
-    samplerEngine.handleMidi(midiMessages, engineP);
-    samplerEngine.renderNextBlock(buffer, engineP, &visualizerData);
+    samplerEngine.handleMidi(midiMessages, engineParams);
+    samplerEngine.renderNextBlock(buffer, engineParams, &visualizerData);
+}
 
-    // 5. FX Chain 処理
-    FxChain::Params fxP;
-    fxP.bpm = bpm;
-    for (int i = 1; i <= 5; ++i)
-    {
-        const juce::String s = juce::String(i);
-        fxP.type[(size_t)(i - 1)] = (int)getParamFloat("fx" + s + "Type", 0.0f);
-        fxP.amount[(size_t)(i - 1)] = getParamFloat("fx" + s + "Amount", 0.0f);
-    }
-    fxChain.process(buffer, fxP);
+void PicoSamplerAudioProcessor::reanalyzeSlot(int slotIdx)
+{
+    if (slotIdx < 0 || slotIdx >= 8) return;
+    const juce::String s = juce::String(slotIdx);
+    const int rootOverride = (int)getParamFloat("rootKey_" + s, -1.0f);
+    const int matMode = (int)getParamFloat("analysisEngine", 0.0f);
+
+    samplerEngine.getSlot(slotIdx).reanalyze(matMode, rootOverride);
 }
 
 juce::AudioProcessorEditor* PicoSamplerAudioProcessor::createEditor()
@@ -229,21 +178,18 @@ juce::AudioProcessorEditor* PicoSamplerAudioProcessor::createEditor()
 void PicoSamplerAudioProcessor::getStateInformation(juce::MemoryBlock& destData)
 {
     auto state = apvts.copyState();
-    std::unique_ptr<juce::XmlElement> xml(state.createXml());
 
-    if (xml != nullptr)
+    juce::ValueTree slotsTree("LoadedSlots");
+    for (int i = 0; i < 8; ++i)
     {
-        auto* slotsXml = xml->createNewChildElement("SAMPLE_SLOTS");
-        for (int i = 0; i < 8; ++i)
-        {
-            const auto& meta = samplerEngine.getSlot(i).getMetadata();
-            auto* sXml = slotsXml->createNewChildElement("SLOT");
-            sXml->setAttribute("index", i);
-            sXml->setAttribute("filePath", meta.filePath);
-            sXml->setAttribute("rootKey", meta.rootKey);
-        }
+        juce::ValueTree sTree("Slot");
+        sTree.setProperty("index", i, nullptr);
+        sTree.setProperty("path", samplerEngine.getSlot(i).getMetadata().filePath, nullptr);
+        slotsTree.addChild(sTree, -1, nullptr);
     }
+    state.addChild(slotsTree, -1, nullptr);
 
+    std::unique_ptr<juce::XmlElement> xml(state.createXml());
     copyXmlToBinary(*xml, destData);
 }
 
@@ -254,19 +200,23 @@ void PicoSamplerAudioProcessor::setStateInformation(const void* data, int sizeIn
     {
         apvts.replaceState(juce::ValueTree::fromXml(*xmlState));
 
-        if (auto* slotsXml = xmlState->getChildByName("SAMPLE_SLOTS"))
+        auto slotsTree = apvts.state.getChildWithName("LoadedSlots");
+        if (slotsTree.isValid())
         {
-            for (auto* sXml : slotsXml->getChildIterator())
-            {
-                const int idx = sXml->getIntAttribute("index", -1);
-                const juce::String path = sXml->getStringAttribute("filePath");
+            const juce::ScopedLock lock(jobLock);
+            pendingJobs.clear();
 
-                if (idx >= 0 && idx < 8 && path.isNotEmpty())
+            for (int i = 0; i < slotsTree.getNumChildren(); ++i)
+            {
+                auto sTree = slotsTree.getChild(i);
+                int idx = sTree.getProperty("index");
+                juce::String path = sTree.getProperty("path");
+
+                if (path.isNotEmpty())
                 {
                     juce::File file(path);
                     if (file.existsAsFile())
                     {
-                        const juce::ScopedLock lock(jobLock);
                         pendingJobs.add({ idx, file });
                     }
                 }
