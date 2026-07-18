@@ -1,6 +1,6 @@
 // ==========================================
 // File: Arpeggiator.cpp
-// 13パターン アルペジエイター実装 (Offset ＆ スケール量子化完全連携)
+// 13パターン アルペジエイター実装 (堅牢化 ＆ バグ完全撃滅版)
 // ==========================================
 #include "Arpeggiator.h"
 
@@ -25,13 +25,25 @@ void Arpeggiator::reset() noexcept
 
 void Arpeggiator::process(juce::MidiBuffer& midi, int numSamples, const Params& p) noexcept
 {
-    // アンプ減衰中の出力ノートのサンプルカウントを進める
+    if (!p.enable)
+    {
+        reset();
+        return;
+    }
+
+    // 1. 入力MIDI (ユーザーの鍵盤押下・離鍵) をまず解析
+    juce::MidiBuffer incomingMidi = midi;
+    midi.clear(); // ユーザーの原音MIDIを出力から消去し、Arpノートに差し替える
+
+    handleIncomingMidi(incomingMidi, p.latch);
+
+    // 2. アクティブ出力ノートのゲート長を減衰カウントダウン
     for (auto it = activeOutputs.begin(); it != activeOutputs.end();)
     {
         it->samplesRemaining -= numSamples;
         if (it->samplesRemaining <= 0)
         {
-            midi.addEvent(juce::MidiMessage::noteOff(1, it->noteNumber, 0.0f), numSamples - 1);
+            midi.addEvent(juce::MidiMessage::noteOff(1, it->noteNumber, 0.0f), std::max(0, numSamples - 1));
             it = activeOutputs.erase(it);
         }
         else
@@ -40,15 +52,7 @@ void Arpeggiator::process(juce::MidiBuffer& midi, int numSamples, const Params& 
         }
     }
 
-    if (!p.enable)
-    {
-        reset();
-        return;
-    }
-
-    handleIncomingMidi(midi, p.latch);
-    midi.clear(); // アルペジオ出力ノートで全置き換え
-
+    // 3. 発音対象ノートの確認
     const auto& sourceNotes = p.latch && heldNotes.empty() ? latchedNotes : heldNotes;
 
     if (sourceNotes.empty())
@@ -60,6 +64,7 @@ void Arpeggiator::process(juce::MidiBuffer& midi, int numSamples, const Params& 
         return;
     }
 
+    // 4. アルペジオシーケンスのビルド
     rebuildSequence(p.pattern, p.octaves, p.offset, p.key, p.scale);
     if (playSequence.empty()) return;
 
@@ -97,7 +102,8 @@ void Arpeggiator::process(juce::MidiBuffer& midi, int numSamples, const Params& 
                 else if (p.pattern == RandomWalk)
                 {
                     int step = rng.nextBool() ? 1 : -1;
-                    walkIndex = juce::jlimit(0, (int)playSequence.size() - 1, walkIndex + step);
+                    const int maxIdx = std::max(0, (int)playSequence.size() - 1);
+                    walkIndex = juce::jlimit(0, maxIdx, walkIndex + step);
                     sequenceIndex = (size_t)walkIndex;
                 }
                 else
@@ -124,6 +130,12 @@ void Arpeggiator::handleIncomingMidi(const juce::MidiBuffer& midi, bool latch) n
         {
             const int note = msg.getNoteNumber();
             const float vel = msg.getFloatVelocity();
+
+            // 全ての鍵盤を離した後に新しく弾いた場合、Latchバッファを自動リセット
+            if (latch && wasEmpty)
+            {
+                latchedNotes.clear();
+            }
 
             auto it = std::find_if(heldNotes.begin(), heldNotes.end(),
                                    [note](const NoteInfo& n) { return n.noteNumber == note; });
@@ -158,10 +170,12 @@ void Arpeggiator::handleIncomingMidi(const juce::MidiBuffer& midi, bool latch) n
         }
     }
 
+    // 鍵盤が押された瞬間に即時0サンプル遅延でスタート
     if (wasEmpty && !heldNotes.empty())
     {
         stepSampleCounter = 0;
         sequenceIndex = 0;
+        walkIndex = 0;
     }
 }
 
@@ -199,6 +213,8 @@ void Arpeggiator::rebuildSequence(int pattern, int octaves, int offset, int key,
 
     if (playSequence.empty()) return;
 
+    const int seqSize = (int)playSequence.size();
+
     if (pattern == Down)
     {
         std::reverse(playSequence.begin(), playSequence.end());
@@ -206,48 +222,76 @@ void Arpeggiator::rebuildSequence(int pattern, int octaves, int offset, int key,
     else if (pattern == UpDown)
     {
         auto copy = playSequence;
-        if (copy.size() > 2)
+        if (seqSize > 2)
         {
-            for (size_t i = copy.size() - 2; i > 0; --i)
-                playSequence.push_back(copy[i]);
+            for (int i = seqSize - 2; i > 0; --i)
+                playSequence.push_back(copy[(size_t)i]);
         }
     }
     else if (pattern == DownUp)
     {
         std::reverse(playSequence.begin(), playSequence.end());
         auto copy = playSequence;
-        if (copy.size() > 2)
+        if (seqSize > 2)
         {
-            for (size_t i = copy.size() - 2; i > 0; --i)
-                playSequence.push_back(copy[i]);
+            for (int i = seqSize - 2; i > 0; --i)
+                playSequence.push_back(copy[(size_t)i]);
         }
     }
     else if (pattern == Converge)
     {
         std::vector<NoteInfo> conv;
-        size_t left = 0, right = playSequence.size() - 1;
+        int left = 0, right = seqSize - 1;
         while (left <= right)
         {
-            conv.push_back(playSequence[left++]);
-            if (left <= right) conv.push_back(playSequence[right--]);
+            conv.push_back(playSequence[(size_t)left++]);
+            if (left <= right) conv.push_back(playSequence[(size_t)right--]);
         }
         playSequence = conv;
     }
     else if (pattern == Diverge)
     {
         std::vector<NoteInfo> div;
-        size_t mid = playSequence.size() / 2;
-        size_t left = mid, right = mid + 1;
-        while (left < playSequence.size() || right < playSequence.size())
+        int mid = seqSize / 2;
+        int left = mid, right = mid + 1;
+        while (left >= 0 || right < seqSize)
         {
-            if (left < playSequence.size()) div.push_back(playSequence[left--]);
-            if (right < playSequence.size()) div.push_back(playSequence[right++]);
+            if (left >= 0) div.push_back(playSequence[(size_t)left--]);
+            if (right < seqSize) div.push_back(playSequence[(size_t)right++]);
         }
         playSequence = div;
     }
+    else if (pattern == PedalLow)
+    {
+        if (seqSize > 1)
+        {
+            const auto pedal = playSequence[0];
+            std::vector<NoteInfo> ped;
+            for (size_t i = 1; i < playSequence.size(); ++i)
+            {
+                ped.push_back(pedal);
+                ped.push_back(playSequence[i]);
+            }
+            playSequence = ped;
+        }
+    }
+    else if (pattern == PedalHigh)
+    {
+        if (seqSize > 1)
+        {
+            const auto pedal = playSequence.back();
+            std::vector<NoteInfo> ped;
+            for (size_t i = 0; i < playSequence.size() - 1; ++i)
+            {
+                ped.push_back(playSequence[i]);
+                ped.push_back(pedal);
+            }
+            playSequence = ped;
+        }
+    }
 }
 
-int Arpeggiator::calculateStepSamples(const Params& p, int numSamples) const noexcept
+int Arpeggiator::calculateStepSamples(const Params& p, int) const noexcept
 {
     static const double beatsTable[13] = {
         4.0, 2.0, 4.0 / 3.0, 1.0, 1.5, 2.0 / 3.0,
