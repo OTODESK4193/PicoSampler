@@ -1,6 +1,6 @@
 // ==========================================
 // File: PluginProcessor.cpp
-// PicoSampler メインプロセッサ実装 (KeyRangeパラメータ伝達対応)
+// PicoSampler メインプロセッサ実装 (DAWプロジェクト完全保存復元 & StretchMode対応)
 // ==========================================
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
@@ -52,6 +52,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout PicoSamplerAudioProcessor::c
         params.push_back(std::make_unique<juce::AudioParameterFloat>("loopLength_" + s, "Loop Length " + s, 0.01f, 1.0f, 0.5f));
         params.push_back(std::make_unique<juce::AudioParameterFloat>("crossfade_" + s, "Crossfade " + s, 0.0f, 0.5f, 0.05f));
         params.push_back(std::make_unique<juce::AudioParameterBool>("isLooping_" + s, "Looping " + s, false));
+        params.push_back(std::make_unique<juce::AudioParameterBool>("isStretchMode_" + s, "Stretch Mode " + s, false));
 
         params.push_back(std::make_unique<juce::AudioParameterInt>("slotLowNote_" + s, "Low Note " + s, 0, 127, 0));
         params.push_back(std::make_unique<juce::AudioParameterInt>("slotHighNote_" + s, "High Note " + s, 0, 127, 127));
@@ -183,6 +184,7 @@ void PicoSamplerAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
         sp.loopLengthRatio = apvts.getRawParameterValue("loopLength_" + s)->load();
         sp.crossfadeRatio = apvts.getRawParameterValue("crossfade_" + s)->load();
         sp.isLooping = apvts.getRawParameterValue("isLooping_" + s)->load() > 0.5f;
+        sp.isStretchMode = apvts.getRawParameterValue("isStretchMode_" + s)->load() > 0.5f;
         sp.lowNote = (int)apvts.getRawParameterValue("slotLowNote_" + s)->load();
         sp.highNote = (int)apvts.getRawParameterValue("slotHighNote_" + s)->load();
     }
@@ -212,6 +214,20 @@ void PicoSamplerAudioProcessor::getStateInformation(juce::MemoryBlock& destData)
 {
     auto state = apvts.copyState();
     std::unique_ptr<juce::XmlElement> xml(state.createXml());
+
+    if (xml != nullptr)
+    {
+        auto* slotsXml = xml->createNewChildElement("SAMPLE_SLOTS");
+        for (int i = 0; i < 8; ++i)
+        {
+            const auto& meta = samplerEngine.getSlot(i).getMetadata();
+            auto* sXml = slotsXml->createNewChildElement("SLOT");
+            sXml->setAttribute("index", i);
+            sXml->setAttribute("filePath", meta.filePath);
+            sXml->setAttribute("rootKey", meta.rootKey);
+        }
+    }
+
     copyXmlToBinary(*xml, destData);
 }
 
@@ -221,6 +237,26 @@ void PicoSamplerAudioProcessor::setStateInformation(const void* data, int sizeIn
     if (xmlState != nullptr && xmlState->hasTagName(apvts.state.getType()))
     {
         apvts.replaceState(juce::ValueTree::fromXml(*xmlState));
+
+        if (auto* slotsXml = xmlState->getChildByName("SAMPLE_SLOTS"))
+        {
+            for (auto* sXml : slotsXml->getChildIterator())
+            {
+                const int idx = sXml->getIntAttribute("index", -1);
+                const juce::String path = sXml->getStringAttribute("filePath");
+                const int rKey = sXml->getIntAttribute("rootKey", 60);
+
+                if (idx >= 0 && idx < 8 && path.isNotEmpty())
+                {
+                    juce::File file(path);
+                    if (file.existsAsFile())
+                    {
+                        const juce::ScopedLock lock(jobLock);
+                        pendingJobs.add({ idx, file });
+                    }
+                }
+            }
+        }
     }
 }
 

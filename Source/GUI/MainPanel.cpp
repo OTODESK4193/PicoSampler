@@ -1,6 +1,6 @@
 // ==========================================
 // File: MainPanel.cpp
-// MainPanel 実装 (Granular完全準拠 ＆ 見切れゼロ配置)
+// MainPanel 実装 (ADSR LINKダイアログ ＆ LOOP/STRETCH対応)
 // ==========================================
 #include "MainPanel.h"
 
@@ -27,7 +27,76 @@ MainPanel::MainPanel(juce::AudioProcessorValueTreeState& apvts) : vts(apvts)
     addAndMakeVisible(btnLayer);
     addAndMakeVisible(btnRandom);
 
-    // Master ノブを常時バインド
+    addAndMakeVisible(btnLoop);
+    addAndMakeVisible(btnStretch);
+
+    // ADSR Link Button
+    addAndMakeVisible(btnLinkEnv);
+    btnLinkEnv.onClick = [this] {
+        if (!isEnvLinked)
+        {
+            // 非リンク→リンクへの切り替え時に確認ダイアログを表示
+            juce::AlertWindow::showOkCancelBox(
+                juce::MessageBoxIconType::QuestionIcon,
+                "Link ADSR Envelopes",
+                "SLOT1のADSR設定が他の全てのSlotに上書きコピーされますが、よろしいですか？",
+                "Yes", "No", this,
+                juce::ModalCallbackFunction::create([this](int result) {
+                    if (result == 1) // Yes
+                    {
+                        isEnvLinked = true;
+                        btnLinkEnv.setToggleState(true, juce::dontSendNotification);
+
+                        // Slot 1 の ADSR を他 7 スロットにコピー
+                        const float a = vts.getRawParameterValue("attack_0")->load();
+                        const float d = vts.getRawParameterValue("decay_0")->load();
+                        const float s = vts.getRawParameterValue("sustain_0")->load();
+                        const float r = vts.getRawParameterValue("release_0")->load();
+
+                        for (int k = 1; k < 8; ++k)
+                        {
+                            const juce::String strKey = juce::String(k);
+                            if (auto* p = vts.getParameter("attack_" + strKey)) p->setValueNotifyingHost(a / 5.0f);
+                            if (auto* p = vts.getParameter("decay_" + strKey)) p->setValueNotifyingHost(d / 5.0f);
+                            if (auto* p = vts.getParameter("sustain_" + strKey)) p->setValueNotifyingHost(s);
+                            if (auto* p = vts.getParameter("release_" + strKey)) p->setValueNotifyingHost(r / 10.0f);
+                        }
+                    }
+                    else // No
+                    {
+                        btnLinkEnv.setToggleState(false, juce::dontSendNotification);
+                    }
+                })
+            );
+        }
+        else
+        {
+            isEnvLinked = false;
+            btnLinkEnv.setToggleState(false, juce::dontSendNotification);
+        }
+    };
+
+    // ADSR ノブ変更時の連動
+    auto setupEnvCallback = [this](LabeledKnob& lk, const juce::String& pBaseName, float maxVal) {
+        lk.knob.onValueChange = [this, pBaseName, &lk, maxVal] {
+            if (isEnvLinked)
+            {
+                const float normVal = (float)lk.knob.getValue() / maxVal;
+                for (int k = 0; k < 8; ++k)
+                {
+                    if (auto* p = vts.getParameter(pBaseName + "_" + juce::String(k)))
+                        p->setValueNotifyingHost(normVal);
+                }
+            }
+        };
+    };
+
+    setupEnvCallback(knobAttack,  "attack",  5.0f);
+    setupEnvCallback(knobDecay,   "decay",   5.0f);
+    setupEnvCallback(knobSustain, "sustain", 1.0f);
+    setupEnvCallback(knobRelease, "release", 10.0f);
+
+    // Master ノブ
     hpfAttach = std::make_unique<Attachment>(vts, "masterHPF", knobMasterHpf.knob);
     lpfAttach = std::make_unique<Attachment>(vts, "masterLPF", knobMasterLpf.knob);
     outGainAttach = std::make_unique<Attachment>(vts, "outGain", knobOutGain.knob);
@@ -61,6 +130,9 @@ void MainPanel::bindSlotParameters(int slotIdx)
     currentBoundSlot = slotIdx;
 
     attachments.clear();
+    loopAttach.reset();
+    stretchAttach.reset();
+
     const juce::String s = juce::String(slotIdx);
 
     auto bind = [this, &s](LabeledKnob& lk, const juce::String& pName) {
@@ -81,6 +153,9 @@ void MainPanel::bindSlotParameters(int slotIdx)
     bind(knobDecay,   "decay");
     bind(knobSustain, "sustain");
     bind(knobRelease, "release");
+
+    loopAttach = std::make_unique<ButtonAttach>(vts, "isLooping_" + s, btnLoop);
+    stretchAttach = std::make_unique<ButtonAttach>(vts, "isStretchMode_" + s, btnStretch);
 }
 
 void MainPanel::updateStates()
@@ -133,13 +208,13 @@ void MainPanel::paint(juce::Graphics& g)
 
 void MainPanel::resized()
 {
-    // Slot 1-8 Buttons (X=105..353, Y=10)
+    // Slot 1-8 Buttons
     for (int i = 0; i < 8; ++i)
     {
         btnSlots[(size_t)i].setBounds(105 + i * 31, 6, 28, 22);
     }
 
-    // Mode Buttons (X=500..635, Y=10)
+    // Mode Buttons
     btnSingle.setBounds(495, 6, 75, 22);
     btnLayer.setBounds(575, 6, 75, 22);
     btnRandom.setBounds(655, 6, 75, 22);
@@ -148,25 +223,30 @@ void MainPanel::resized()
     const int knobW = 60;
     const int knobH = 78;
 
-    // SAMPLE / LOOP (5ノブ, X=20..340)
-    knobSampleStart.setBounds(20 + 0 * 65, knobY, knobW, knobH);
-    knobSampleEnd.setBounds(20 + 1 * 65,   knobY, knobW, knobH);
-    knobLoopStart.setBounds(20 + 2 * 65,   knobY, knobW, knobH);
-    knobLoopLength.setBounds(20 + 3 * 65,  knobY, knobW, knobH);
-    knobCrossfade.setBounds(20 + 4 * 65,   knobY, knobW, knobH);
+    // SAMPLE / LOOP (5ノブ + LOOP / STRETCH ボタン)
+    knobSampleStart.setBounds(20 + 0 * 55, knobY, knobW, knobH);
+    knobSampleEnd.setBounds(20 + 1 * 55,   knobY, knobW, knobH);
+    knobLoopStart.setBounds(20 + 2 * 55,   knobY, knobW, knobH);
+    knobLoopLength.setBounds(20 + 3 * 55,  knobY, knobW, knobH);
+    knobCrossfade.setBounds(20 + 4 * 55,   knobY, knobW, knobH);
 
-    // PITCH (3ノブ, X=380..590)
+    btnLoop.setBounds(295, knobY + 6, 60, 24);
+    btnStretch.setBounds(295, knobY + 36, 60, 24);
+
+    // PITCH (3ノブ)
     knobOctave.setBounds(380 + 0 * 68,   knobY, knobW, knobH);
     knobSemitone.setBounds(380 + 1 * 68, knobY, knobW, knobH);
     knobFineTune.setBounds(380 + 2 * 68, knobY, knobW, knobH);
 
-    // ENVELOPE (4ノブ, X=610..880)
-    knobAttack.setBounds(610 + 0 * 66,  knobY, knobW, knobH);
-    knobDecay.setBounds(610 + 1 * 66,   knobY, knobW, knobH);
-    knobSustain.setBounds(610 + 2 * 66, knobY, knobW, knobH);
-    knobRelease.setBounds(610 + 3 * 66, knobY, knobW, knobH);
+    // ENVELOPE (4ノブ + LINK ボタン)
+    knobAttack.setBounds(610 + 0 * 52,  knobY, knobW, knobH);
+    knobDecay.setBounds(610 + 1 * 52,   knobY, knobW, knobH);
+    knobSustain.setBounds(610 + 2 * 52, knobY, knobW, knobH);
+    knobRelease.setBounds(610 + 3 * 52, knobY, knobW, knobH);
 
-    // MASTER (3ノブ, X=890..1060 <= 1080)
+    btnLinkEnv.setBounds(820, knobY + 20, 52, 24);
+
+    // MASTER (3ノブ)
     knobMasterHpf.setBounds(890 + 0 * 56, knobY, knobW, knobH);
     knobMasterLpf.setBounds(890 + 1 * 56, knobY, knobW, knobH);
     knobOutGain.setBounds(890 + 2 * 56,   knobY, knobW, knobH);

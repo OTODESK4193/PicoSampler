@@ -1,6 +1,6 @@
 // ==========================================
 // File: SamplerVoice.cpp
-// PicoVoice レンダリング実装 (発音レスポンス即時化 & アタックラグ解消)
+// PicoVoice レンダリング実装 (Repitch / StretchMode 分岐対応)
 // ==========================================
 #include "SamplerVoice.h"
 
@@ -28,7 +28,6 @@ void PicoVoice::startNote(int midiNoteNumber, float noteVelocity, int slotIdx,
     const int startSmp = (int)(bufLen * juce::jlimit(0.0f, 1.0f, p.sampleStartRatio));
     readPosition = (double)startSmp;
 
-    // アタックが極小 (<= 5ms) の場合は即座にフルボリューム発音
     if (p.attack <= 0.005f)
     {
         envStage = EnvStage::Decay;
@@ -77,15 +76,19 @@ void PicoVoice::renderNextBlock(juce::AudioBuffer<float>& outputBuffer, int star
     const int bufLen = buffer->getNumSamples();
     const int numCh = buffer->getNumChannels();
 
-    const int smpStart = (int)(bufLen * juce::jlimit(0.0f, 0.99f, p.sampleStartRatio));
     const int smpEnd   = (int)(bufLen * juce::jlimit(0.01f, 1.0f, p.sampleEndRatio));
     const int lpStart  = (int)(bufLen * juce::jlimit(0.0f, 0.99f, p.loopStartRatio));
     const int lpLen    = juce::jmax(64, (int)(bufLen * juce::jlimit(0.01f, 1.0f, p.loopLengthRatio)));
     const int lpEnd    = std::min(smpEnd, lpStart + lpLen);
     const int xfadeLen = juce::jmax(1, (int)(lpLen * juce::jlimit(0.0f, 0.5f, p.crossfadeRatio)));
 
-    const double pitchRatio = std::pow(2.0, (double)residualSemis / 12.0);
-    const double pitchInc = pitchRatio * (double)p.speed;
+    // 再生インクリメント: StretchMode 時はピッチに依らず時間不変 (1.0 * speed)
+    double pitchInc = (double)p.speed;
+    if (!p.isStretchMode)
+    {
+        const double pitchRatio = std::pow(2.0, (double)residualSemis / 12.0);
+        pitchInc *= pitchRatio;
+    }
 
     const float pan = juce::jlimit(-1.0f, 1.0f, p.pan);
     const float gainL = std::sqrt(0.5f * (1.0f - pan)) * velocity * juce::Decibels::decibelsToGain(p.slotGainDb);

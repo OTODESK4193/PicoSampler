@@ -1,6 +1,6 @@
 // ==========================================
 // File: PitchAnalyzer.cpp
-// インテリジェントピッチ・素材解析実装
+// インテリジェントピッチ・素材解析実装 (誤判定防止パース & DSP複合検証)
 // ==========================================
 #include "PitchAnalyzer.h"
 #include <cmath>
@@ -14,17 +14,9 @@ PitchAnalyzer::AnalysisResult PitchAnalyzer::analyzeOmni(const juce::AudioBuffer
     AnalysisResult res;
     if (buffer.getNumSamples() < 128 || sampleRate <= 0.0) return res;
 
-    // 1. ファイル名からの検出試行
+    // 1. 高精度ファイル名からの検出
     bool isMinor = false;
     int fileKey = parseKeyFromFileName(fileName, isMinor);
-    if (fileKey >= 0)
-    {
-        res.rootNote = fileKey;
-        res.confidence = 0.95f;
-        res.detectedKeyStr = juce::MidiMessage::getMidiNoteName(fileKey, true, true, 4);
-        res.isMinor = isMinor;
-        return res;
-    }
 
     // 2. モノラルミックスバッファの作成
     const int numSamples = buffer.getNumSamples();
@@ -36,28 +28,23 @@ PitchAnalyzer::AnalysisResult PitchAnalyzer::analyzeOmni(const juce::AudioBuffer
         for (int i = 0; i < numSamples; ++i) mono[(size_t)i] += r[i] / (float)numCh;
     }
 
-    // 3. ルート判定と処理ルートの選択
+    // 3. DSP による実測ピッチ検出
     float detectedHz = 0.0f;
     const juce::String lowerName = fileName.toLowerCase();
 
     bool isKick = lowerName.contains("kick") || lowerName.contains("bd");
-    bool isHat  = lowerName.contains("hat") || lowerName.contains("cymbal") || lowerName.contains("snare") || lowerName.contains("top");
     bool isLoop = lowerName.contains("loop");
 
     if (materialMode == Crisp || isKick)
     {
         detectedHz = analyzePitchKickFFT(mono.data(), numSamples, sampleRate);
     }
-    else if (isHat)
-    {
-        detectedHz = analyzePitchHatCym(mono.data(), numSamples, sampleRate);
-    }
     else if (materialMode == Smooth || isLoop)
     {
-        const int subLen = std::min(numSamples, (int)(sampleRate * 0.3));
+        const int subLen = std::min(numSamples, (int)(sampleRate * 0.35));
         detectedHz = analyzePitch(mono.data(), subLen, sampleRate, 40.0f);
     }
-    else if (materialMode == Formant || lowerName.contains("bass") || lowerName.contains("piano"))
+    else if (materialMode == Formant || lowerName.contains("bass") || lowerName.contains("vocal") || lowerName.contains("voice"))
     {
         detectedHz = analyzePitchCepstrum(mono.data(), numSamples, sampleRate, 30.0f, 1500.0f);
     }
@@ -67,14 +54,47 @@ PitchAnalyzer::AnalysisResult PitchAnalyzer::analyzeOmni(const juce::AudioBuffer
         detectedHz = analyzePitch(mono.data(), numSamples, sampleRate, 40.0f);
     }
 
-    if (detectedHz > 0.0f)
+    float dspCents = 0.0f;
+    int dspKey = (detectedHz > 0.0f) ? (int)std::round(hzToMidiNote(detectedHz, dspCents)) : -1;
+
+    // 4. ファイル名解析と DSP 解析の相互一致チェック・優先順判定
+    if (fileKey >= 0)
     {
-        res.rootNote = (int)std::round(hzToMidiNote(detectedHz, res.centsOffset));
-        res.rootNote = juce::jlimit(0, 127, res.rootNote);
-        res.confidence = 0.8f;
-        res.detectedKeyStr = juce::MidiMessage::getMidiNoteName(res.rootNote, true, true, 4);
+        // ファイル名でキーが得られた場合
+        if (dspKey >= 0 && std::abs(dspKey - fileKey) <= 2)
+        {
+            // DSPと一致 → 超高信頼度
+            res.rootNote = fileKey;
+            res.centsOffset = dspCents;
+            res.confidence = 0.98f;
+            res.detectedKeyStr = juce::MidiMessage::getMidiNoteName(fileKey, true, true, 4);
+            res.isMinor = isMinor;
+            return res;
+        }
+        else
+        {
+            // DSPと誤差があってもファイル名を優先採用
+            res.rootNote = fileKey;
+            res.confidence = 0.85f;
+            res.detectedKeyStr = juce::MidiMessage::getMidiNoteName(fileKey, true, true, 4);
+            res.isMinor = isMinor;
+            return res;
+        }
     }
 
+    if (dspKey >= 0)
+    {
+        res.rootNote = juce::jlimit(0, 127, dspKey);
+        res.centsOffset = dspCents;
+        res.confidence = 0.75f;
+        res.detectedKeyStr = juce::MidiMessage::getMidiNoteName(res.rootNote, true, true, 4);
+        return res;
+    }
+
+    // 5. 判別不能
+    res.rootNote = -1;
+    res.confidence = 0.0f;
+    res.detectedKeyStr = "Unknown";
     return res;
 }
 
@@ -86,7 +106,6 @@ float PitchAnalyzer::analyzePitch(const float* samples, int numSamples, double s
     const int minLag = (int)(sampleRate / 1200.0f);
     if (maxLag >= numSamples) return 0.0f;
 
-    // パケット化された自己相関 (NSDF)
     float maxCorr = -1.0f;
     int bestLag = -1;
 
@@ -94,7 +113,7 @@ float PitchAnalyzer::analyzePitch(const float* samples, int numSamples, double s
     {
         float sum = 0.0f, energy1 = 0.0f, energy2 = 0.0f;
         const int len = numSamples - lag;
-        for (int i = 0; i < len; i += 2) // 2ステップスキップ高速化
+        for (int i = 0; i < len; i += 2)
         {
             const float s1 = samples[i];
             const float s2 = samples[i + lag];
@@ -107,7 +126,7 @@ float PitchAnalyzer::analyzePitch(const float* samples, int numSamples, double s
         if (norm > 1.0e-5f)
         {
             const float nsdf = (2.0f * sum) / norm;
-            if (nsdf > maxCorr && nsdf > 0.35f)
+            if (nsdf > maxCorr && nsdf > 0.40f)
             {
                 maxCorr = nsdf;
                 bestLag = lag;
@@ -117,7 +136,6 @@ float PitchAnalyzer::analyzePitch(const float* samples, int numSamples, double s
 
     if (bestLag <= 0) return 0.0f;
 
-    // 放物線補間による精密ラグ計算
     float interpLag = (float)bestLag;
     if (bestLag > minLag && bestLag < maxLag - 1)
     {
@@ -147,21 +165,15 @@ float PitchAnalyzer::analyzePitch(const float* samples, int numSamples, double s
 
 float PitchAnalyzer::analyzePitchCepstrum(const float* samples, int numSamples, double sampleRate, float minFreq, float maxFreq)
 {
-    // 簡略化された擬似ケプストラム (自己相関フォールバック)
+    juce::ignoreUnused(maxFreq);
     return analyzePitch(samples, numSamples, sampleRate, minFreq);
 }
 
 float PitchAnalyzer::analyzePitchKickFFT(const float* samples, int numSamples, double sampleRate)
 {
-    // アタック(先頭40ms)スキップ後のピーク分析
     const int skip = (int)(sampleRate * 0.04);
     if (numSamples <= skip + 512) return analyzePitch(samples, numSamples, sampleRate, 30.0f);
     return analyzePitch(samples + skip, numSamples - skip, sampleRate, 30.0f);
-}
-
-float PitchAnalyzer::analyzePitchHatCym(const float* samples, int numSamples, double sampleRate)
-{
-    return analyzePitch(samples, numSamples, sampleRate, 1000.0f);
 }
 
 int PitchAnalyzer::parseKeyFromFileName(const juce::String& fileName, bool& outIsMinor)
@@ -170,19 +182,20 @@ int PitchAnalyzer::parseKeyFromFileName(const juce::String& fileName, bool& outI
     if (fileName.isEmpty()) return -1;
 
     std::string str = fileName.toStdString();
-    std::regex keyRegex(R"((?:^|[\s_\-\(\)\[\]])([A-G][#b]?)(m|maj|min|minor|major)?(?:\_|\-|\s|\.|\d|\)))", std::regex::icase);
+
+    // 1. オクターブ番号付きパース (例: "A4", "C#3", "Db2", "F_sharp_4")
+    std::regex octKeyRegex(R"((?:^|[\s_\-\(\)\[\]])([A-G][#b]?)(-?\d)(m|maj|min|minor|major)?(?:\_|\-|\s|\.|\)|$))", std::regex::icase);
     std::smatch match;
 
-    if (std::regex_search(str, match, keyRegex))
+    if (std::regex_search(str, match, octKeyRegex))
     {
         std::string noteName = match[1].str();
-        std::string scaleType = match[2].str();
+        int octave = std::stoi(match[2].str());
+        std::string scaleType = match[3].str();
 
-        // ノート名の標準化
-        if (noteName.length() >= 1) noteName[0] = (char)std::toupper(noteName[0]);
+        if (!noteName.empty()) noteName[0] = (char)std::toupper(noteName[0]);
         if (noteName.length() >= 2 && noteName[1] == 'b')
         {
-            // Flat -> Sharp 変換
             switch (noteName[0]) {
                 case 'D': noteName = "C#"; break;
                 case 'E': noteName = "D#"; break;
@@ -193,18 +206,41 @@ int PitchAnalyzer::parseKeyFromFileName(const juce::String& fileName, bool& outI
         }
 
         static const std::vector<std::string> notes = { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" };
-        int noteIndex = -1;
         for (size_t i = 0; i < notes.size(); ++i) {
-            if (notes[i] == noteName) { noteIndex = (int)i; break; }
+            if (notes[i] == noteName) {
+                std::transform(scaleType.begin(), scaleType.end(), scaleType.begin(), ::tolower);
+                if (scaleType == "m" || scaleType == "min" || scaleType == "minor") outIsMinor = true;
+                return (octave + 1) * 12 + (int)i;
+            }
+        }
+    }
+
+    // 2. キー＋スケール型判定 (例: "Key_A_min", "G#_major", "B_minor") -> 単語内の "Amp" 等を排除
+    std::regex scaleKeyRegex(R"((?:^|[\s_\-\(\)\[\]])([A-G][#b]?)(m|maj|min|minor|major)(?:[\s_\-\(\)\[\]\.]|$))", std::regex::icase);
+    if (std::regex_search(str, match, scaleKeyRegex))
+    {
+        std::string noteName = match[1].str();
+        std::string scaleType = match[2].str();
+
+        if (!noteName.empty()) noteName[0] = (char)std::toupper(noteName[0]);
+        if (noteName.length() >= 2 && noteName[1] == 'b')
+        {
+            switch (noteName[0]) {
+                case 'D': noteName = "C#"; break;
+                case 'E': noteName = "D#"; break;
+                case 'G': noteName = "F#"; break;
+                case 'A': noteName = "G#"; break;
+                case 'B': noteName = "A#"; break;
+            }
         }
 
-        if (noteIndex >= 0)
-        {
-            std::transform(scaleType.begin(), scaleType.end(), scaleType.begin(), ::tolower);
-            if (scaleType == "m" || scaleType == "min" || scaleType == "minor") outIsMinor = true;
-
-            // デフォルト C4 (60) 周辺のオクターブにマッピング
-            return 60 + noteIndex;
+        static const std::vector<std::string> notes = { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" };
+        for (size_t i = 0; i < notes.size(); ++i) {
+            if (notes[i] == noteName) {
+                std::transform(scaleType.begin(), scaleType.end(), scaleType.begin(), ::tolower);
+                if (scaleType == "m" || scaleType == "min" || scaleType == "minor") outIsMinor = true;
+                return 60 + (int)i; // デフォルト C4 (60) 周辺に配置
+            }
         }
     }
 

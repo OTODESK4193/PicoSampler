@@ -1,6 +1,6 @@
 // ==========================================
 // File: SamplerVoice.h
-// 単一ボイス定義 (KeyRangeパラメータ付き)
+// 単一ボイス定義 (Repitch / StretchMode 対応)
 // ==========================================
 #pragma once
 
@@ -28,6 +28,7 @@ struct SamplerVoiceParams
     float loopLengthRatio = 0.5f;
     float crossfadeRatio = 0.05f;
     bool isLooping = false;
+    bool isStretchMode = false; // true: TimeStretch, false: Repitch
 
     int lowNote = 0;
     int highNote = 127;

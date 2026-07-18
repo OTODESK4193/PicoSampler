@@ -1,6 +1,6 @@
 // ==========================================
 // File: MainPanel.h
-// メイン操作パネル (Granularスタイル完全準拠)
+// メイン操作パネル (LOOP / STRETCH モード ＆ ADSR LINK ボタン対応)
 // ==========================================
 #pragma once
 
@@ -55,7 +55,15 @@ private:
     juce::TextButton btnLayer  { "LAYER" };
     juce::TextButton btnRandom { "RANDOM" };
 
-    // Labeled Knobs (Granularパステルアクセントカラー適用)
+    // Loop & Stretch Toggles
+    GlowToggle btnLoop    { "LOOP" };
+    GlowToggle btnStretch { "STRETCH" };
+
+    // ADSR Link Toggle
+    GlowToggle btnLinkEnv { "LINK" };
+    bool isEnvLinked = false;
+
+    // Labeled Knobs
     LabeledKnob knobSampleStart { "Start",   PicoColors::peach };
     LabeledKnob knobSampleEnd   { "End",     PicoColors::peach };
     LabeledKnob knobLoopStart   { "L-Start", PicoColors::peach };
@@ -78,8 +86,15 @@ private:
     int currentBoundSlot = -1;
 
     using Attachment = juce::AudioProcessorValueTreeState::SliderAttachment;
+    using ButtonAttach = juce::AudioProcessorValueTreeState::ButtonAttachment;
+
     std::vector<std::unique_ptr<Attachment>> attachments;
+    std::unique_ptr<ButtonAttach> loopAttach;
+    std::unique_ptr<ButtonAttach> stretchAttach;
+
     std::unique_ptr<Attachment> outGainAttach;
     std::unique_ptr<Attachment> hpfAttach;
     std::unique_ptr<Attachment> lpfAttach;
+
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MainPanel)
 };
