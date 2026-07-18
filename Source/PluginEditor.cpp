@@ -197,6 +197,7 @@ void PicoSamplerAudioProcessorEditor::timerCallback()
 
     const int activeIdx = (int)pActive->load();
     waveDisplay.setSampleSlot(&audioProcessor.getSamplerEngine().getSlot(activeIdx));
+    waveDisplay.setModMatrix(&audioProcessor.getModMatrix());
     waveDisplay.setActiveSlotIndex(activeIdx);
 
     mainPanel.updateStates();

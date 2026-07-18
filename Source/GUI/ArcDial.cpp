@@ -33,17 +33,23 @@ void ArcDialLookAndFeel::drawRotarySlider(juce::Graphics& g, int x, int y, int w
     g.strokePath(trackPath, juce::PathStrokeType(4.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
 
     // 2. MOD変調レンジ帯 (プロパティから取得)
-    if (slider.getProperties().contains("mod_min") && slider.getProperties().contains("mod_max"))
+    const auto& props = slider.getProperties();
+    const bool modActive = props.getWithDefault("mod_active", false);
+
+    if (modActive && props.contains("mod_min") && props.contains("mod_max"))
     {
-        const float modMin = (float)slider.getProperties()["mod_min"];
-        const float modMax = (float)slider.getProperties()["mod_max"];
+        const float modMin = (float)props["mod_min"];
+        const float modMax = (float)props["mod_max"];
         const float aMin = rotaryStartAngle + juce::jlimit(0.0f, 1.0f, modMin) * (rotaryEndAngle - rotaryStartAngle);
         const float aMax = rotaryStartAngle + juce::jlimit(0.0f, 1.0f, modMax) * (rotaryEndAngle - rotaryStartAngle);
 
-        juce::Path modArc;
-        modArc.addCentredArc(centreX, centreY, radius, radius, 0.0f, aMin, aMax, true);
-        g.setColour(juce::Colours::white.withAlpha(0.3f));
-        g.strokePath(modArc, juce::PathStrokeType(6.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+        if (std::abs(aMax - aMin) > 0.001f)
+        {
+            juce::Path modArc;
+            modArc.addCentredArc(centreX, centreY, radius, radius, 0.0f, aMin, aMax, true);
+            g.setColour(juce::Colours::white.withAlpha(0.35f));
+            g.strokePath(modArc, juce::PathStrokeType(6.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+        }
     }
 
     // 3. 値アーク
@@ -60,15 +66,17 @@ void ArcDialLookAndFeel::drawRotarySlider(juce::Graphics& g, int x, int y, int w
     g.fillPath(p, juce::AffineTransform::rotation(angle).translated(centreX, centreY));
 
     // 5. ライブ変調ドット
-    if (slider.getProperties().contains("mod_active"))
+    if (modActive && props.contains("mod_live"))
     {
-        const float modActive = (float)slider.getProperties()["mod_active"];
-        const float aAct = rotaryStartAngle + juce::jlimit(0.0f, 1.0f, modActive) * (rotaryEndAngle - rotaryStartAngle);
+        const float liveVal = (float)props["mod_live"];
+        const float aAct = rotaryStartAngle + juce::jlimit(0.0f, 1.0f, liveVal) * (rotaryEndAngle - rotaryStartAngle);
         const float dotX = centreX + radius * std::sin(aAct);
         const float dotY = centreY - radius * std::cos(aAct);
 
+        g.setColour(juce::Colours::white.withAlpha(0.4f));
+        g.fillEllipse(dotX - 5.0f, dotY - 5.0f, 10.0f, 10.0f);
         g.setColour(juce::Colours::white);
-        g.fillEllipse(dotX - 3.0f, dotY - 3.0f, 6.0f, 6.0f);
+        g.fillEllipse(dotX - 2.5f, dotY - 2.5f, 5.0f, 5.0f);
     }
 }
 

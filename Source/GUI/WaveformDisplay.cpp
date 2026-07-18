@@ -115,32 +115,67 @@ void WaveformDisplay::paint(juce::Graphics& g)
     float crossfade  = getParamFloat("crossfade_" + s, 0.05f);
     bool isLooping   = getParamFloat("isLooping_" + s, 0.0f) > 0.5f;
 
+    // ModMatrix の変調値を取得
+    const int dstBase = ModMatrix::DstS1Start + activeSlot * 5;
+    const float modStart = modMatrix ? modMatrix->get(dstBase + 0) : 0.0f;
+    const float modEnd   = modMatrix ? modMatrix->get(dstBase + 1) : 0.0f;
+    const float modLStart= modMatrix ? modMatrix->get(dstBase + 2) : 0.0f;
+    const float modLEnd  = modMatrix ? modMatrix->get(dstBase + 3) : 0.0f;
+    const float modXFade = modMatrix ? modMatrix->get(dstBase + 4) : 0.0f;
+
+    // 変調反映後の動的比率 (リアルタイム位置)
+    const float liveStartRatio = juce::jlimit(0.0f, 1.0f, startRatio + modStart);
+    const float liveEndRatio   = juce::jlimit(0.01f, 1.0f, endRatio + modEnd);
+    const float liveLStart     = juce::jlimit(0.0f, 1.0f, loopStart + modLStart);
+    const float liveLEnd       = juce::jlimit(0.01f, 1.0f, loopEnd + modLEnd);
+    const float liveXFade      = juce::jlimit(0.0f, 0.5f, crossfade + modXFade);
+
     const float sX = startRatio * w;
     const float eX = endRatio * w;
+    const float liveSX = liveStartRatio * w;
+    const float liveEX = liveEndRatio * w;
 
-    g.setColour(juce::Colours::yellow);
-    g.drawLine(sX, 0.0f, sX, h, 2.0f);
-
+    // 静的ベース Start マーカー
+    g.setColour(juce::Colours::yellow.withAlpha(0.6f));
+    g.drawLine(sX, 0.0f, sX, h, 1.5f);
     juce::Path triS;
     triS.addTriangle(sX, 0.0f, sX + 6.0f, 0.0f, sX, 8.0f);
     g.fillPath(triS);
 
-    g.setColour(juce::Colours::orange);
-    g.drawLine(eX, 0.0f, eX, h, 2.0f);
+    // 変調適用リアルタイム Start マーカー (動的白/黄ライン)
+    if (std::abs(modStart) > 0.001f)
+    {
+        g.setColour(juce::Colours::yellow);
+        g.drawLine(liveSX, 0.0f, liveSX, h, 2.5f);
+        g.setColour(juce::Colours::white.withAlpha(0.5f));
+        g.fillRect(std::min(sX, liveSX), h * 0.5f - 1.0f, std::abs(liveSX - sX), 2.0f);
+    }
 
+    // 静的ベース End マーカー
+    g.setColour(juce::Colours::orange.withAlpha(0.6f));
+    g.drawLine(eX, 0.0f, eX, h, 1.5f);
     juce::Path triE;
     triE.addTriangle(eX, 0.0f, eX - 6.0f, 0.0f, eX, 8.0f);
     g.fillPath(triE);
+
+    // 変調適用リアルタイム End マーカー
+    if (std::abs(modEnd) > 0.001f)
+    {
+        g.setColour(juce::Colours::orange);
+        g.drawLine(liveEX, 0.0f, liveEX, h, 2.5f);
+        g.setColour(juce::Colours::white.withAlpha(0.5f));
+        g.fillRect(std::min(eX, liveEX), h * 0.5f - 1.0f, std::abs(liveEX - eX), 2.0f);
+    }
 
     if (isLooping)
     {
         const float lpMarginY = h * 0.175f;
         const float lpH       = h * 0.65f;
 
-        const float lsX = loopStart * w;
-        const float leX = loopEnd * w;
-        const float lpLenR = loopEnd - loopStart;
-        const float xfW = (crossfade * lpLenR) * w;
+        const float lsX = liveLStart * w;
+        const float leX = liveLEnd * w;
+        const float lpLenR = liveLEnd - liveLStart;
+        const float xfW = (liveXFade * lpLenR) * w;
         const float xfX = leX - xfW;
 
         // X-Fade フェードオーバーラップ領域をグラデーション描画

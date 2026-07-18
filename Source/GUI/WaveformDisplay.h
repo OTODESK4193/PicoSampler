@@ -5,6 +5,7 @@
 #pragma once
 
 #include <JuceHeader.h>
+#include "../DSP/ModMatrix.h"
 #include "../DSP/SampleSlot.h"
 #include "../DSP/SampleVisualizerData.h"
 #include "ColorPalette.h"
@@ -24,6 +25,7 @@ public:
     void setVisualizerData(SampleVisualizerData* data) { visualizerData = data; }
     void setActiveSlotIndex(int idx) { activeSlot = idx; }
     void setAPVTS(juce::AudioProcessorValueTreeState* state) { vts = state; }
+    void setModMatrix(const ModMatrix* mod) { modMatrix = mod; }
 
     std::function<void(const juce::File& file)> onFileDropped;
 
@@ -43,6 +45,7 @@ private:
     const SampleSlot* currentSlot = nullptr;
     SampleVisualizerData* visualizerData = nullptr;
     juce::AudioProcessorValueTreeState* vts = nullptr;
+    const ModMatrix* modMatrix = nullptr;
     int activeSlot = 0;
 
     enum class DragTarget { None, SampleStart, SampleEnd, LoopStart, LoopEnd };

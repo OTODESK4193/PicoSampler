@@ -300,11 +300,6 @@ void PicoSamplerAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
     arpParams.swing      = juce::jlimit(0.0f, 0.75f, arpParams.swing + modMatrix.get(ModMatrix::DstArpSwing));
     arpParams.gatePct    = juce::jlimit(0.1f, 1.0f, arpParams.gatePct + modMatrix.get(ModMatrix::DstArpGate));
 
-    if (arpParams.enable)
-        samplerEngine.handleMidi(processedMidi, engineParams);
-    else
-        samplerEngine.handleMidi(midiMessages, engineParams);
-
     // 3. サンプラーエンジンパラメータ構築 (Mod変調含む)
     const float rawMasterPitch = getParamFloat("masterPitch", 0.0f) + modMatrix.get(ModMatrix::DstMasterPitch) * 24.0f;
     const int keyVal = (int)getParamFloat("key", 0.0f);
@@ -347,6 +342,11 @@ void PicoSamplerAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
         sp.lowNote = (int)getParamFloat("slotLowNote_" + s, 0.0f);
         sp.highNote = (int)getParamFloat("slotHighNote_" + s, 127.0f);
     }
+
+    if (arpParams.enable)
+        samplerEngine.handleMidi(processedMidi, engineParams);
+    else
+        samplerEngine.handleMidi(midiMessages, engineParams);
 
     // Filter ADSR トリガー制御
     const auto& activeMidi = arpParams.enable ? processedMidi : midiMessages;
