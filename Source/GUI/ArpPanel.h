@@ -80,6 +80,13 @@ private:
     LabeledKnob knobFilterFormant { "Formant", PicoColors::peach };
     LabeledKnob knobFilterCombMix { "Comb Mix",PicoColors::peach };
 
+    // --- FILTER ENVELOPE ---
+    LabeledKnob knobFltEnvA   { "Attack",  PicoColors::babyBlue };
+    LabeledKnob knobFltEnvD   { "Decay",   PicoColors::babyBlue };
+    LabeledKnob knobFltEnvS   { "Sustain", PicoColors::babyBlue };
+    LabeledKnob knobFltEnvR   { "Release", PicoColors::babyBlue };
+    LabeledKnob knobFltEnvAmt { "Amt",     PicoColors::pink };
+
     FilterCurveComponent filterCurveComp;
 
     using Attachment = juce::AudioProcessorValueTreeState::SliderAttachment;

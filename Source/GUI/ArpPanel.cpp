@@ -110,6 +110,25 @@ ArpPanel::ArpPanel(juce::AudioProcessorValueTreeState& apvts) : vts(apvts)
     attachments.push_back(std::make_unique<Attachment>(vts, "fltFormant", knobFilterFormant.knob));
     attachments.push_back(std::make_unique<Attachment>(vts, "fltCombMix", knobFilterCombMix.knob));
 
+    // --- 3. FILTER ENVELOPE アタッチメント ---
+    knobFltEnvA.knob.setDoubleClickReturnValue(true, 0.01);
+    knobFltEnvD.knob.setDoubleClickReturnValue(true, 0.3);
+    knobFltEnvS.knob.setDoubleClickReturnValue(true, 1.0);
+    knobFltEnvR.knob.setDoubleClickReturnValue(true, 0.3);
+    knobFltEnvAmt.knob.setDoubleClickReturnValue(true, 0.0);
+
+    addAndMakeVisible(knobFltEnvA);
+    addAndMakeVisible(knobFltEnvD);
+    addAndMakeVisible(knobFltEnvS);
+    addAndMakeVisible(knobFltEnvR);
+    addAndMakeVisible(knobFltEnvAmt);
+
+    attachments.push_back(std::make_unique<Attachment>(vts, "fltEnvAttack",  knobFltEnvA.knob));
+    attachments.push_back(std::make_unique<Attachment>(vts, "fltEnvDecay",   knobFltEnvD.knob));
+    attachments.push_back(std::make_unique<Attachment>(vts, "fltEnvSustain", knobFltEnvS.knob));
+    attachments.push_back(std::make_unique<Attachment>(vts, "fltEnvRelease", knobFltEnvR.knob));
+    attachments.push_back(std::make_unique<Attachment>(vts, "fltEnvAmt",     knobFltEnvAmt.knob));
+
     addAndMakeVisible(filterCurveComp);
     updateFilterUIState();
 }
@@ -190,7 +209,8 @@ void ArpPanel::paint(juce::Graphics& g)
 
     drawSectionHeader("ARPEGGIATOR SETTINGS", 20, 8, 480, PicoColors::lavender);
     drawSectionHeader("SCALE QUANTIZER",     520, 8, 300, PicoColors::mint);
-    drawSectionHeader("MAIN FILTER (CleanSVF / Vowel / Comb)", 20, 148, 1040, PicoColors::mint);
+    drawSectionHeader("MAIN FILTER (CleanSVF / Vowel / Comb)", 20, 148, 430, PicoColors::mint);
+    drawSectionHeader("FILTER ENVELOPE", 470, 248, 300, PicoColors::babyBlue);
 }
 
 void ArpPanel::resized()
@@ -217,17 +237,30 @@ void ArpPanel::resized()
     comboKey.setBounds(520, 30, 110, 26);
     comboScale.setBounds(638, 30, 180, 26);
 
-    // --- FILTER セクション ---
-    btnFilterEnable.setBounds(20, 172, 90, 26);
-    comboFilterModel.setBounds(118, 172, 115, 26);
-    comboFilterType.setBounds(241, 172, 110, 26);
-    comboFilterSlope.setBounds(359, 172, 90, 26);
+    // --- FILTER セクション (左: コンボ+カーブ / 右: ノブ類) ---
+    // 左側: コンボボックス
+    btnFilterEnable.setBounds(20,  172, 85, 26);
+    comboFilterModel.setBounds(111, 172, 110, 26);
+    comboFilterType.setBounds(227,  172, 100, 26);
+    comboFilterSlope.setBounds(333, 172, 85, 26);
 
-    const int fltKnobY = 206;
-    knobFilterCutoff.setBounds(20,  fltKnobY, 58, knobH);
-    knobFilterRes.setBounds(84,  fltKnobY, 58, knobH);
-    knobFilterFormant.setBounds(148, fltKnobY, 58, knobH);
-    knobFilterCombMix.setBounds(212, fltKnobY, 58, knobH);
+    // 左側: フィルターカーブ表示 (縦幅拡大)
+    filterCurveComp.setBounds(20, 206, 420, 128);
 
-    filterCurveComp.setBounds(460, 172, 600, 110);
+    // 右側上段: フィルターパラメータノブ
+    const int fltKnobY = 170;
+    const int fltKnobW = 58;
+    knobFilterCutoff.setBounds(470,   fltKnobY, fltKnobW, knobH);
+    knobFilterRes.setBounds(536,      fltKnobY, fltKnobW, knobH);
+    knobFilterFormant.setBounds(602,  fltKnobY, fltKnobW, knobH);
+    knobFilterCombMix.setBounds(668,  fltKnobY, fltKnobW, knobH);
+
+    // 右側下段: フィルターエンベロープノブ
+    const int fltEnvY = 268;
+    const int fltEnvW = 55;
+    knobFltEnvA.setBounds(470,    fltEnvY, fltEnvW, knobH);
+    knobFltEnvD.setBounds(530,    fltEnvY, fltEnvW, knobH);
+    knobFltEnvS.setBounds(590,    fltEnvY, fltEnvW, knobH);
+    knobFltEnvR.setBounds(650,    fltEnvY, fltEnvW, knobH);
+    knobFltEnvAmt.setBounds(710,  fltEnvY, fltEnvW, knobH);
 }

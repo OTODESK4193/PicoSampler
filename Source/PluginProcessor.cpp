@@ -111,6 +111,13 @@ juce::AudioProcessorValueTreeState::ParameterLayout PicoSamplerAudioProcessor::c
     params.push_back(std::make_unique<juce::AudioParameterFloat>("fltFormant", "Filter Formant", 0.0f, 1.0f, 0.0f));
     params.push_back(std::make_unique<juce::AudioParameterFloat>("fltCombMix", "Filter Comb Mix", 0.0f, 1.0f, 0.5f));
 
+    // Filter Envelope
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("fltEnvAttack",  "Filter Env Attack",  juce::NormalisableRange<float>(0.001f, 5.0f, 0.001f, 0.3f), 0.01f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("fltEnvDecay",   "Filter Env Decay",   juce::NormalisableRange<float>(0.001f, 5.0f, 0.001f, 0.3f), 0.3f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("fltEnvSustain", "Filter Env Sustain", juce::NormalisableRange<float>(0.0f, 1.0f, 0.01f), 1.0f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("fltEnvRelease", "Filter Env Release", juce::NormalisableRange<float>(0.001f, 10.0f, 0.001f, 0.3f), 0.3f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("fltEnvAmt",     "Filter Env Amount",  juce::NormalisableRange<float>(-1.0f, 1.0f, 0.01f), 0.0f));
+
     // FX 5スロット
     for (int i = 1; i <= 5; ++i)
     {
