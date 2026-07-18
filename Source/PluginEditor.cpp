@@ -10,7 +10,7 @@ PicoSamplerAudioProcessorEditor::PicoSamplerAudioProcessorEditor(PicoSamplerAudi
       mainPanel(p.getAPVTS()),
       arpPanel(p.getAPVTS()),
       modPanel(p.getAPVTS()),
-      fxPanel(p.getAPVTS()),
+      fxPanel(p),
       configPanel(p.getAPVTS())
 {
     setLookAndFeel(&lookAndFeel);

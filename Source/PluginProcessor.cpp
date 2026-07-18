@@ -16,7 +16,7 @@ PicoSamplerAudioProcessor::PicoSamplerAudioProcessor()
 
 PicoSamplerAudioProcessor::~PicoSamplerAudioProcessor()
 {
-    stopThread(2000);
+    stopThread(4000);
 }
 
 float PicoSamplerAudioProcessor::getParamFloat(const juce::String& paramId, float defaultVal) const
@@ -126,14 +126,53 @@ juce::AudioProcessorValueTreeState::ParameterLayout PicoSamplerAudioProcessor::c
         params.push_back(std::make_unique<juce::AudioParameterFloat>("fx" + s + "Amount", "FX" + s + " Amount", 0.0f, 1.0f, 0.0f));
     }
 
+    // FX 詳細パラメータ
+    params.push_back(std::make_unique<juce::AudioParameterChoice>("satAlgo", "Sat Algo", FxChain::getSatAlgoNames(), 0));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("satDrive", "Sat Drive", juce::NormalisableRange<float>(1.0f, 12.0f, 0.01f, 0.5f), 2.0f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("satPreHz", "Sat Pre-HPF", juce::NormalisableRange<float>(20.0f, 2000.0f, 1.0f, 0.3f), 20.0f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("satTrim", "Sat Trim", -12.0f, 12.0f, 0.0f));
+
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("choRate", "Chorus Rate", juce::NormalisableRange<float>(0.05f, 4.0f, 0.01f, 0.5f), 0.8f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("choDepth", "Chorus Depth", 0.0f, 1.0f, 0.5f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("choWidth", "Chorus Width", 0.0f, 1.0f, 1.0f));
+
+    params.push_back(std::make_unique<juce::AudioParameterChoice>("dlyTime", "Delay Time", FxChain::getDelayTimeNames(), 4));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("dlyFeedback", "Delay Feedback", 0.0f, 0.95f, 0.45f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("dlyDuck", "Delay Duck", 0.0f, 1.0f, 0.5f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("dlyDamp", "Delay Damp", 0.0f, 1.0f, 0.3f));
+
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("frzSize", "Freeze Size", juce::NormalisableRange<float>(20.0f, 1000.0f, 1.0f, 0.4f), 100.0f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("frzFeedback", "Freeze Feedback", 0.0f, 0.99f, 0.9f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("frzDamp", "Freeze Damp", 0.0f, 1.0f, 0.2f));
+
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("revDecay",   "Reverb Decay",   0.0f, 1.0f, 0.7f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("revShimmer", "Reverb Shimmer", 0.0f, 1.0f, 0.4f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("revDamp",    "Reverb Damp",    0.0f, 1.0f, 0.3f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("revMod",     "Reverb Mod",     0.0f, 1.0f, 0.4f));
+
+    // ModMatrix (16スロット)
+    const auto srcNames = ModMatrix::getSourceNames();
+    const auto dstNames = ModMatrix::getDestNames();
+    for (int i = 1; i <= 16; ++i)
+    {
+        const juce::String s = juce::String(i);
+        params.push_back(std::make_unique<juce::AudioParameterChoice>("mod" + s + "Src", "Mod " + s + " Src", srcNames, 0));
+        params.push_back(std::make_unique<juce::AudioParameterChoice>("mod" + s + "Dst", "Mod " + s + " Dst", dstNames, 0));
+        params.push_back(std::make_unique<juce::AudioParameterFloat>("mod" + s + "Amt", "Mod " + s + " Amt", -1.0f, 1.0f, 0.0f));
+        params.push_back(std::make_unique<juce::AudioParameterBool>("mod" + s + "Uni", "Mod " + s + " Uni", false));
+    }
+
     return { params.begin(), params.end() };
 }
 
 void PicoSamplerAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
 {
+    currentSampleRate = sampleRate;
     samplerEngine.prepare(sampleRate);
     arpeggiator.prepare(sampleRate);
     mainFilter.prepare(sampleRate, samplesPerBlock);
+    fxChain.prepareToPlay(sampleRate);
+    filterAdsr.setSampleRate(sampleRate);
 }
 
 void PicoSamplerAudioProcessor::releaseResources() {}
@@ -244,13 +283,41 @@ void PicoSamplerAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
         samplerEngine.handleMidi(midiMessages, engineParams);
     }
 
+    // Filter ADSR トリガー制御
+    const auto& activeMidi = arpParams.enable ? processedMidi : midiMessages;
+    for (const auto metadata : activeMidi)
+    {
+        const auto msg = metadata.getMessage();
+        if (msg.isNoteOn()) filterAdsr.noteOn();
+        else if (msg.isNoteOff()) filterAdsr.noteOff();
+    }
+
+    juce::ADSR::Parameters adsrP;
+    adsrP.attack  = getParamFloat("fltEnvAttack", 0.01f);
+    adsrP.decay   = getParamFloat("fltEnvDecay", 0.3f);
+    adsrP.sustain = getParamFloat("fltEnvSustain", 1.0f);
+    adsrP.release = getParamFloat("fltEnvRelease", 0.3f);
+    filterAdsr.setParameters(adsrP);
+
+    const float envVal = filterAdsr.getNextSample();
+    const float envAmt = getParamFloat("fltEnvAmt", 0.0f);
+
     samplerEngine.renderNextBlock(buffer, engineParams, &visualizerData);
 
     // PicoFilter (CleanSVF, Vowel, Comb) 適用
     PicoFilter::Params fltParams;
     fltParams.enable  = getParamFloat("fltEnable", 0.0f) > 0.5f;
     fltParams.model   = (int)getParamFloat("fltModel", 0.0f);
-    fltParams.cutoff  = getParamFloat("fltCutoff", 2000.0f);
+
+    const float baseCutoff = getParamFloat("fltCutoff", 2000.0f);
+    float modCutoff = baseCutoff;
+    if (std::abs(envAmt) > 0.001f)
+    {
+        const float octaveShift = envVal * envAmt * 4.0f; // 最大4オクターブ変調
+        modCutoff = baseCutoff * std::pow(2.0f, octaveShift);
+        modCutoff = juce::jlimit(20.0f, 20000.0f, modCutoff);
+    }
+    fltParams.cutoff  = modCutoff;
     fltParams.res     = getParamFloat("fltRes", 0.707f);
     fltParams.type    = (int)getParamFloat("fltType", 0.0f);
     fltParams.slope   = (int)getParamFloat("fltSlope", 0.0f);
@@ -258,6 +325,36 @@ void PicoSamplerAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
     fltParams.combMix = getParamFloat("fltCombMix", 0.5f);
 
     mainFilter.process(buffer, fltParams);
+
+    // FX 5スロット & 詳細パラメータ適用
+    FxChain::Params fxP;
+    for (int i = 0; i < 5; ++i)
+    {
+        const juce::String s = juce::String(i + 1);
+        fxP.type[(size_t)i]   = (int)getParamFloat("fx" + s + "Type", 0.0f);
+        fxP.amount[(size_t)i] = getParamFloat("fx" + s + "Amount", 0.0f);
+    }
+    fxP.bpm        = arpParams.bpm;
+    fxP.satAlgo    = (int)getParamFloat("satAlgo", 0.0f);
+    fxP.satDrive   = getParamFloat("satDrive", 2.0f);
+    fxP.satPreHz   = getParamFloat("satPreHz", 20.0f);
+    fxP.satTrimDb  = getParamFloat("satTrim", 0.0f);
+    fxP.choRate    = getParamFloat("choRate", 0.8f);
+    fxP.choDepth   = getParamFloat("choDepth", 0.5f);
+    fxP.choWidth   = getParamFloat("choWidth", 1.0f);
+    fxP.dlyTime    = (int)getParamFloat("dlyTime", 4.0f);
+    fxP.dlyFeedback= getParamFloat("dlyFeedback", 0.45f);
+    fxP.dlyDuck    = getParamFloat("dlyDuck", 0.5f);
+    fxP.dlyDamp    = getParamFloat("dlyDamp", 0.3f);
+    fxP.frzSize    = getParamFloat("frzSize", 100.0f);
+    fxP.frzFeedback= getParamFloat("frzFeedback", 0.9f);
+    fxP.frzDamp    = getParamFloat("frzDamp", 0.2f);
+    fxP.revDecay   = getParamFloat("revDecay", 0.7f);
+    fxP.revShimmer = getParamFloat("revShimmer", 0.4f);
+    fxP.revDamp    = getParamFloat("revDamp", 0.3f);
+    fxP.revMod     = getParamFloat("revMod", 0.4f);
+
+    fxChain.process(buffer, fxP);
 }
 
 void PicoSamplerAudioProcessor::reanalyzeSlot(int slotIdx)

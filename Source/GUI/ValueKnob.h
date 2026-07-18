@@ -51,15 +51,19 @@ private:
         editor->setText(getTextFromValue(getValue()));
         editor->setSelectAllWhenFocused(true);
 
-        editor->onReturnKey = [this, editor]()
+        juce::Component::SafePointer<ValueKnob> safeThis(this);
+        editor->onReturnKey = [safeThis, editor]()
         {
-            if (valueFromTextFunction != nullptr)
+            if (safeThis != nullptr)
             {
-                setValue(valueFromTextFunction(editor->getText()), juce::sendNotificationSync);
-            }
-            else
-            {
-                setValue(editor->getText().getDoubleValue(), juce::sendNotificationSync);
+                if (safeThis->valueFromTextFunction != nullptr)
+                {
+                    safeThis->setValue(safeThis->valueFromTextFunction(editor->getText()), juce::sendNotificationSync);
+                }
+                else
+                {
+                    safeThis->setValue(editor->getText().getDoubleValue(), juce::sendNotificationSync);
+                }
             }
 
             if (auto* box = editor->findParentComponentOfClass<juce::CallOutBox>())
