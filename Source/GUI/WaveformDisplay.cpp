@@ -1,6 +1,6 @@
 // ==========================================
 // File: WaveformDisplay.cpp
-// WaveformDisplay 実装 (Crossfade フェード領域グラデーション表示 & Reverse描画反転)
+// WaveformDisplay 実装 (Reverseオン時の波形反転描画 & 直感的一貫マーカー操作)
 // ==========================================
 #include "WaveformDisplay.h"
 
@@ -82,6 +82,7 @@ void WaveformDisplay::paint(juce::Graphics& g)
     const int numCols = (int)(w / stepX);
     const int samplesPerCol = juce::jmax(1, numSamples / numCols);
 
+    // 波形描画 (Reverse ON 時は画面上の見た目を反転)
     for (int col = 0; col < numCols; ++col)
     {
         const int actualCol = isReverse ? (numCols - 1 - col) : col;
@@ -105,7 +106,8 @@ void WaveformDisplay::paint(juce::Graphics& g)
         g.drawLine(x, yMin, x, yMax, 2.0f);
     }
 
-    // 4. マーカー位置計算 (isReverse による描画反転の同期)
+    // 4. マーカー位置描画
+    // 見た目の波形を正として、画面左=Start, 画面右=End で統一
     float startRatio = getParamFloat("sampleStart_" + s, 0.0f);
     float endRatio   = getParamFloat("sampleEnd_" + s, 1.0f);
     float loopStart  = getParamFloat("loopStart_" + s, 0.2f);
@@ -113,13 +115,8 @@ void WaveformDisplay::paint(juce::Graphics& g)
     float crossfade  = getParamFloat("crossfade_" + s, 0.05f);
     bool isLooping   = getParamFloat("isLooping_" + s, 0.0f) > 0.5f;
 
-    float drawStartR = isReverse ? (1.0f - endRatio)   : startRatio;
-    float drawEndR   = isReverse ? (1.0f - startRatio) : endRatio;
-    float drawLpSr   = isReverse ? (1.0f - loopEnd)    : loopStart;
-    float drawLpEr   = isReverse ? (1.0f - loopStart)  : loopEnd;
-
-    const float sX = drawStartR * w;
-    const float eX = drawEndR * w;
+    const float sX = startRatio * w;
+    const float eX = endRatio * w;
 
     g.setColour(juce::Colours::yellow);
     g.drawLine(sX, 0.0f, sX, h, 2.0f);
@@ -140,11 +137,11 @@ void WaveformDisplay::paint(juce::Graphics& g)
         const float lpMarginY = h * 0.175f;
         const float lpH       = h * 0.65f;
 
-        const float lsX = drawLpSr * w;
-        const float leX = drawLpEr * w;
-        const float lpLenR = drawLpEr - drawLpSr;
+        const float lsX = loopStart * w;
+        const float leX = loopEnd * w;
+        const float lpLenR = loopEnd - loopStart;
         const float xfW = (crossfade * lpLenR) * w;
-        const float xfX = isReverse ? lsX : (leX - xfW);
+        const float xfX = leX - xfW;
 
         // X-Fade フェードオーバーラップ領域をグラデーション描画
         juce::ColourGradient xfGrad(PicoColors::mint.withAlpha(0.0f), xfX, 0.0f, PicoColors::mint.withAlpha(0.35f), xfX + xfW, 0.0f, false);
@@ -236,27 +233,21 @@ void WaveformDisplay::mouseDown(const juce::MouseEvent& e)
         return def;
     };
 
-    const bool isReverse   = getParamFloat("isReverse_" + s, 0.0f) > 0.5f;
     const float startRatio = getParamFloat("sampleStart_" + s, 0.0f);
     const float endRatio   = getParamFloat("sampleEnd_" + s, 1.0f);
     const float loopStart  = getParamFloat("loopStart_" + s, 0.2f);
     const float loopEnd    = getParamFloat("loopEnd_" + s, 0.7f);
     const bool isLooping   = getParamFloat("isLooping_" + s, 0.0f) > 0.5f;
 
-    const float drawStartR = isReverse ? (1.0f - endRatio)   : startRatio;
-    const float drawEndR   = isReverse ? (1.0f - startRatio) : endRatio;
-    const float drawLpSr   = isReverse ? (1.0f - loopEnd)    : loopStart;
-    const float drawLpEr   = isReverse ? (1.0f - loopStart)  : loopEnd;
+    const float sX  = startRatio * w;
+    const float eX  = endRatio * w;
+    const float lsX = loopStart * w;
+    const float leX = loopEnd * w;
 
-    const float sX  = drawStartR * w;
-    const float eX  = drawEndR * w;
-    const float lsX = drawLpSr * w;
-    const float leX = drawLpEr * w;
-
-    if (isLooping && std::abs(mouseX - lsX) < 8.0f) activeDrag = isReverse ? DragTarget::LoopEnd : DragTarget::LoopStart;
-    else if (isLooping && std::abs(mouseX - leX) < 8.0f) activeDrag = isReverse ? DragTarget::LoopStart : DragTarget::LoopEnd;
-    else if (std::abs(mouseX - sX) < 10.0f) activeDrag = isReverse ? DragTarget::SampleEnd : DragTarget::SampleStart;
-    else if (std::abs(mouseX - eX) < 10.0f) activeDrag = isReverse ? DragTarget::SampleStart : DragTarget::SampleEnd;
+    if (isLooping && std::abs(mouseX - lsX) < 8.0f) activeDrag = DragTarget::LoopStart;
+    else if (isLooping && std::abs(mouseX - leX) < 8.0f) activeDrag = DragTarget::LoopEnd;
+    else if (std::abs(mouseX - sX) < 10.0f) activeDrag = DragTarget::SampleStart;
+    else if (std::abs(mouseX - eX) < 10.0f) activeDrag = DragTarget::SampleEnd;
     else activeDrag = DragTarget::None;
 }
 

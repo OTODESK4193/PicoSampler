@@ -1,11 +1,6 @@
 // ==========================================
 // File: SamplerVoice.cpp
-// PicoVoice レンダリング実装 (サンプルレート補正 & 正確なピッチマッピング)
-// 
-// ★ 根本バグ修正:
-//   1. fileSR / engineSR 補正係数を pitchInc のベースに適用
-//   2. rootKey から MIDI ノートへの変換は純粋な半音差のみ
-//   3. Stretch/Repitch で同一の音階を保証
+// PicoVoice レンダリング実装 (Reverseオン時の反転波形正規化レスポンス対応)
 // ==========================================
 #include "SamplerVoice.h"
 
@@ -26,7 +21,6 @@ void PicoVoice::startNote(int midiNoteNumber, float noteVelocity, int slotIdx,
     }
 
     const auto& meta = slot.getMetadata();
-    // rootKeyOverride >= 0 の場合はユーザー手動設定を優先
     const int effectiveRoot = (p.rootKeyOverride >= 0) ? p.rootKeyOverride : meta.rootKey;
     const int stOffset = midiNoteNumber - effectiveRoot + (p.octave * 12) + p.semitone;
 
@@ -44,7 +38,8 @@ void PicoVoice::startNote(int midiNoteNumber, float noteVelocity, int slotIdx,
 
     if (p.isReverse)
     {
-        readPosition = (double)juce::jlimit(0.0f, (float)(bufLen - 1), (float)bufLen * endR - 1.0f);
+        // Reverse ON: 画面上の左端 (sampleStartRatio) はファイル末尾側の 1.0 - startR
+        readPosition = (double)juce::jlimit(0.0f, (float)(bufLen - 1), (float)bufLen * (1.0f - startR));
     }
     else
     {
@@ -96,21 +91,11 @@ void PicoVoice::renderNextBlock(juce::AudioBuffer<float>& outputBuffer, int star
     const int bufLen = buffer->getNumSamples();
     const int numCh = buffer->getNumChannels();
 
-    const int smpStart = (int)(bufLen * juce::jlimit(0.0f, 0.99f, p.sampleStartRatio));
-    const int smpEnd   = (int)(bufLen * juce::jlimit(0.01f, 1.0f, p.sampleEndRatio));
-    const int lpStart  = (int)(bufLen * juce::jlimit(0.0f, 0.99f, p.loopStartRatio));
-    const int lpEnd    = std::min(smpEnd, (int)(bufLen * juce::jlimit(0.01f, 1.0f, p.loopEndRatio)));
-    const int lpLen    = std::max(64, lpEnd - lpStart);
-    const int xfadeLen = juce::jmax(1, (int)(lpLen * juce::jlimit(0.0f, 0.5f, p.crossfadeRatio)));
-
-    // ★ サンプルレート補正: ファイルのSRとエンジンのSRの比率をベースレートに適用
     const double fileSR = meta.fileSampleRate > 1000.0 ? meta.fileSampleRate : 44100.0;
-    const double srRatio = fileSR / sampleRate;  // sampleRate はエンジンのSR (PicoVoice::prepare で設定)
+    const double srRatio = fileSR / sampleRate;
 
     if (p.isStretchMode)
     {
-        // Stretch モード: アンカー(事前ピッチシフト済みバッファ)を原速再生
-        // アンカー範囲外の残差のみピッチシフト + SR補正
         const int anchorSemis = juce::jlimit(-24, 24, stOffset);
         const float residualSemis = (float)(stOffset - anchorSemis) + (p.fineTune / 100.0f);
         const double pitchRatio = std::pow(2.0, (double)residualSemis / 12.0);
@@ -118,14 +103,37 @@ void PicoVoice::renderNextBlock(juce::AudioBuffer<float>& outputBuffer, int star
     }
     else
     {
-        // Repitch モード: 原音バッファから直接リサンプリング再生
-        // midiNote と rootKey の半音差 + fineTune を SR 補正付きで適用
         const float totalSemis = (float)stOffset + (p.fineTune / 100.0f);
         const double pitchRatio = std::pow(2.0, (double)totalSemis / 12.0);
         pitchInc = srRatio * pitchRatio;
     }
 
-    if (p.isReverse) pitchInc = -pitchInc;
+    // マーカー・再生制御
+    int smpStartFile = 0, smpEndFile = bufLen - 1;
+    int lpStartFile = 0, lpEndFile = bufLen - 1;
+
+    if (!p.isReverse)
+    {
+        smpStartFile = (int)(bufLen * juce::jlimit(0.0f, 0.99f, p.sampleStartRatio));
+        smpEndFile   = (int)(bufLen * juce::jlimit(0.01f, 1.0f, p.sampleEndRatio));
+        lpStartFile  = (int)(bufLen * juce::jlimit(0.0f, 0.99f, p.loopStartRatio));
+        lpEndFile    = std::min(smpEndFile, (int)(bufLen * juce::jlimit(0.01f, 1.0f, p.loopEndRatio)));
+    }
+    else
+    {
+        // Reverse ON: 反転波形の見た目を正としてファイル位置へ反転マッピング
+        // 画面左マーカー (Start) ➔ ファイル上の末尾寄り (1.0 - startRatio)
+        // 画面右マーカー (End)   ➔ ファイル上の先頭寄り (1.0 - endRatio)
+        smpStartFile = (int)(bufLen * (1.0f - juce::jlimit(0.0f, 0.99f, p.sampleStartRatio)));
+        smpEndFile   = (int)(bufLen * (1.0f - juce::jlimit(0.01f, 1.0f, p.sampleEndRatio)));
+        lpStartFile  = (int)(bufLen * (1.0f - juce::jlimit(0.0f, 0.99f, p.loopStartRatio)));
+        lpEndFile    = std::max(smpEndFile, (int)(bufLen * (1.0f - juce::jlimit(0.01f, 1.0f, p.loopEndRatio))));
+        
+        pitchInc = -pitchInc; // 逆再生方向へ進行
+    }
+
+    const int lpLen = std::abs(lpEndFile - lpStartFile);
+    const int xfadeLen = juce::jmax(1, (int)(lpLen * juce::jlimit(0.0f, 0.5f, p.crossfadeRatio)));
 
     const float pan = juce::jlimit(-1.0f, 1.0f, p.pan);
     const float gainL = std::sqrt(0.5f * (1.0f - pan)) * velocity * juce::Decibels::decibelsToGain(p.slotGainDb);
@@ -165,22 +173,23 @@ void PicoVoice::renderNextBlock(juce::AudioBuffer<float>& outputBuffer, int star
         {
             if (p.isLooping)
             {
-                if (readPosition >= (double)lpEnd) readPosition -= (double)(lpEnd - lpStart);
+                if (readPosition >= (double)lpEndFile) readPosition -= (double)(lpEndFile - lpStartFile);
             }
             else
             {
-                if (readPosition >= (double)smpEnd) { envStage = EnvStage::Release; }
+                if (readPosition >= (double)smpEndFile) { envStage = EnvStage::Release; }
             }
         }
         else
         {
+            // Reverse ON: ファイル上では減少方向へ進む
             if (p.isLooping)
             {
-                if (readPosition <= (double)lpStart) readPosition += (double)(lpEnd - lpStart);
+                if (readPosition <= (double)lpEndFile) readPosition += (double)(lpStartFile - lpEndFile);
             }
             else
             {
-                if (readPosition <= (double)smpStart) { envStage = EnvStage::Release; }
+                if (readPosition <= (double)smpEndFile) { envStage = EnvStage::Release; }
             }
         }
 
@@ -208,27 +217,44 @@ void PicoVoice::renderNextBlock(juce::AudioBuffer<float>& outputBuffer, int star
             sL = sR = lagrange3rdInterpolate(chL[i0], chL[i1], chL[i2], chL[i3], frac);
         }
 
-        // 滑らかなループ Crossfade (ループ終端手前の X-Fade 区間で
-        // フェードアウト → ループ開始点のフェードインを等パワークロスフェード)
-        if (p.isLooping && !p.isReverse && readPosition >= (double)(lpEnd - xfadeLen))
+        // ループ Crossfade
+        if (p.isLooping)
         {
-            const float xfFactor = (float)(readPosition - (double)(lpEnd - xfadeLen)) / (float)xfadeLen;
-            const float fadeOut = std::cos(xfFactor * juce::MathConstants<float>::halfPi);
-            const float fadeIn  = std::sin(xfFactor * juce::MathConstants<float>::halfPi);
+            bool isCrossfading = false;
+            double loopOffsetPos = 0.0;
+            float xfFactor = 0.0f;
 
-            const int loopOffsetPos = (int)(readPosition - (double)(lpEnd - lpStart));
-            const int li0 = juce::jlimit(0, bufLen - 1, loopOffsetPos - 1);
-            const int li1 = juce::jlimit(0, bufLen - 1, loopOffsetPos);
-            const int li2 = juce::jlimit(0, bufLen - 1, loopOffsetPos + 1);
-            const int li3 = juce::jlimit(0, bufLen - 1, loopOffsetPos + 2);
+            if (!p.isReverse && readPosition >= (double)(lpEndFile - xfadeLen))
+            {
+                isCrossfading = true;
+                xfFactor = (float)(readPosition - (double)(lpEndFile - xfadeLen)) / (float)xfadeLen;
+                loopOffsetPos = readPosition - (double)(lpEndFile - lpStartFile);
+            }
+            else if (p.isReverse && readPosition <= (double)(lpEndFile + xfadeLen))
+            {
+                isCrossfading = true;
+                xfFactor = (float)((double)(lpEndFile + xfadeLen) - readPosition) / (float)xfadeLen;
+                loopOffsetPos = readPosition + (double)(lpStartFile - lpEndFile);
+            }
 
-            const float* chR = numCh >= 2 ? buffer->getReadPointer(1) : chL;
-            if (chR == nullptr) chR = chL;
-            const float inL = lagrange3rdInterpolate(chL[li0], chL[li1], chL[li2], li3 < bufLen ? chL[li3] : chL[li2], frac);
-            const float inR = lagrange3rdInterpolate(chR[li0], chR[li1], chR[li2], li3 < bufLen ? chR[li3] : chR[li2], frac);
+            if (isCrossfading)
+            {
+                const float fadeOut = std::cos(xfFactor * juce::MathConstants<float>::halfPi);
+                const float fadeIn  = std::sin(xfFactor * juce::MathConstants<float>::halfPi);
 
-            sL = sL * fadeOut + inL * fadeIn;
-            sR = sR * fadeOut + inR * fadeIn;
+                const int li0 = juce::jlimit(0, bufLen - 1, (int)loopOffsetPos - 1);
+                const int li1 = juce::jlimit(0, bufLen - 1, (int)loopOffsetPos);
+                const int li2 = juce::jlimit(0, bufLen - 1, (int)loopOffsetPos + 1);
+                const int li3 = juce::jlimit(0, bufLen - 1, (int)loopOffsetPos + 2);
+
+                const float* chR = numCh >= 2 ? buffer->getReadPointer(1) : chL;
+                if (chR == nullptr) chR = chL;
+                const float inL = lagrange3rdInterpolate(chL[li0], chL[li1], chL[li2], li3 < bufLen ? chL[li3] : chL[li2], frac);
+                const float inR = lagrange3rdInterpolate(chR[li0], chR[li1], chR[li2], li3 < bufLen ? chR[li3] : chR[li2], frac);
+
+                sL = sL * fadeOut + inL * fadeIn;
+                sR = sR * fadeOut + inR * fadeIn;
+            }
         }
 
         outL[s] += sL * gainL * envValue;
