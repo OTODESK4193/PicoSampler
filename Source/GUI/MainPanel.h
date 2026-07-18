@@ -65,6 +65,7 @@ private:
     // ADSR Link Toggle
     GlowToggle btnLinkEnv { "LINK" };
     bool isEnvLinked = false;
+    bool isUpdatingFromLink = false;
 
     // Labeled Knobs
     LabeledKnob knobSampleStart { "Start",   PicoColors::peach };

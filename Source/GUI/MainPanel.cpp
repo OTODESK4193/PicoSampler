@@ -1,6 +1,6 @@
 // ==========================================
 // File: MainPanel.cpp
-// MainPanel 実装 (RootKeyノブをPITCHエリアへ移設 & Auto~C8表示対応)
+// MainPanel 実装 (ADSR Link 連動のバグ修正 & スケール正規化対応)
 // ==========================================
 #include "MainPanel.h"
 
@@ -8,14 +8,12 @@ static int noteNameToMidiNumber(const juce::String& name)
 {
     if (name.containsIgnoreCase("Auto")) return -1;
     
-    // JUCE 標準オクターブ表記パース
     static const juce::StringArray noteNames = { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" };
     juce::String str = name.trim().toUpperCase();
 
     int octave = 4;
     juce::String notePart = str;
 
-    // オクターブ番号の検索
     for (int i = 0; i < str.length(); ++i)
     {
         if (str[i] == '-' || (str[i] >= '0' && str[i] <= '9'))
@@ -28,7 +26,6 @@ static int noteNameToMidiNumber(const juce::String& name)
 
     if (notePart.endsWith("B") && notePart.length() == 2 && notePart[0] != 'A' && notePart[0] != 'C')
     {
-        // 変ホ記号 (フラット) 変換
         char key = notePart[0];
         if (key == 'D') notePart = "C#";
         else if (key == 'E') notePart = "D#";
@@ -89,50 +86,82 @@ MainPanel::MainPanel(juce::AudioProcessorValueTreeState& apvts) : vts(apvts)
         isEnvLinked = !isEnvLinked;
         btnLinkEnv.setToggleState(isEnvLinked, juce::dontSendNotification);
 
-        if (isEnvLinked)
+        if (isEnvLinked && !isUpdatingFromLink)
         {
-            // Slot 1 (index 0) の現在値を Slot 2~8 に即時同期
-            const float a = vts.getRawParameterValue("attack_0")->load();
-            const float d = vts.getRawParameterValue("decay_0")->load();
-            const float s = vts.getRawParameterValue("sustain_0")->load();
-            const float r = vts.getRawParameterValue("release_0")->load();
-
-            for (int k = 1; k < 8; ++k)
+            isUpdatingFromLink = true;
+            // Slot 1 (index 0) の正規化値を Slot 2~8 に即時同期
+            for (const auto& pBaseName : { juce::String("attack"), juce::String("decay"), juce::String("sustain"), juce::String("release") })
             {
-                const juce::String strKey = juce::String(k);
-                if (auto* p = vts.getParameter("attack_" + strKey)) p->setValueNotifyingHost(a / 5.0f);
-                if (auto* p = vts.getParameter("decay_" + strKey)) p->setValueNotifyingHost(d / 5.0f);
-                if (auto* p = vts.getParameter("sustain_" + strKey)) p->setValueNotifyingHost(s);
-                if (auto* p = vts.getParameter("release_" + strKey)) p->setValueNotifyingHost(r / 10.0f);
+                if (auto* p0 = vts.getParameter(pBaseName + "_0"))
+                {
+                    const float normVal = p0->getValue();
+                    for (int k = 1; k < 8; ++k)
+                    {
+                        if (auto* pOther = vts.getParameter(pBaseName + "_" + juce::String(k)))
+                            pOther->setValueNotifyingHost(normVal);
+                    }
+                }
             }
+            isUpdatingFromLink = false;
         }
     };
 
-    // ADSR ノブ変更時の連動
-    auto setupEnvCallback = [this](LabeledKnob& lk, const juce::String& pBaseName, float maxVal) {
-        lk.knob.onValueChange = [this, pBaseName, &lk, maxVal] {
-            if (isEnvLinked)
+    // ADSR ノブ変更時の連動 (APVTS 正規化値 0.0~1.0 を使用 & 再帰防止)
+    auto setupEnvCallback = [this](LabeledKnob& lk, const juce::String& pBaseName) {
+        lk.knob.onValueChange = [this, pBaseName] {
+            if (isEnvLinked && !isUpdatingFromLink)
             {
-                const float normVal = (float)lk.knob.getValue() / maxVal;
-                for (int k = 0; k < 8; ++k)
+                isUpdatingFromLink = true;
+                const juce::String activeSlotStr = juce::String(currentBoundSlot >= 0 ? currentBoundSlot : 0);
+                if (auto* activeParam = vts.getParameter(pBaseName + "_" + activeSlotStr))
                 {
-                    if (auto* p = vts.getParameter(pBaseName + "_" + juce::String(k)))
-                        p->setValueNotifyingHost(normVal);
+                    const float normVal = activeParam->getValue(); // 正確な正規化値を取得
+                    for (int k = 0; k < 8; ++k)
+                    {
+                        if (k != currentBoundSlot)
+                        {
+                            if (auto* p = vts.getParameter(pBaseName + "_" + juce::String(k)))
+                                p->setValueNotifyingHost(normVal);
+                        }
+                    }
                 }
+                isUpdatingFromLink = false;
             }
         };
     };
 
-    setupEnvCallback(knobAttack,  "attack",  5.0f);
-    setupEnvCallback(knobDecay,   "decay",   5.0f);
-    setupEnvCallback(knobSustain, "sustain", 1.0f);
-    setupEnvCallback(knobRelease, "release", 10.0f);
+    setupEnvCallback(knobAttack,  "attack");
+    setupEnvCallback(knobDecay,   "decay");
+    setupEnvCallback(knobSustain, "sustain");
+    setupEnvCallback(knobRelease, "release");
 
     // Master ノブ
     hpfAttach = std::make_unique<Attachment>(vts, "masterHPF", knobMasterHpf.knob);
     lpfAttach = std::make_unique<Attachment>(vts, "masterLPF", knobMasterLpf.knob);
     outGainAttach = std::make_unique<Attachment>(vts, "outGain", knobOutGain.knob);
     ceilingAttach = std::make_unique<Attachment>(vts, "ceiling", knobCeiling.knob);
+
+    // ノブダブルクリック時のデフォルト値リセット設定
+    knobSampleStart.knob.setDoubleClickReturnValue(true, 0.0);
+    knobSampleEnd.knob.setDoubleClickReturnValue(true, 1.0);
+    knobLoopStart.knob.setDoubleClickReturnValue(true, 0.2);
+    knobLoopEnd.knob.setDoubleClickReturnValue(true, 0.7);
+    knobCrossfade.knob.setDoubleClickReturnValue(true, 0.05);
+
+    knobRootKey.knob.setDoubleClickReturnValue(true, -1.0);
+    knobOctave.knob.setDoubleClickReturnValue(true, 0.0);
+    knobSemitone.knob.setDoubleClickReturnValue(true, 0.0);
+    knobFineTune.knob.setDoubleClickReturnValue(true, 0.0);
+
+    knobAttack.knob.setDoubleClickReturnValue(true, 0.01);
+    knobDecay.knob.setDoubleClickReturnValue(true, 0.3);
+    knobSustain.knob.setDoubleClickReturnValue(true, 1.0);
+    knobRelease.knob.setDoubleClickReturnValue(true, 0.3);
+
+    knobMasterHpf.knob.setDoubleClickReturnValue(true, 20.0);
+    knobMasterLpf.knob.setDoubleClickReturnValue(true, 20000.0);
+    knobOutGain.knob.setDoubleClickReturnValue(true, 0.0);
+    knobCeiling.knob.setDoubleClickReturnValue(true, 0.0);
 
     addAndMakeVisible(knobSampleStart);
     addAndMakeVisible(knobSampleEnd);
