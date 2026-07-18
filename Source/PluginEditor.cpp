@@ -1,6 +1,6 @@
 // ==========================================
 // File: PluginEditor.cpp
-// PicoSampler メインエディタ GUI 実装 (ヘッダー情報拡張 ＆ SLOTタブ削除)
+// PicoSampler メインエディタ GUI 実装 (KeyRangeMapコンポーネント独立配置)
 // ==========================================
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
@@ -17,6 +17,7 @@ PicoSamplerAudioProcessorEditor::PicoSamplerAudioProcessorEditor(PicoSamplerAudi
     setSize(1080, 700);
 
     addAndMakeVisible(waveDisplay);
+    addAndMakeVisible(keyRangeMap);
 
     for (auto* b : { &btnTabMain, &btnTabArp, &btnTabMod, &btnTabFx, &btnTabConfig })
     {
@@ -45,15 +46,15 @@ PicoSamplerAudioProcessorEditor::PicoSamplerAudioProcessorEditor(PicoSamplerAudi
 
     waveDisplay.setVisualizerData(&p.getVisualizerData());
 
-    // 波形エリアへの D&D ファイルドロップ対応
+    // 波形エリア D&D
     waveDisplay.onFileDropped = [this](const juce::File& file) {
         const int activeIdx = (int)audioProcessor.getAPVTS().getRawParameterValue("activeSlot")->load();
         audioProcessor.getSamplerEngine().getSlot(activeIdx).loadFromFile(file);
         repaint();
     };
 
-    // 波形エリア KeyRangeMap マウス操作対応
-    waveDisplay.onKeyRangeChanged = [this](int slotIdx, int low, int high) {
+    // KeyRangeMap 操作ハンドラ
+    keyRangeMap.onKeyRangeChanged = [this](int slotIdx, int low, int high) {
         if (auto* pLow = audioProcessor.getAPVTS().getParameter("slotLowNote_" + juce::String(slotIdx)))
             pLow->setValueNotifyingHost((float)low / 127.0f);
         if (auto* pHigh = audioProcessor.getAPVTS().getParameter("slotHighNote_" + juce::String(slotIdx)))
@@ -103,7 +104,7 @@ void PicoSamplerAudioProcessorEditor::paint(juce::Graphics& g)
 {
     g.fillAll(PicoColors::bgDk);
 
-    // 1. ヘッダーロゴ
+    // 1. ヘッダーロゴ (グラデーション)
     g.setFont(juce::FontOptions(22.0f, juce::Font::bold));
     juce::ColourGradient titleGrad(PicoColors::mint, 20.0f, 15.0f, PicoColors::pink, 280.0f, 35.0f, false);
     titleGrad.addColour(0.5, PicoColors::lavender);
@@ -147,8 +148,11 @@ void PicoSamplerAudioProcessorEditor::paint(juce::Graphics& g)
 
 void PicoSamplerAudioProcessorEditor::resized()
 {
-    // 波形表示 (高さ 240px)
-    waveDisplay.setBounds(20, 46, 1040, 240);
+    // 波形表示 (高さ 160px)
+    waveDisplay.setBounds(20, 44, 1040, 160);
+
+    // KeyRangeMap 独立コンポーネント (波形とタブボタンの間に配置: 高さ 78px)
+    keyRangeMap.setBounds(20, 210, 1040, 78);
 
     const int tabY = 294;
     const int tabW = 92;
@@ -177,6 +181,7 @@ void PicoSamplerAudioProcessorEditor::timerCallback()
 {
     const int activeIdx = (int)audioProcessor.getAPVTS().getRawParameterValue("activeSlot")->load();
     waveDisplay.setSampleSlot(&audioProcessor.getSamplerEngine().getSlot(activeIdx));
+    waveDisplay.setActiveSlotIndex(activeIdx);
 
     mainPanel.updateStates();
 
@@ -196,6 +201,6 @@ void PicoSamplerAudioProcessorEditor::timerCallback()
         readyStates[(size_t)i] = slot.isReady();
     }
 
-    waveDisplay.updateKeyRanges(ranges, roots, readyStates, activeIdx);
-    repaint(0, 0, 700, 46);
+    keyRangeMap.updateKeyRanges(ranges, roots, readyStates, activeIdx);
+    repaint(0, 0, 700, 44);
 }

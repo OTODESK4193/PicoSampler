@@ -1,6 +1,6 @@
 // ==========================================
 // File: PluginProcessor.cpp
-// PicoSampler メインプロセッサ実装
+// PicoSampler メインプロセッサ実装 (KeyRangeパラメータ伝達対応)
 // ==========================================
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
@@ -183,6 +183,8 @@ void PicoSamplerAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
         sp.loopLengthRatio = apvts.getRawParameterValue("loopLength_" + s)->load();
         sp.crossfadeRatio = apvts.getRawParameterValue("crossfade_" + s)->load();
         sp.isLooping = apvts.getRawParameterValue("isLooping_" + s)->load() > 0.5f;
+        sp.lowNote = (int)apvts.getRawParameterValue("slotLowNote_" + s)->load();
+        sp.highNote = (int)apvts.getRawParameterValue("slotHighNote_" + s)->load();
     }
 
     buffer.clear();

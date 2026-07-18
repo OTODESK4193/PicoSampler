@@ -1,6 +1,6 @@
 // ==========================================
 // File: PluginEditor.h
-// PicoSampler メインエディタ GUI 定義 (SLOTタブ廃止 ＆ ヘッダー情報領域拡張)
+// PicoSampler メインエディタ GUI 定義 (KeyRangeMapコンポーネont独立追加)
 // ==========================================
 #pragma once
 
@@ -8,6 +8,7 @@
 #include "PluginProcessor.h"
 #include "GUI/ArcDial.h"
 #include "GUI/WaveformDisplay.h"
+#include "GUI/KeyRangeMapComponent.h"
 #include "GUI/MainPanel.h"
 #include "GUI/ArpPanel.h"
 #include "GUI/ModPanel.h"
@@ -33,8 +34,9 @@ private:
     ArcDialLookAndFeel lookAndFeel;
 
     WaveformDisplay waveDisplay;
+    KeyRangeMapComponent keyRangeMap;
 
-    // Header Toolbar Buttons (SLOTタブ削除)
+    // Header Toolbar Buttons
     juce::TextButton btnTabMain   { "MAIN" };
     juce::TextButton btnTabArp    { "ARP" };
     juce::TextButton btnTabMod    { "MOD" };

@@ -1,6 +1,6 @@
 // ==========================================
 // File: SamplerEngine.cpp
-// サンプラーエンジン ノートハンドリング＆レンダリング実装
+// サンプラーエンジン (KeyRange発音条件の完全反映)
 // ==========================================
 #include "SamplerEngine.h"
 
@@ -18,15 +18,19 @@ void SamplerEngine::handleMidi(const juce::MidiBuffer& midi, const Params& p) no
             {
             case SingleMode:
             {
-                triggerSlotNote(p.activeSlot, note, vel, p);
+                const auto& sp = p.slotParams[(size_t)p.activeSlot];
+                if (slots[(size_t)p.activeSlot].isReady() && note >= sp.lowNote && note <= sp.highNote)
+                {
+                    triggerSlotNote(p.activeSlot, note, vel, p);
+                }
                 break;
             }
             case LayerMode:
             {
                 for (int slotIdx = 0; slotIdx < NUM_SLOTS; ++slotIdx)
                 {
-                    const auto& meta = slots[(size_t)slotIdx].getMetadata();
-                    if (slots[(size_t)slotIdx].isReady() && note >= meta.lowNote && note <= meta.highNote)
+                    const auto& sp = p.slotParams[(size_t)slotIdx];
+                    if (slots[(size_t)slotIdx].isReady() && note >= sp.lowNote && note <= sp.highNote)
                     {
                         triggerSlotNote(slotIdx, note, vel, p);
                     }
@@ -38,7 +42,11 @@ void SamplerEngine::handleMidi(const juce::MidiBuffer& midi, const Params& p) no
                 std::vector<int> readySlots;
                 for (int i = 0; i < NUM_SLOTS; ++i)
                 {
-                    if (slots[(size_t)i].isReady()) readySlots.push_back(i);
+                    const auto& sp = p.slotParams[(size_t)i];
+                    if (slots[(size_t)i].isReady() && note >= sp.lowNote && note <= sp.highNote)
+                    {
+                        readySlots.push_back(i);
+                    }
                 }
                 if (!readySlots.empty())
                 {

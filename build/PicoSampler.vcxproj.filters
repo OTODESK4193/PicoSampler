@@ -28,6 +28,9 @@
     <ClCompile Include="D:\VST_Project\PicoSampler\Source\GUI\WaveformDisplay.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="D:\VST_Project\PicoSampler\Source\GUI\KeyRangeMapComponent.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="D:\VST_Project\PicoSampler\Source\GUI\MainPanel.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -135,6 +138,9 @@
     <ClInclude Include="D:\VST_Project\PicoSampler\Source\DSP\ModMatrix.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="D:\VST_Project\PicoSampler\Source\DSP\TptSvfFilter.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="D:\VST_Project\PicoSampler\Source\GUI\ColorPalette.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -142,6 +148,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="D:\VST_Project\PicoSampler\Source\GUI\WaveformDisplay.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="D:\VST_Project\PicoSampler\Source\GUI\KeyRangeMapComponent.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="D:\VST_Project\PicoSampler\Source\GUI\MainPanel.h">

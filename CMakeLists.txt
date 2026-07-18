@@ -65,6 +65,7 @@ target_sources(PicoSampler PRIVATE
     Source/DSP/Arpeggiator.cpp
     Source/DSP/FxChain.h
     Source/DSP/ModMatrix.h
+    Source/DSP/TptSvfFilter.h
 
     # --- GUI モジュール ---
     Source/GUI/ColorPalette.h
@@ -72,6 +73,8 @@ target_sources(PicoSampler PRIVATE
     Source/GUI/ArcDial.cpp
     Source/GUI/WaveformDisplay.h
     Source/GUI/WaveformDisplay.cpp
+    Source/GUI/KeyRangeMapComponent.h
+    Source/GUI/KeyRangeMapComponent.cpp
     Source/GUI/MainPanel.h
     Source/GUI/MainPanel.cpp
     Source/GUI/SlotPanel.h
