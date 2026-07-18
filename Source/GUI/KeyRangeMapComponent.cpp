@@ -1,6 +1,6 @@
 // ==========================================
 // File: KeyRangeMapComponent.cpp
-// 8スロット倍幅音域レーン ＆ リアル88鍵盤描画実装
+// 8スロット倍幅音域レーン ＆ リアル88鍵盤描画実装 (現在発音中音階の点灯描画)
 // ==========================================
 #include "KeyRangeMapComponent.h"
 
@@ -69,7 +69,7 @@ void KeyRangeMapComponent::paint(juce::Graphics& g)
     const float whiteW = (w - 20.0f) / 52.0f;
     static const bool isBlackNote[12] = { false, true, false, true, false, false, true, false, true, false, true, false };
 
-    // A: 白鍵 52個描画 ＋ C音（C1〜C8）表記
+    // A: 白鍵 52個描画 ＋ 発音中ハイライト点灯
     int whiteIdx = 0;
     for (int note = 21; note <= 108; ++note)
     {
@@ -77,16 +77,30 @@ void KeyRangeMapComponent::paint(juce::Graphics& g)
         if (!isBlackNote[noteInOct])
         {
             const float x = 10.0f + (float)whiteIdx * whiteW;
-            g.setColour(juce::Colours::white.withAlpha(0.92f));
-            g.fillRoundedRectangle(x + 0.5f, keyY, whiteW - 1.0f, keyH, 1.5f);
-            g.setColour(juce::Colours::grey);
-            g.drawRoundedRectangle(x + 0.5f, keyY, whiteW - 1.0f, keyH, 1.5f, 0.5f);
+            const bool isPlaying = (note >= 0 && note < 128 && playingNotes[(size_t)note]);
+
+            if (isPlaying)
+            {
+                // 発音点灯 (ミントカラーグラデーション)
+                juce::ColourGradient activeGrad(PicoColors::mint, x, keyY, PicoColors::peach, x + whiteW, keyY + keyH, false);
+                g.setGradientFill(activeGrad);
+                g.fillRoundedRectangle(x + 0.5f, keyY, whiteW - 1.0f, keyH, 1.5f);
+                g.setColour(juce::Colours::white);
+                g.drawRoundedRectangle(x + 0.5f, keyY, whiteW - 1.0f, keyH, 1.5f, 1.2f);
+            }
+            else
+            {
+                g.setColour(juce::Colours::white.withAlpha(0.92f));
+                g.fillRoundedRectangle(x + 0.5f, keyY, whiteW - 1.0f, keyH, 1.5f);
+                g.setColour(juce::Colours::grey);
+                g.drawRoundedRectangle(x + 0.5f, keyY, whiteW - 1.0f, keyH, 1.5f, 0.5f);
+            }
 
             // C音 (Note 24, 36, 48, 60, 72, 84, 96, 108) 表記
             if (noteInOct == 0)
             {
                 const int octaveNum = (note / 12) - 1;
-                g.setColour(juce::Colours::black);
+                g.setColour(isPlaying ? juce::Colours::black : juce::Colours::black);
                 g.setFont(juce::FontOptions(8.5f, juce::Font::bold));
                 g.drawText("C" + juce::String(octaveNum), (int)x, (int)(keyY + keyH - 11.0f), (int)whiteW, 10, juce::Justification::centred);
             }
@@ -94,7 +108,7 @@ void KeyRangeMapComponent::paint(juce::Graphics& g)
         }
     }
 
-    // B: 黒鍵 36個描画
+    // B: 黒鍵 36個描画 ＋ 発音中ハイライト点灯
     whiteIdx = 0;
     for (int note = 21; note <= 108; ++note)
     {
@@ -106,10 +120,23 @@ void KeyRangeMapComponent::paint(juce::Graphics& g)
         else
         {
             const float x = 10.0f + ((float)whiteIdx - 0.35f) * whiteW;
-            g.setColour(juce::Colours::black);
-            g.fillRoundedRectangle(x, keyY, whiteW * 0.68f, keyH * 0.62f, 1.0f);
-            g.setColour(PicoColors::knobTrack);
-            g.drawRoundedRectangle(x, keyY, whiteW * 0.68f, keyH * 0.62f, 1.0f, 0.5f);
+            const bool isPlaying = (note >= 0 && note < 128 && playingNotes[(size_t)note]);
+
+            if (isPlaying)
+            {
+                // 発音点灯 (ピンク/ミント発光)
+                g.setColour(PicoColors::pink);
+                g.fillRoundedRectangle(x, keyY, whiteW * 0.68f, keyH * 0.62f, 1.0f);
+                g.setColour(juce::Colours::white);
+                g.drawRoundedRectangle(x, keyY, whiteW * 0.68f, keyH * 0.62f, 1.0f, 1.0f);
+            }
+            else
+            {
+                g.setColour(juce::Colours::black);
+                g.fillRoundedRectangle(x, keyY, whiteW * 0.68f, keyH * 0.62f, 1.0f);
+                g.setColour(PicoColors::knobTrack);
+                g.drawRoundedRectangle(x, keyY, whiteW * 0.68f, keyH * 0.62f, 1.0f, 0.5f);
+            }
         }
     }
 }

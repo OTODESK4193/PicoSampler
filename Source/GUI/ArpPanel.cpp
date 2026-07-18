@@ -1,6 +1,6 @@
 // ==========================================
 // File: ArpPanel.cpp
-// ArpPanel 実装
+// ArpPanel 実装 (Offset/Gateノブ追加 ＆ 見切れなしレイアウト)
 // ==========================================
 #include "ArpPanel.h"
 #include "../DSP/Arpeggiator.h"
@@ -33,37 +33,57 @@ ArpPanel::ArpPanel(juce::AudioProcessorValueTreeState& apvts) : vts(apvts)
     comboAttachments.push_back(std::make_unique<ComboAttach>(vts, "key", comboKey));
     comboAttachments.push_back(std::make_unique<ComboAttach>(vts, "scale", comboScale));
 
+    knobOctaves.knob.setDoubleClickReturnValue(true, 1.0);
+    knobRateFree.knob.setDoubleClickReturnValue(true, 4.0);
+    knobGate.knob.setDoubleClickReturnValue(true, 0.8);
+    knobOffset.knob.setDoubleClickReturnValue(true, 0.0);
+
     addAndMakeVisible(knobOctaves);
     addAndMakeVisible(knobRateFree);
     addAndMakeVisible(knobGate);
+    addAndMakeVisible(knobOffset);
 
-    attachments.push_back(std::make_unique<Attachment>(vts, "arpOctaves", knobOctaves));
-    attachments.push_back(std::make_unique<Attachment>(vts, "arpRateFree", knobRateFree));
-    attachments.push_back(std::make_unique<Attachment>(vts, "arpGate", knobGate));
+    attachments.push_back(std::make_unique<Attachment>(vts, "arpOctaves", knobOctaves.knob));
+    attachments.push_back(std::make_unique<Attachment>(vts, "arpRateFree", knobRateFree.knob));
+    attachments.push_back(std::make_unique<Attachment>(vts, "arpGate", knobGate.knob));
+    attachments.push_back(std::make_unique<Attachment>(vts, "arpOffset", knobOffset.knob));
 }
 
 void ArpPanel::paint(juce::Graphics& g)
 {
     g.fillAll(PicoColors::bgDk);
-    g.setColour(juce::Colours::white.withAlpha(0.6f));
-    g.setFont(juce::FontOptions(14.0f, juce::Font::bold));
-    g.drawText("ARPEGGIATOR", 30, 20, 200, 24, juce::Justification::left);
-    g.drawText("SCALE QUANTIZE", 450, 20, 200, 24, juce::Justification::left);
+
+    auto drawSectionHeader = [&g](const juce::String& name, int x, int y, int w, juce::Colour accent)
+    {
+        g.setColour(accent);
+        g.setFont(juce::FontOptions(12.0f, juce::Font::bold));
+        g.drawText(name, x, y, w, 14, juce::Justification::left);
+        g.setColour(accent.withAlpha(0.35f));
+        g.fillRect(x, y + 16, w, 1);
+    };
+
+    drawSectionHeader("ARPEGGIATOR SETTINGS", 20, 10, 480, PicoColors::lavender);
+    drawSectionHeader("SCALE QUANTIZER",     520, 10, 520, PicoColors::mint);
 }
 
 void ArpPanel::resized()
 {
-    btnEnable.setBounds(30, 60, 110, 30);
-    btnLatch.setBounds(150, 60, 90, 30);
-    btnSync.setBounds(250, 60, 80, 30);
+    btnEnable.setBounds(20,  34, 85, 26);
+    btnLatch.setBounds(112, 34, 75, 26);
+    btnSync.setBounds(194,  34, 65, 26);
 
-    comboPattern.setBounds(30, 110, 150, 28);
-    comboRateSync.setBounds(190, 110, 140, 28);
+    comboPattern.setBounds(266, 34, 110, 26);
+    comboRateSync.setBounds(382, 34, 80, 26);
 
-    knobOctaves.setBounds(30, 160, 55, 55);
-    knobRateFree.setBounds(95, 160, 55, 55);
-    knobGate.setBounds(160, 160, 55, 55);
+    const int knobY = 75;
+    const int knobW = 60;
+    const int knobH = 75;
 
-    comboKey.setBounds(450, 60, 120, 28);
-    comboScale.setBounds(580, 60, 180, 28);
+    knobOctaves.setBounds(20,  knobY, knobW, knobH);
+    knobRateFree.setBounds(95, knobY, knobW, knobH);
+    knobGate.setBounds(170,    knobY, knobW, knobH);
+    knobOffset.setBounds(245,  knobY, knobW, knobH);
+
+    comboKey.setBounds(520, 34, 110, 26);
+    comboScale.setBounds(638, 34, 180, 26);
 }

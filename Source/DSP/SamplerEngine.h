@@ -101,6 +101,20 @@ public:
     SampleSlot& getSlot(int index) noexcept { return slots[(size_t)juce::jlimit(0, NUM_SLOTS - 1, index)]; }
     const SampleSlot& getSlot(int index) const noexcept { return slots[(size_t)juce::jlimit(0, NUM_SLOTS - 1, index)]; }
 
+    std::array<bool, 128> getPlayingNotes() const noexcept
+    {
+        std::array<bool, 128> notes {};
+        for (const auto& v : voices)
+        {
+            if (v.isActive())
+            {
+                const int n = v.getMidiNote();
+                if (n >= 0 && n < 128) notes[(size_t)n] = true;
+            }
+        }
+        return notes;
+    }
+
     void handleMidi(const juce::MidiBuffer& midi, const Params& p) noexcept;
     void renderNextBlock(juce::AudioBuffer<float>& outputBuffer, const Params& p, SampleVisualizerData* visualizerData = nullptr) noexcept;
 

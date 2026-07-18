@@ -1,7 +1,6 @@
 // ==========================================
 // File: Arpeggiator.h
-// 13パターン アルペジエイター (Granularより移植)
-// テンポ同期 / サンプル精度スケジューリング
+// 13パターン アルペジエイター (Offset ＆ スケール量子化完全連携)
 // ==========================================
 #pragma once
 
@@ -53,6 +52,7 @@ public:
         int rateSync = 6;           // 1/8
         float rateFreeHz = 4.0f;
         int octaves = 1;            // 1..4
+        int offset = 0;             // -12..+12 半音
         int durMode = 0;
         float gatePct = 0.8f;       // 0.1..1.0
         int key = 0;
@@ -81,7 +81,7 @@ private:
     };
 
     void handleIncomingMidi(const juce::MidiBuffer& midi, bool latch) noexcept;
-    void rebuildSequence(int pattern, int octaves, int key, int scale) noexcept;
+    void rebuildSequence(int pattern, int octaves, int offset, int key, int scale) noexcept;
     int calculateStepSamples(const Params& p, int numSamples) const noexcept;
     int calculateGateSamples(const Params& p, int stepSamples) const noexcept;
     void stopAllActiveNotes(juce::MidiBuffer& outMidi, int sampleOffset) noexcept;

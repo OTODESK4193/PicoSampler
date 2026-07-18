@@ -216,5 +216,6 @@ void PicoSamplerAudioProcessorEditor::timerCallback()
     }
 
     keyRangeMap.updateKeyRanges(ranges, roots, readyStates, activeIdx);
+    keyRangeMap.setPlayingNotes(audioProcessor.getSamplerEngine().getPlayingNotes());
     repaint(0, 0, 700, 44);
 }

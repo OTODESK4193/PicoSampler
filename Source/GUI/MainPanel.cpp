@@ -265,8 +265,8 @@ void MainPanel::paint(juce::Graphics& g)
     };
 
     // セパレーター下線 (Y=26)
-    drawSectionHeader("ACTIVE SLOT",   20,  10, 360, PicoColors::mint);
-    drawSectionHeader("PLAYBACK MODE", 420, 10, 260, PicoColors::babyBlue);
+    drawSectionHeader("ACTIVE SLOT",   20,  10, 320, PicoColors::mint);
+    drawSectionHeader("PLAYBACK MODE", 360, 10, 240, PicoColors::babyBlue);
 
     // 1段目: SAMPLE / LOOP, ENVELOPE (Y=80)
     drawSectionHeader("SAMPLE / LOOP", 20,  80, 480, PicoColors::peach);
@@ -283,12 +283,12 @@ void MainPanel::resized()
 
     for (int i = 0; i < 8; ++i)
     {
-        btnSlots[(size_t)i].setBounds(115 + i * 31, btnY, 28, 22);
+        btnSlots[(size_t)i].setBounds(20 + i * 31, btnY, 28, 22);
     }
 
-    btnSingle.setBounds(525, btnY, 70, 22);
-    btnLayer.setBounds(600, btnY, 70, 22);
-    btnRandom.setBounds(675, btnY, 70, 22);
+    btnSingle.setBounds(360, btnY, 70, 22);
+    btnLayer.setBounds(435, btnY, 70, 22);
+    btnRandom.setBounds(510, btnY, 70, 22);
 
     const int knobY1 = 106;
     const int knobW = 60;

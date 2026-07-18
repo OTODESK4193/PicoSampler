@@ -1,6 +1,6 @@
 // ==========================================
 // File: Arpeggiator.cpp
-// 13パターン アルペジエイター実装
+// 13パターン アルペジエイター実装 (Offset ＆ スケール量子化完全連携)
 // ==========================================
 #include "Arpeggiator.h"
 
@@ -47,7 +47,7 @@ void Arpeggiator::process(juce::MidiBuffer& midi, int numSamples, const Params& 
     }
 
     handleIncomingMidi(midi, p.latch);
-    midi.clear(); // アルペジオ出力に差し替えるためクリア
+    midi.clear(); // アルペジオ出力ノートで全置き換え
 
     const auto& sourceNotes = p.latch && heldNotes.empty() ? latchedNotes : heldNotes;
 
@@ -60,7 +60,7 @@ void Arpeggiator::process(juce::MidiBuffer& midi, int numSamples, const Params& 
         return;
     }
 
-    rebuildSequence(p.pattern, p.octaves, p.key, p.scale);
+    rebuildSequence(p.pattern, p.octaves, p.offset, p.key, p.scale);
     if (playSequence.empty()) return;
 
     const int stepSamples = calculateStepSamples(p, numSamples);
@@ -73,7 +73,6 @@ void Arpeggiator::process(juce::MidiBuffer& midi, int numSamples, const Params& 
         {
             stepSampleCounter = stepSamples;
 
-            // 次のノートをピックアップ
             if (p.pattern == Chord)
             {
                 // コードモード: 全ノート同時発音
@@ -158,14 +157,13 @@ void Arpeggiator::handleIncomingMidi(const juce::MidiBuffer& midi, bool latch) n
     }
 }
 
-void Arpeggiator::rebuildSequence(int pattern, int octaves, int key, int scale) noexcept
+void Arpeggiator::rebuildSequence(int pattern, int octaves, int offset, int key, int scale) noexcept
 {
     const auto& src = heldNotes.empty() ? latchedNotes : heldNotes;
     if (src.empty()) { playSequence.clear(); return; }
 
     std::vector<NoteInfo> base = src;
 
-    // ソート基準の設定
     if (pattern != AsPlayed)
     {
         std::sort(base.begin(), base.end(), [](const NoteInfo& a, const NoteInfo& b) {
@@ -175,16 +173,18 @@ void Arpeggiator::rebuildSequence(int pattern, int octaves, int key, int scale) 
 
     playSequence.clear();
     const int numOct = juce::jlimit(1, 4, octaves);
+    const int rootNote = (key > 0) ? (key - 1) : 0;
 
     for (int oct = 0; oct < numOct; ++oct)
     {
         for (auto n : base)
         {
-            n.noteNumber = juce::jlimit(0, 127, n.noteNumber + oct * 12);
+            int shiftedNote = n.noteNumber + (oct * 12) + offset;
             if (scale > 0)
             {
-                n.noteNumber = (int)ScaleQuantizer::quantize((float)n.noteNumber, key, scale);
+                shiftedNote = (int)ScaleQuantizer::quantize((float)shiftedNote, rootNote, scale);
             }
+            n.noteNumber = juce::jlimit(0, 127, shiftedNote);
             playSequence.push_back(n);
         }
     }
@@ -268,7 +268,7 @@ int Arpeggiator::calculateGateSamples(const Params& p, int stepSamples) const no
         return juce::jlimit(1, stepSamples, (int)(stepSamples * p.gatePct));
     }
 
-    static const float fixedBeats[4] = { 0.125f, 0.25f, 0.5f, 1.0f }; // 1/32, 1/16, 1/8, 1/4
+    static const float fixedBeats[4] = { 0.125f, 0.25f, 0.5f, 1.0f };
     const double bpm = p.bpm > 1.0 ? p.bpm : 120.0;
     const double sec = (60.0 / bpm) * fixedBeats[juce::jlimit(0, 3, p.durMode - 1)];
     return juce::jlimit(1, stepSamples, (int)(sec * sr));

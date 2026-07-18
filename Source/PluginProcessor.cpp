@@ -86,6 +86,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout PicoSamplerAudioProcessor::c
     params.push_back(std::make_unique<juce::AudioParameterChoice>("arpRateSync", "Arp Rate Sync", Arpeggiator::getSyncRateNames(), 6));
     params.push_back(std::make_unique<juce::AudioParameterFloat>("arpRateFree", "Arp Rate Free", 0.1f, 20.0f, 4.0f));
     params.push_back(std::make_unique<juce::AudioParameterInt>("arpOctaves", "Arp Octaves", 1, 4, 1));
+    params.push_back(std::make_unique<juce::AudioParameterInt>("arpOffset", "Arp Offset", -12, 12, 0));
     params.push_back(std::make_unique<juce::AudioParameterFloat>("arpGate", "Arp Gate", 0.1f, 1.0f, 0.8f));
     params.push_back(std::make_unique<juce::AudioParameterChoice>("key", "Root Key", juce::StringArray{ "Auto", "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" }, 0));
     params.push_back(std::make_unique<juce::AudioParameterChoice>("scale", "Scale", ScaleQuantizer::getScaleNames(), 0));
@@ -104,6 +105,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout PicoSamplerAudioProcessor::c
 void PicoSamplerAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
 {
     samplerEngine.prepare(sampleRate);
+    arpeggiator.prepare(sampleRate);
 }
 
 void PicoSamplerAudioProcessor::releaseResources() {}
@@ -122,6 +124,7 @@ void PicoSamplerAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
 
     buffer.clear();
 
+    const int numSamples = buffer.getNumSamples();
     const int modeVal = (int)getParamFloat("samplerMode", 0.0f);
     const int activeSlotIdx = (int)getParamFloat("activeSlot", 0.0f);
 
@@ -163,7 +166,40 @@ void PicoSamplerAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
         sp.highNote = (int)getParamFloat("slotHighNote_" + s, 127.0f);
     }
 
-    samplerEngine.handleMidi(midiMessages, engineParams);
+    // アルペジエーター処理
+    Arpeggiator::Params arpParams;
+    arpParams.enable     = getParamFloat("arpEnable", 0.0f) > 0.5f;
+    arpParams.latch      = getParamFloat("arpLatch", 0.0f) > 0.5f;
+    arpParams.sync       = getParamFloat("arpSync", 1.0f) > 0.5f;
+    arpParams.pattern    = (int)getParamFloat("arpPattern", 0.0f);
+    arpParams.rateSync   = (int)getParamFloat("arpRateSync", 6.0f);
+    arpParams.rateFreeHz = getParamFloat("arpRateFree", 4.0f);
+    arpParams.octaves    = (int)getParamFloat("arpOctaves", 1.0f);
+    arpParams.offset     = (int)getParamFloat("arpOffset", 0.0f);
+    arpParams.gatePct    = getParamFloat("arpGate", 0.8f);
+    arpParams.key        = (int)getParamFloat("key", 0.0f);
+    arpParams.scale      = (int)getParamFloat("scale", 0.0f);
+
+    if (auto* ph = getPlayHead())
+    {
+        if (auto pos = ph->getPosition())
+        {
+            if (pos->getBpm()) arpParams.bpm = *pos->getBpm();
+        }
+    }
+
+    juce::MidiBuffer processedMidi;
+    if (arpParams.enable)
+    {
+        processedMidi.addEvents(midiMessages, 0, numSamples, 0);
+        arpeggiator.process(processedMidi, numSamples, arpParams);
+        samplerEngine.handleMidi(processedMidi, engineParams);
+    }
+    else
+    {
+        samplerEngine.handleMidi(midiMessages, engineParams);
+    }
+
     samplerEngine.renderNextBlock(buffer, engineParams, &visualizerData);
 }
 
