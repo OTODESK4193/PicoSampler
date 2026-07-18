@@ -1,6 +1,6 @@
 // ==========================================
 // File: SamplerVoice.cpp
-// PicoVoice レンダリング実装
+// PicoVoice レンダリング実装 (クロマチック発音正確ピッチ修正)
 // ==========================================
 #include "SamplerVoice.h"
 
@@ -15,7 +15,9 @@ void PicoVoice::startNote(int midiNoteNumber, float noteVelocity, int slotIdx,
     ageCounter++;
 
     const auto& meta = slot.getMetadata();
-    const auto* buffer = slot.getAnchorBuffer(midiNoteNumber - meta.rootKey);
+    const int stOffset = midiNoteNumber - meta.rootKey + (p.octave * 12) + p.semitone;
+    const auto* buffer = slot.getAnchorBuffer(stOffset);
+
     if (!buffer || buffer->getNumSamples() == 0)
     {
         active = false;
@@ -50,6 +52,11 @@ void PicoVoice::renderNextBlock(juce::AudioBuffer<float>& outputBuffer, int star
 
     const auto& meta = slot.getMetadata();
     const int stOffset = midiNote - meta.rootKey + (p.octave * 12) + p.semitone;
+
+    const int anchorIdx = juce::jlimit(0, SampleSlot::kNumAnchors - 1, stOffset + 12);
+    const int anchorSemis = anchorIdx - 12;
+    const float residualSemis = (float)(stOffset - anchorSemis) + (p.fineTune / 100.0f);
+
     const auto* buffer = slot.getAnchorBuffer(stOffset);
 
     if (!buffer || buffer->getNumSamples() < 4)
@@ -68,8 +75,7 @@ void PicoVoice::renderNextBlock(juce::AudioBuffer<float>& outputBuffer, int star
     const int lpEnd    = std::min(smpEnd, lpStart + lpLen);
     const int xfadeLen = juce::jmax(1, (int)(lpLen * juce::jlimit(0.0f, 0.5f, p.crossfadeRatio)));
 
-    const float pitchModSt = (float)stOffset + (p.fineTune / 100.0f);
-    const double pitchRatio = std::pow(2.0, (double)pitchModSt / 12.0);
+    const double pitchRatio = std::pow(2.0, (double)residualSemis / 12.0);
     const double pitchInc = pitchRatio * (double)p.speed;
 
     const float pan = juce::jlimit(-1.0f, 1.0f, p.pan);

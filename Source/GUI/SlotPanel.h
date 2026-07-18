@@ -1,6 +1,6 @@
 // ==========================================
 // File: SlotPanel.h
-// 8スロット カード ＆ 88鍵ビジュアル パネル (グラフィック強化版)
+// 8スロット 2x4 カード パネル (見切れゼロレイアウト)
 // ==========================================
 #pragma once
 
@@ -20,6 +20,10 @@ public:
 
     void updateSlotStates();
 
+    std::array<std::pair<int, int>, 8> getSlotRanges() const;
+    std::array<int, 8> getRootKeys() const;
+    std::array<bool, 8> getSlotReadyStates() const;
+
 private:
     struct SlotCardComponent : public juce::Component, public juce::FileDragAndDropTarget
     {
@@ -38,33 +42,10 @@ private:
         void filesDropped(const juce::StringArray& files, int, int) override;
     };
 
-    struct GraphicalKeyboardComponent : public juce::Component
-    {
-        std::array<std::pair<int, int>, 8> slotRanges {};
-        std::array<int, 8> rootKeys {};
-        std::array<bool, 8> slotEnabled {};
-        int activeSlot = 0;
-        std::function<void(int slotIdx, int low, int high)> onRangeChanged;
-
-        void paint(juce::Graphics& g) override;
-        void mouseDown(const juce::MouseEvent& e) override;
-        void mouseDrag(const juce::MouseEvent& e) override;
-        void mouseUp(const juce::MouseEvent& e) override;
-
-    private:
-        float noteToX(int midiNote) const noexcept;
-        int xToNote(float x) const noexcept;
-
-        int draggingSlot = -1;
-        bool draggingLowEdge = true;
-    };
-
     juce::AudioProcessorValueTreeState& vts;
     SamplerEngine& samplerEngine;
 
     std::array<std::unique_ptr<SlotCardComponent>, 8> slotCards;
-    GraphicalKeyboardComponent keyboardVisualizer;
-
     std::array<std::unique_ptr<juce::Slider>, 8> lowNoteKnobs;
     std::array<std::unique_ptr<juce::Slider>, 8> highNoteKnobs;
     std::array<std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>, 16> attachments;

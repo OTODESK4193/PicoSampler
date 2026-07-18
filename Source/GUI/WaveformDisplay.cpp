@@ -1,6 +1,6 @@
 // ==========================================
 // File: WaveformDisplay.cpp
-// WaveformDisplay 実装 (Triangle 描画修正)
+// WaveformDisplay 実装 (波形 + KeyRange統合 ＆ D&D完全対応)
 // ==========================================
 #include "WaveformDisplay.h"
 
@@ -14,88 +14,158 @@ WaveformDisplay::~WaveformDisplay()
     stopTimer();
 }
 
+float WaveformDisplay::noteToX(int midiNote, float w) const noexcept
+{
+    const float norm = juce::jlimit(21.0f, 108.0f, (float)midiNote);
+    return ((norm - 21.0f) / 87.0f) * (w - 20.0f) + 10.0f;
+}
+
+int WaveformDisplay::xToNote(float x, float w) const noexcept
+{
+    const float norm = juce::jlimit(0.0f, 1.0f, (x - 10.0f) / (w - 20.0f));
+    return (int)std::round(norm * 87.0f + 21.0f);
+}
+
 void WaveformDisplay::paint(juce::Graphics& g)
 {
     const float w = (float)getWidth();
     const float h = (float)getHeight();
+    const float waveH = h - 60.0f;
+    const float kbY = h - 55.0f;
 
     // 1. 背景パネル
     g.setColour(PicoColors::panel);
     g.fillRoundedRectangle(0.0f, 0.0f, w, h, 6.0f);
+    g.setColour(PicoColors::knobTrack);
+    g.drawRoundedRectangle(0.0f, 0.0f, w, h, 6.0f, 1.0f);
 
+    // --- 2. 波形表示エリア (0 .. waveH) ---
     if (!currentSlot || !currentSlot->isReady())
     {
-        g.setColour(juce::Colours::white.withAlpha(0.3f));
-        g.setFont(juce::FontOptions(14.0f, juce::Font::italic));
-        g.drawText("Drag & Drop Sample File Here", getLocalBounds(), juce::Justification::centred, true);
-        return;
+        g.setColour(juce::Colours::white.withAlpha(0.35f));
+        g.setFont(juce::FontOptions(14.0f, juce::Font::bold));
+        g.drawText("Drag & Drop Sample File Here (Slot " + juce::String(activeSlot + 1) + ")",
+                   0, 0, (int)w, (int)waveH, juce::Justification::centred, true);
     }
-
-    const auto& buffer = currentSlot->getOriginalBuffer();
-    const int numSamples = buffer.getNumSamples();
-    if (numSamples == 0) return;
-
-    const auto& meta = currentSlot->getMetadata();
-    const float* samples = buffer.getReadPointer(0);
-
-    // 2. ドットマトリクス波形描画
-    const float stepX = 4.0f;
-    const int numCols = (int)(w / stepX);
-    const int samplesPerCol = juce::jmax(1, numSamples / numCols);
-
-    for (int col = 0; col < numCols; ++col)
+    else
     {
-        const int startIdx = col * samplesPerCol;
-        float minVal = 0.0f, maxVal = 0.0f, energy = 0.0f;
-
-        for (int i = 0; i < samplesPerCol && (startIdx + i) < numSamples; ++i)
+        const auto& buffer = currentSlot->getOriginalBuffer();
+        const int numSamples = buffer.getNumSamples();
+        if (numSamples > 0)
         {
-            const float v = samples[startIdx + i];
-            minVal = std::min(minVal, v);
-            maxVal = std::max(maxVal, v);
-            energy += v * v;
+            const auto& meta = currentSlot->getMetadata();
+            const float* samples = buffer.getReadPointer(0);
+
+            const float stepX = 4.0f;
+            const int numCols = (int)(w / stepX);
+            const int samplesPerCol = juce::jmax(1, numSamples / numCols);
+
+            for (int col = 0; col < numCols; ++col)
+            {
+                const int startIdx = col * samplesPerCol;
+                float minVal = 0.0f, maxVal = 0.0f, energy = 0.0f;
+
+                for (int i = 0; i < samplesPerCol && (startIdx + i) < numSamples; ++i)
+                {
+                    const float v = samples[startIdx + i];
+                    minVal = std::min(minVal, v);
+                    maxVal = std::max(maxVal, v);
+                    energy += v * v;
+                }
+
+                const float rms = std::sqrt(energy / (float)samplesPerCol);
+                const float x = (float)col * stepX + stepX * 0.5f;
+                const float yMin = (waveH * 0.5f) - (minVal * waveH * 0.45f);
+                const float yMax = (waveH * 0.5f) - (maxVal * waveH * 0.45f);
+
+                g.setColour(getSpectralColor(rms));
+                g.drawLine(x, yMin, x, yMax, 2.0f);
+            }
+
+            // サンプルStart / End マーカー描画
+            const float sX = meta.sampleStartRatio * w;
+            const float eX = meta.sampleEndRatio * w;
+
+            g.setColour(juce::Colours::yellow);
+            g.drawLine(sX, 0.0f, sX, waveH, 2.0f);
+
+            juce::Path triS;
+            triS.addTriangle(sX, 0.0f, sX + 6.0f, 0.0f, sX, 8.0f);
+            g.fillPath(triS);
+
+            g.setColour(juce::Colours::orange);
+            g.drawLine(eX, 0.0f, eX, waveH, 2.0f);
+
+            juce::Path triE;
+            triE.addTriangle(eX, 0.0f, eX - 6.0f, 0.0f, eX, 8.0f);
+            g.fillPath(triE);
+
+            // ループStart / End
+            if (meta.isLooping)
+            {
+                const float lsX = meta.loopStartRatio * w;
+                const float leX = (meta.loopStartRatio + meta.loopLengthRatio) * w;
+                const float xfX = (meta.loopStartRatio + meta.loopLengthRatio - meta.crossfadeRatio) * w;
+
+                g.setColour(PicoColors::mint.withAlpha(0.15f));
+                g.fillRect(xfX, 0.0f, leX - xfX, waveH);
+
+                g.setColour(PicoColors::mint);
+                g.drawLine(lsX, 0.0f, lsX, waveH, 1.5f);
+                g.drawLine(leX, 0.0f, leX, waveH, 1.5f);
+            }
         }
-
-        const float rms = std::sqrt(energy / (float)samplesPerCol);
-        const float x = (float)col * stepX + stepX * 0.5f;
-        const float yMin = (h * 0.5f) - (minVal * h * 0.45f);
-        const float yMax = (h * 0.5f) - (maxVal * h * 0.45f);
-
-        g.setColour(getSpectralColor(rms));
-        g.drawLine(x, yMin, x, yMax, 2.0f);
     }
 
-    // 3. サンプルStart / End マーカー描画 (黄色/オレンジ)
-    const float sX = meta.sampleStartRatio * w;
-    const float eX = meta.sampleEndRatio * w;
+    // --- 3. KeyRangeMap (88鍵音域オーバーレイ) エリア描画 (kbY .. h) ---
+    g.setColour(PicoColors::track);
+    g.fillRect(10.0f, kbY, w - 20.0f, 50.0f);
 
-    g.setColour(juce::Colours::yellow);
-    g.drawLine(sX, 0.0f, sX, h, 2.0f);
-
-    juce::Path triS;
-    triS.addTriangle(sX, 0.0f, sX + 6.0f, 0.0f, sX, 8.0f);
-    g.fillPath(triS);
-
-    g.setColour(juce::Colours::orange);
-    g.drawLine(eX, 0.0f, eX, h, 2.0f);
-
-    juce::Path triE;
-    triE.addTriangle(eX, 0.0f, eX - 6.0f, 0.0f, eX, 8.0f);
-    g.fillPath(triE);
-
-    // 4. ループStart / End & クロスフェード描画 (緑/ミント)
-    if (meta.isLooping)
+    // 8スロット音域バー描画 (8レーン)
+    const float laneH = 4.5f;
+    for (int s = 0; s < 8; ++s)
     {
-        const float lsX = meta.loopStartRatio * w;
-        const float leX = (meta.loopStartRatio + meta.loopLengthRatio) * w;
-        const float xfX = (meta.loopStartRatio + meta.loopLengthRatio - meta.crossfadeRatio) * w;
+        const float lY = kbY + 2.0f + (float)s * (laneH + 1.0f);
+        const auto col = PicoColors::getSlotColor(s);
+        const bool isAct = (s == activeSlot);
 
-        g.setColour(PicoColors::mint.withAlpha(0.15f));
-        g.fillRect(xfX, 0.0f, leX - xfX, h);
+        if (slotReady[(size_t)s])
+        {
+            const float x1 = noteToX(slotRanges[(size_t)s].first, w);
+            const float x2 = noteToX(slotRanges[(size_t)s].second, w);
+            const float bandW = std::max(4.0f, x2 - x1);
 
-        g.setColour(PicoColors::mint);
-        g.drawLine(lsX, 0.0f, lsX, h, 1.5f);
-        g.drawLine(leX, 0.0f, leX, h, 1.5f);
+            g.setColour(col.withAlpha(isAct ? 0.95f : 0.45f));
+            g.fillRoundedRectangle(x1, lY, bandW, laneH, 1.5f);
+
+            // ルートキー表示 'R' ドット
+            const float rx = noteToX(rootKeys[(size_t)s], w);
+            if (rx >= x1 && rx <= x2)
+            {
+                g.setColour(juce::Colours::yellow);
+                g.fillEllipse(rx - 2.5f, lY - 1.0f, 5.0f, 5.0f);
+            }
+        }
+    }
+
+    // 88鍵盤ビジュアル (下部 12px)
+    const float numWhite = 52.0f;
+    const float whiteW = (w - 20.0f) / numWhite;
+    static const bool isBlackNote[12] = { false, true, false, true, false, false, true, false, true, false, true, false };
+
+    int whiteIdx = 0;
+    const float keyY = h - 14.0f;
+
+    for (int note = 21; note <= 108; ++note)
+    {
+        const int noteInOct = note % 12;
+        if (!isBlackNote[noteInOct])
+        {
+            const float x = 10.0f + (float)whiteIdx * whiteW;
+            g.setColour(juce::Colours::white.withAlpha(0.85f));
+            g.fillRect(x + 0.5f, keyY, whiteW - 1.0f, 12.0f);
+            whiteIdx++;
+        }
     }
 }
 
@@ -123,12 +193,30 @@ void WaveformDisplay::filesDropped(const juce::StringArray& files, int, int)
 
 void WaveformDisplay::mouseDown(const juce::MouseEvent& e)
 {
+    const float w = (float)getWidth();
+    const float h = (float)getHeight();
+    const float mouseX = (float)e.x;
+    const float mouseY = (float)e.y;
+
+    if (mouseY > h - 60.0f)
+    {
+        // KeyRange エリア操作
+        activeDrag = DragTarget::KeyRangeLow;
+        const int clickedNote = xToNote(mouseX, w);
+        const int low = slotRanges[(size_t)activeSlot].first;
+        const int high = slotRanges[(size_t)activeSlot].second;
+
+        if (std::abs(clickedNote - low) <= std::abs(clickedNote - high))
+            activeDrag = DragTarget::KeyRangeLow;
+        else
+            activeDrag = DragTarget::KeyRangeHigh;
+
+        return;
+    }
+
     if (!currentSlot || !currentSlot->isReady()) return;
 
-    const float w = (float)getWidth();
-    const float mouseX = (float)e.x;
     const auto& meta = currentSlot->getMetadata();
-
     const float sX = meta.sampleStartRatio * w;
     const float eX = meta.sampleEndRatio * w;
 
@@ -139,11 +227,26 @@ void WaveformDisplay::mouseDown(const juce::MouseEvent& e)
 
 void WaveformDisplay::mouseDrag(const juce::MouseEvent& e)
 {
-    if (activeDrag == DragTarget::None || !currentSlot) return;
-
     const float w = (float)getWidth();
+    if (activeDrag == DragTarget::None) return;
+
+    if (activeDrag == DragTarget::KeyRangeLow || activeDrag == DragTarget::KeyRangeHigh)
+    {
+        const int currentNote = xToNote((float)e.x, w);
+        int low = slotRanges[(size_t)activeSlot].first;
+        int high = slotRanges[(size_t)activeSlot].second;
+
+        if (activeDrag == DragTarget::KeyRangeLow) low = std::min(currentNote, high);
+        else high = std::max(currentNote, low);
+
+        if (onKeyRangeChanged) onKeyRangeChanged(activeSlot, low, high);
+        repaint();
+        return;
+    }
+
+    if (!currentSlot) return;
     const float normX = juce::jlimit(0.0f, 1.0f, (float)e.x / w);
-    auto& meta = currentSlot->getMetadata();
+    auto& meta = const_cast<SampleSlot*>(currentSlot)->getMetadata();
 
     if (activeDrag == DragTarget::SampleStart)
     {

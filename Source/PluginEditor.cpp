@@ -1,6 +1,6 @@
 // ==========================================
 // File: PluginEditor.cpp
-// PicoSampler メインエディタ GUI 実装 (Granular完全準拠レイアウト)
+// PicoSampler メインエディタ GUI 実装 (KeyRangeMap波形統合 ＆ D&D対応)
 // ==========================================
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
@@ -47,6 +47,24 @@ PicoSamplerAudioProcessorEditor::PicoSamplerAudioProcessorEditor(PicoSamplerAudi
     addAndMakeVisible(presetBrowser);
 
     waveDisplay.setVisualizerData(&p.getVisualizerData());
+
+    // 波形エリアへの D&D ファイルドロップ対応 (アクティブスロットにロード)
+    waveDisplay.onFileDropped = [this](const juce::File& file) {
+        const int activeIdx = (int)audioProcessor.getAPVTS().getRawParameterValue("activeSlot")->load();
+        audioProcessor.getSamplerEngine().getSlot(activeIdx).loadFromFile(file);
+        slotPanel.updateSlotStates();
+        repaint();
+    };
+
+    // 波形エリア KeyRangeMap マウス操作対応
+    waveDisplay.onKeyRangeChanged = [this](int slotIdx, int low, int high) {
+        if (auto* pLow = audioProcessor.getAPVTS().getParameter("slotLowNote_" + juce::String(slotIdx)))
+            pLow->setValueNotifyingHost((float)low / 127.0f);
+        if (auto* pHigh = audioProcessor.getAPVTS().getParameter("slotHighNote_" + juce::String(slotIdx)))
+            pHigh->setValueNotifyingHost((float)high / 127.0f);
+        slotPanel.updateSlotStates();
+        repaint();
+    };
 
     setActiveTab(0);
     startTimerHz(10);
@@ -129,10 +147,9 @@ void PicoSamplerAudioProcessorEditor::paint(juce::Graphics& g)
 
 void PicoSamplerAudioProcessorEditor::resized()
 {
-    // 波形表示 (Granularと同じ上部配置)
+    // 波形表示 (波形 + 下部88鍵 KeyRangeMap 統合エリア)
     waveDisplay.setBounds(20, 48, 1040, 240);
 
-    // タブボタン (Granularと同じ波形直下配置)
     const int tabY = 296;
     const int tabW = 88;
     const int tabH = 26;
@@ -146,7 +163,7 @@ void PicoSamplerAudioProcessorEditor::resized()
 
     btnPresets.setBounds(1080 - 100, 10, 80, 26);
 
-    // パネル領域 (Y=330 以降)
+    // パネル領域
     const auto panelBounds = juce::Rectangle<int>(0, 330, 1080, 370);
     mainPanel.setBounds(panelBounds);
     slotPanel.setBounds(panelBounds);
@@ -162,7 +179,14 @@ void PicoSamplerAudioProcessorEditor::timerCallback()
 {
     const int activeIdx = (int)audioProcessor.getAPVTS().getRawParameterValue("activeSlot")->load();
     waveDisplay.setSampleSlot(&audioProcessor.getSamplerEngine().getSlot(activeIdx));
+
     slotPanel.updateSlotStates();
     mainPanel.updateStates();
+
+    waveDisplay.updateKeyRanges(slotPanel.getSlotRanges(),
+                                slotPanel.getRootKeys(),
+                                slotPanel.getSlotReadyStates(),
+                                activeIdx);
+
     repaint(0, 0, 600, 48);
 }
