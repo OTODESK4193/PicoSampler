@@ -1,6 +1,6 @@
 // ==========================================
 // File: SampleSlot.h
-// スロット管理 (reanalyze メソッド追加 & fileSampleRate 保持)
+// スロット管理 (アンカー49化 & Stretch音質大幅向上)
 // ==========================================
 #pragma once
 
@@ -12,7 +12,8 @@
 class SampleSlot
 {
 public:
-    static constexpr int kNumAnchors = 24;
+    // -24 ~ +24 半音 (全4オクターブ) のアンカーバッファでリサンプリング速度変化を完全追放
+    static constexpr int kNumAnchors = 49;
 
     struct Metadata
     {

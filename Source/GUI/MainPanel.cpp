@@ -83,47 +83,28 @@ MainPanel::MainPanel(juce::AudioProcessorValueTreeState& apvts) : vts(apvts)
         return (double)noteNameToMidiNumber(text);
     };
 
-    // ADSR Link Button
+    // ADSR Link Button (ダイアログなしでSlot1現在値に即時リンク・同期)
     addAndMakeVisible(btnLinkEnv);
     btnLinkEnv.onClick = [this] {
-        if (!isEnvLinked)
-        {
-            juce::AlertWindow::showOkCancelBox(
-                juce::MessageBoxIconType::QuestionIcon,
-                "Link Envelope Parameters",
-                "Copy SLOT 1 Envelope (ADSR) parameters to all other slots and link them?",
-                "Yes", "No", this,
-                juce::ModalCallbackFunction::create([this](int result) {
-                    if (result == 1) // Yes
-                    {
-                        isEnvLinked = true;
-                        btnLinkEnv.setToggleState(true, juce::dontSendNotification);
+        isEnvLinked = !isEnvLinked;
+        btnLinkEnv.setToggleState(isEnvLinked, juce::dontSendNotification);
 
-                        const float a = vts.getRawParameterValue("attack_0")->load();
-                        const float d = vts.getRawParameterValue("decay_0")->load();
-                        const float s = vts.getRawParameterValue("sustain_0")->load();
-                        const float r = vts.getRawParameterValue("release_0")->load();
-
-                        for (int k = 1; k < 8; ++k)
-                        {
-                            const juce::String strKey = juce::String(k);
-                            if (auto* p = vts.getParameter("attack_" + strKey)) p->setValueNotifyingHost(a / 5.0f);
-                            if (auto* p = vts.getParameter("decay_" + strKey)) p->setValueNotifyingHost(d / 5.0f);
-                            if (auto* p = vts.getParameter("sustain_" + strKey)) p->setValueNotifyingHost(s);
-                            if (auto* p = vts.getParameter("release_" + strKey)) p->setValueNotifyingHost(r / 10.0f);
-                        }
-                    }
-                    else // No
-                    {
-                        btnLinkEnv.setToggleState(false, juce::dontSendNotification);
-                    }
-                })
-            );
-        }
-        else
+        if (isEnvLinked)
         {
-            isEnvLinked = false;
-            btnLinkEnv.setToggleState(false, juce::dontSendNotification);
+            // Slot 1 (index 0) の現在値を Slot 2~8 に即時同期
+            const float a = vts.getRawParameterValue("attack_0")->load();
+            const float d = vts.getRawParameterValue("decay_0")->load();
+            const float s = vts.getRawParameterValue("sustain_0")->load();
+            const float r = vts.getRawParameterValue("release_0")->load();
+
+            for (int k = 1; k < 8; ++k)
+            {
+                const juce::String strKey = juce::String(k);
+                if (auto* p = vts.getParameter("attack_" + strKey)) p->setValueNotifyingHost(a / 5.0f);
+                if (auto* p = vts.getParameter("decay_" + strKey)) p->setValueNotifyingHost(d / 5.0f);
+                if (auto* p = vts.getParameter("sustain_" + strKey)) p->setValueNotifyingHost(s);
+                if (auto* p = vts.getParameter("release_" + strKey)) p->setValueNotifyingHost(r / 10.0f);
+            }
         }
     };
 

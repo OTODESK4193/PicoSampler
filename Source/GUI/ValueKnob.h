@@ -1,6 +1,6 @@
 // ==========================================
 // File: ValueKnob.h
-// 数値常時表示 + カスタムテキスト表示 + ダブルクリック直接入力対応ノブ
+// 右クリックで数値直接入力 / ダブルクリックでデフォルト値リセット対応ノブ
 // ==========================================
 #pragma once
 
@@ -37,9 +37,10 @@ public:
         juce::Slider::mouseDown(e);
     }
 
-    void mouseDoubleClick(const juce::MouseEvent& /*e*/) override
+    void mouseDoubleClick(const juce::MouseEvent& e) override
     {
-        showDirectInputEditor();
+        // ダブルクリックでデフォルト値（または中央値）に復帰
+        juce::Slider::mouseDoubleClick(e);
     }
 
 private:

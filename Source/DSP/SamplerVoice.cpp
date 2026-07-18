@@ -111,7 +111,7 @@ void PicoVoice::renderNextBlock(juce::AudioBuffer<float>& outputBuffer, int star
     {
         // Stretch モード: アンカー(事前ピッチシフト済みバッファ)を原速再生
         // アンカー範囲外の残差のみピッチシフト + SR補正
-        const int anchorSemis = juce::jlimit(-12, 11, stOffset);
+        const int anchorSemis = juce::jlimit(-24, 24, stOffset);
         const float residualSemis = (float)(stOffset - anchorSemis) + (p.fineTune / 100.0f);
         const double pitchRatio = std::pow(2.0, (double)residualSemis / 12.0);
         pitchInc = srRatio * pitchRatio;

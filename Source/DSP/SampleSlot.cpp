@@ -1,6 +1,6 @@
 // ==========================================
 // File: SampleSlot.cpp
-// スロット管理実装 (reanalyze 実装)
+// スロット管理実装 (SignalsmithStretch高音質化 & 49アンカー配置)
 // ==========================================
 #include "SampleSlot.h"
 #include "PitchAnalyzer.h"
@@ -37,7 +37,7 @@ bool SampleSlot::loadFromFile(const juce::File& file)
     metadata.rootKey = (analysis.rootNote >= 0) ? analysis.rootNote : 60;
     metadata.centsOffset = analysis.centsOffset;
 
-    // SignalsmithStretch 24音階アンカー事前生成 (ファイルSR使用)
+    // SignalsmithStretch 高音質49音階アンカー事前生成 (ファイルSR使用)
     renderAnchors();
 
     analyzing.store(false, std::memory_order_release);
@@ -78,11 +78,14 @@ void SampleSlot::renderAnchors()
 
     for (int i = 0; i < kNumAnchors; ++i)
     {
-        const int stOffset = i - 12; // -12 ~ +11 半音
+        const int stOffset = i - 24; // -24 ~ +24 半音 (全4オクターブ)
 
         signalsmith::stretch::SignalsmithStretch<float> stretch;
-        stretch.presetDefault(numCh, (float)sr);
-        stretch.setTransposeSemitones((float)stOffset);
+        // トランジェント保護とアタックキープに最適化された高速・高品位ウィンドウ配置
+        const int blockSamples = static_cast<int>(sr * 0.06);   // 約60ms
+        const int intervalSamples = static_cast<int>(sr * 0.015); // 約15ms
+        stretch.configure(numCh, blockSamples, intervalSamples, false);
+        stretch.setTransposeSemitones((float)stOffset, 0.35f);
 
         anchorBuffers[(size_t)i].setSize(numCh, numSamples);
         anchorBuffers[(size_t)i].clear();
@@ -110,7 +113,7 @@ void SampleSlot::renderAnchors()
 
 const juce::AudioBuffer<float>* SampleSlot::getAnchorBuffer(int stOffset) const noexcept
 {
-    const int anchorIdx = juce::jlimit(0, kNumAnchors - 1, stOffset + 12);
+    const int anchorIdx = juce::jlimit(0, kNumAnchors - 1, stOffset + 24);
     return &anchorBuffers[(size_t)anchorIdx];
 }
 
