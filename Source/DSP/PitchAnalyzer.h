@@ -1,6 +1,6 @@
 // ==========================================
 // File: PitchAnalyzer.h
-// インテリジェントピッチ・素材解析モジュール (高精度ファイル名＆DSP複合解析)
+// 高精度 YIN ピッチ解析 ＆ 誤判定完全排除ファイル名パース
 // ==========================================
 #pragma once
 
@@ -31,16 +31,16 @@ public:
                                       int materialMode = Auto,
                                       const juce::String& fileName = "");
 
-    // 音声バッファから周波数 (Hz) を自己相関で検出
-    static float analyzePitch(const float* samples, int numSamples, double sampleRate, float minFreq = 40.0f);
+    // YIN 高精度ピッチ検出 (倍音誤判定・オクターブ飛び防止)
+    static float analyzePitchYin(const float* samples, int numSamples, double sampleRate, float minFreq = 20.0f, float maxFreq = 1200.0f);
 
-    // ケプストラム法
-    static float analyzePitchCepstrum(const float* samples, int numSamples, double sampleRate, float minFreq = 30.0f, float maxFreq = 1500.0f);
+    // NSDF ピッチ検出
+    static float analyzePitch(const float* samples, int numSamples, double sampleRate, float minFreq = 40.0f);
 
     // キック/ドラム用 FFTピーク検出
     static float analyzePitchKickFFT(const float* samples, int numSamples, double sampleRate);
 
-    // 高精度ファイル名からのキー検出
+    // 高精度ファイル名からのキー検出 (連番誤判定完全排除)
     static int parseKeyFromFileName(const juce::String& fileName, bool& outIsMinor);
 
 private:
