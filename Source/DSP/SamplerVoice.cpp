@@ -1,6 +1,6 @@
 // ==========================================
 // File: SamplerVoice.cpp
-// PicoVoice レンダリング実装 (チューニング・鍵盤音階完全整合 & ヌル安全)
+// PicoVoice レンダリング実装 (Repitch / Stretch ピッチ絶対整合 & ループクロスフェード)
 // ==========================================
 #include "SamplerVoice.h"
 
@@ -99,8 +99,7 @@ void PicoVoice::renderNextBlock(juce::AudioBuffer<float>& outputBuffer, int star
 
     if (p.isStretchMode)
     {
-        const int anchorIdx = juce::jlimit(0, SampleSlot::kNumAnchors - 1, stOffset + 12);
-        const int anchorSemis = anchorIdx - 12;
+        const int anchorSemis = juce::jlimit(-12, 11, stOffset);
         const float residualSemis = (float)(stOffset - anchorSemis) + (p.fineTune / 100.0f);
         const double pitchRatio = std::pow(2.0, (double)residualSemis / 12.0);
         pitchInc *= pitchRatio;
@@ -108,7 +107,8 @@ void PicoVoice::renderNextBlock(juce::AudioBuffer<float>& outputBuffer, int star
     else
     {
         // Repitch モード: 原音バッファからのダイレクトな pitchRatio リサンプリング再生
-        const double pitchRatio = std::pow(2.0, (double)(stOffset * 100 + p.fineTune) / 1200.0);
+        const float totalSemis = (float)stOffset + (p.fineTune / 100.0f);
+        const double pitchRatio = std::pow(2.0, (double)totalSemis / 12.0);
         pitchInc *= pitchRatio;
     }
 
@@ -195,7 +195,7 @@ void PicoVoice::renderNextBlock(juce::AudioBuffer<float>& outputBuffer, int star
             sL = sR = lagrange3rdInterpolate(chL[i0], chL[i1], chL[i2], chL[i3], frac);
         }
 
-        // Crossfade
+        // 滑らかなループ Crossfade
         if (p.isLooping && !p.isReverse && readPosition >= (double)(lpEnd - xfadeLen))
         {
             const float xfFactor = (float)(readPosition - (double)(lpEnd - xfadeLen)) / (float)xfadeLen;

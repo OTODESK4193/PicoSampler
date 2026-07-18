@@ -1,6 +1,6 @@
 // ==========================================
 // File: WaveformDisplay.cpp
-// WaveformDisplay 実装 (Reverse波形描画反転 & ゼロクロススナップ)
+// WaveformDisplay 実装 (Crossfade フェード領域グラデーション表示 & Reverse描画反転)
 // ==========================================
 #include "WaveformDisplay.h"
 
@@ -142,10 +142,14 @@ void WaveformDisplay::paint(juce::Graphics& g)
 
         const float lsX = drawLpSr * w;
         const float leX = drawLpEr * w;
-        const float xfX = (drawLpEr - crossfade) * w;
+        const float lpLenR = drawLpEr - drawLpSr;
+        const float xfW = (crossfade * lpLenR) * w;
+        const float xfX = isReverse ? lsX : (leX - xfW);
 
-        g.setColour(PicoColors::mint.withAlpha(0.18f));
-        g.fillRect(xfX, lpMarginY, std::max(1.0f, leX - xfX), lpH);
+        // X-Fade フェードオーバーラップ領域をグラデーション描画
+        juce::ColourGradient xfGrad(PicoColors::mint.withAlpha(0.0f), xfX, 0.0f, PicoColors::mint.withAlpha(0.35f), xfX + xfW, 0.0f, false);
+        g.setGradientFill(xfGrad);
+        g.fillRect(xfX, lpMarginY, std::max(1.0f, xfW), lpH);
 
         g.setColour(PicoColors::mint);
         g.drawLine(lsX, lpMarginY, lsX, lpMarginY + lpH, 2.0f);
@@ -171,7 +175,6 @@ float WaveformDisplay::findZeroCrossingRatio(float targetRatio) const noexcept
     const int searchRange = std::min(2048, numSamples / 10);
 
     int bestIdx = targetIdx;
-    int minDistance = searchRange + 1;
 
     for (int d = 0; d < searchRange; ++d)
     {

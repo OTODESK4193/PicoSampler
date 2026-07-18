@@ -1,6 +1,6 @@
 // ==========================================
 // File: PitchAnalyzer.cpp
-// インテリジェントピッチ・素材解析実装 (誤判定防止パース & DSP複合検証)
+// インテリジェントピッチ・素材解析実装 (MIDI Note直接認識 & 完璧な音高解析)
 // ==========================================
 #include "PitchAnalyzer.h"
 #include <cmath>
@@ -57,36 +57,22 @@ PitchAnalyzer::AnalysisResult PitchAnalyzer::analyzeOmni(const juce::AudioBuffer
     float dspCents = 0.0f;
     int dspKey = (detectedHz > 0.0f) ? (int)std::round(hzToMidiNote(detectedHz, dspCents)) : -1;
 
-    // 4. ファイル名解析と DSP 解析の相互一致チェック・優先順判定
+    // 4. ファイル名解析と DSP 解析の総合判定
     if (fileKey >= 0)
     {
-        // ファイル名でキーが得られた場合
-        if (dspKey >= 0 && std::abs(dspKey - fileKey) <= 2)
-        {
-            // DSPと一致 → 超高信頼度
-            res.rootNote = fileKey;
-            res.centsOffset = dspCents;
-            res.confidence = 0.98f;
-            res.detectedKeyStr = juce::MidiMessage::getMidiNoteName(fileKey, true, true, 4);
-            res.isMinor = isMinor;
-            return res;
-        }
-        else
-        {
-            // DSPと誤差があってもファイル名を優先採用
-            res.rootNote = fileKey;
-            res.confidence = 0.85f;
-            res.detectedKeyStr = juce::MidiMessage::getMidiNoteName(fileKey, true, true, 4);
-            res.isMinor = isMinor;
-            return res;
-        }
+        res.rootNote = fileKey;
+        res.centsOffset = dspCents;
+        res.confidence = 0.95f;
+        res.detectedKeyStr = juce::MidiMessage::getMidiNoteName(fileKey, true, true, 4);
+        res.isMinor = isMinor;
+        return res;
     }
 
     if (dspKey >= 0)
     {
         res.rootNote = juce::jlimit(0, 127, dspKey);
         res.centsOffset = dspCents;
-        res.confidence = 0.75f;
+        res.confidence = 0.80f;
         res.detectedKeyStr = juce::MidiMessage::getMidiNoteName(res.rootNote, true, true, 4);
         return res;
     }
@@ -183,10 +169,21 @@ int PitchAnalyzer::parseKeyFromFileName(const juce::String& fileName, bool& outI
 
     std::string str = fileName.toStdString();
 
-    // 1. オクターブ番号付きパース (例: "A4", "C#3", "Db2", "F_sharp_4")
-    std::regex octKeyRegex(R"((?:^|[\s_\-\(\)\[\]])([A-G][#b]?)(-?\d)(m|maj|min|minor|major)?(?:\_|\-|\s|\.|\)|$))", std::regex::icase);
+    // A. 末尾または区切り内の MIDI Note 直接数値パターン (例: "_C_36.wav", "_36.wav", "Note36")
+    std::regex midiNoteRegex(R"((?:^|[\s_\-\(\)\[\]])(?:[A-G][#b]?)?_?(\d{1,3})(?:[\s_\-\(\)\[\]\.]|$))", std::regex::icase);
     std::smatch match;
 
+    if (std::regex_search(str, match, midiNoteRegex))
+    {
+        int noteVal = std::stoi(match[1].str());
+        if (noteVal >= 12 && noteVal <= 110)
+        {
+            return noteVal; // 直接 MIDI Note (例: 36 -> C2)
+        }
+    }
+
+    // B. オクターブ記法パターン (例: "C2", "A#1", "Eb4", "D-1")
+    std::regex octKeyRegex(R"((?:^|[\s_\-\(\)\[\]])([A-G][#b]?)(-?\d)(m|maj|min|minor|major)?(?:\_|\-|\s|\.|\)|$))", std::regex::icase);
     if (std::regex_search(str, match, octKeyRegex))
     {
         std::string noteName = match[1].str();
@@ -210,36 +207,9 @@ int PitchAnalyzer::parseKeyFromFileName(const juce::String& fileName, bool& outI
             if (notes[i] == noteName) {
                 std::transform(scaleType.begin(), scaleType.end(), scaleType.begin(), ::tolower);
                 if (scaleType == "m" || scaleType == "min" || scaleType == "minor") outIsMinor = true;
+
+                // MIDI標準: C4 = 60, C2 = 36 (octave + 1)*12 + index
                 return (octave + 1) * 12 + (int)i;
-            }
-        }
-    }
-
-    // 2. キー＋スケール型判定 (例: "Key_A_min", "G#_major", "B_minor") -> 単語内の "Amp" 等を排除
-    std::regex scaleKeyRegex(R"((?:^|[\s_\-\(\)\[\]])([A-G][#b]?)(m|maj|min|minor|major)(?:[\s_\-\(\)\[\]\.]|$))", std::regex::icase);
-    if (std::regex_search(str, match, scaleKeyRegex))
-    {
-        std::string noteName = match[1].str();
-        std::string scaleType = match[2].str();
-
-        if (!noteName.empty()) noteName[0] = (char)std::toupper(noteName[0]);
-        if (noteName.length() >= 2 && noteName[1] == 'b')
-        {
-            switch (noteName[0]) {
-                case 'D': noteName = "C#"; break;
-                case 'E': noteName = "D#"; break;
-                case 'G': noteName = "F#"; break;
-                case 'A': noteName = "G#"; break;
-                case 'B': noteName = "A#"; break;
-            }
-        }
-
-        static const std::vector<std::string> notes = { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" };
-        for (size_t i = 0; i < notes.size(); ++i) {
-            if (notes[i] == noteName) {
-                std::transform(scaleType.begin(), scaleType.end(), scaleType.begin(), ::tolower);
-                if (scaleType == "m" || scaleType == "min" || scaleType == "minor") outIsMinor = true;
-                return 60 + (int)i; // デフォルト C4 (60) 周辺に配置
             }
         }
     }

@@ -1,6 +1,6 @@
 // ==========================================
 // File: SampleSlot.cpp
-// スロット管理実装 (解析演出用ステータス連動)
+// スロット管理実装 (stretch.setTransposeSemitones の正しい呼び出し)
 // ==========================================
 #include "SampleSlot.h"
 #include "PitchAnalyzer.h"
@@ -53,10 +53,10 @@ void SampleSlot::renderAnchors()
     for (int i = 0; i < kNumAnchors; ++i)
     {
         const int stOffset = i - 12; // -12 ~ +11 半音
-        const float pitchFactor = std::pow(2.0f, (float)stOffset / 12.0f);
 
         signalsmith::stretch::SignalsmithStretch<float> stretch;
         stretch.presetDefault(numCh, (float)sr);
+        stretch.setTransposeSemitones((float)stOffset);
 
         anchorBuffers[(size_t)i].setSize(numCh, numSamples);
         anchorBuffers[(size_t)i].clear();

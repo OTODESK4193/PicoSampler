@@ -1,6 +1,6 @@
 // ==========================================
 // File: MainPanel.cpp
-// MainPanel 実装 (下線重ね解消, 2行2列ボタン, Ceilingノブ)
+// MainPanel 実装 (PITCH & MASTER 下段配置, Gain->Ceiling順ノブ, 下線重なり解消)
 // ==========================================
 #include "MainPanel.h"
 
@@ -99,8 +99,8 @@ MainPanel::MainPanel(juce::AudioProcessorValueTreeState& apvts) : vts(apvts)
     // Master ノブ
     hpfAttach = std::make_unique<Attachment>(vts, "masterHPF", knobMasterHpf.knob);
     lpfAttach = std::make_unique<Attachment>(vts, "masterLPF", knobMasterLpf.knob);
-    ceilingAttach = std::make_unique<Attachment>(vts, "ceiling", knobCeiling.knob);
     outGainAttach = std::make_unique<Attachment>(vts, "outGain", knobOutGain.knob);
+    ceilingAttach = std::make_unique<Attachment>(vts, "ceiling", knobCeiling.knob);
 
     addAndMakeVisible(knobSampleStart);
     addAndMakeVisible(knobSampleEnd);
@@ -119,8 +119,8 @@ MainPanel::MainPanel(juce::AudioProcessorValueTreeState& apvts) : vts(apvts)
 
     addAndMakeVisible(knobMasterHpf);
     addAndMakeVisible(knobMasterLpf);
-    addAndMakeVisible(knobCeiling);
     addAndMakeVisible(knobOutGain);
+    addAndMakeVisible(knobCeiling);
 
     bindSlotParameters(0);
     updateStates();
@@ -169,7 +169,6 @@ void MainPanel::updateStates()
     const int activeSlotIdx = (int)vts.getRawParameterValue("activeSlot")->load();
     bindSlotParameters(activeSlotIdx);
 
-    // Mode ボタンハイライト
     const int modeVal = (int)vts.getRawParameterValue("samplerMode")->load();
     auto styleModeBtn = [](juce::TextButton& b, bool active) {
         b.setColour(juce::TextButton::buttonColourId, active ? PicoColors::mint : PicoColors::knobTrack);
@@ -180,7 +179,6 @@ void MainPanel::updateStates()
     styleModeBtn(btnLayer,  modeVal == 1);
     styleModeBtn(btnRandom, modeVal == 2);
 
-    // Slot ボタンハイライト
     for (int i = 0; i < 8; ++i)
     {
         const bool isAct = (i == activeSlotIdx);
@@ -200,25 +198,24 @@ void MainPanel::paint(juce::Graphics& g)
         g.setFont(juce::FontOptions(12.0f, juce::Font::bold));
         g.drawText(name, x, y, w, 14, juce::Justification::left);
         g.setColour(accent.withAlpha(0.35f));
-        g.fillRect(x, y + 16, w, 1); // 下線は y + 16 にクリアに配置
+        g.fillRect(x, y + 16, w, 1);
     };
 
     // セパレーター下線 (Y=26)
     drawSectionHeader("ACTIVE SLOT",   20,  10, 360, PicoColors::mint);
     drawSectionHeader("PLAYBACK MODE", 420, 10, 260, PicoColors::babyBlue);
 
-    // 1段目: SAMPLE / LOOP, PITCH, ENVELOPE (Y=80)
-    drawSectionHeader("SAMPLE / LOOP", 20,  80, 440, PicoColors::peach);
-    drawSectionHeader("PITCH",         480, 80, 210, PicoColors::lavender);
-    drawSectionHeader("ENVELOPE",      710, 80, 350, PicoColors::pink);
+    // 1段目: SAMPLE / LOOP, ENVELOPE (Y=80)
+    drawSectionHeader("SAMPLE / LOOP", 20,  80, 480, PicoColors::peach);
+    drawSectionHeader("ENVELOPE",      550, 80, 500, PicoColors::pink);
 
-    // 2段目: MASTER (Y=206)
-    drawSectionHeader("MASTER",        20,  206, 440, PicoColors::mint);
+    // 2段目: PITCH, MASTER (Y=206)
+    drawSectionHeader("PITCH",         20,  206, 280, PicoColors::lavender);
+    drawSectionHeader("MASTER",        340, 206, 420, PicoColors::mint);
 }
 
 void MainPanel::resized()
 {
-    // ボタンの Y 座標を下線（Y=26）の完全に下の Y=32 に配置してクリアに分離！
     const int btnY = 32;
 
     for (int i = 0; i < 8; ++i)
@@ -235,37 +232,36 @@ void MainPanel::resized()
     const int knobH = 78;
 
     // --- 1段目 ---
-    // SAMPLE / LOOP (5ノブ + 2行2列ボタン: LOOP, STRETCH, REVERSE, SNAP)
-    knobSampleStart.setBounds(20 + 0 * 56, knobY1, knobW, knobH);
-    knobSampleEnd.setBounds(20 + 1 * 56,   knobY1, knobW, knobH);
-    knobLoopStart.setBounds(20 + 2 * 56,   knobY1, knobW, knobH);
-    knobLoopEnd.setBounds(20 + 3 * 56,     knobY1, knobW, knobH);
-    knobCrossfade.setBounds(20 + 4 * 56,   knobY1, knobW, knobH);
+    // SAMPLE / LOOP (5ノブ + 2行2列ボタン)
+    knobSampleStart.setBounds(20 + 0 * 64, knobY1, knobW, knobH);
+    knobSampleEnd.setBounds(20 + 1 * 64,   knobY1, knobW, knobH);
+    knobLoopStart.setBounds(20 + 2 * 64,   knobY1, knobW, knobH);
+    knobLoopEnd.setBounds(20 + 3 * 64,     knobY1, knobW, knobH);
+    knobCrossfade.setBounds(20 + 4 * 64,   knobY1, knobW, knobH);
 
-    // 2行2列 ボタン配置 (見切れ完全回避 & 余裕)
-    btnLoop.setBounds(305, knobY1 + 4, 66, 24);
-    btnStretch.setBounds(376, knobY1 + 4, 76, 24);
-    btnReverse.setBounds(305, knobY1 + 36, 66, 24);
-    btnSnap.setBounds(376, knobY1 + 36, 66, 24);
+    btnLoop.setBounds(345, knobY1 + 4, 66, 24);
+    btnStretch.setBounds(416, knobY1 + 4, 76, 24);
+    btnReverse.setBounds(345, knobY1 + 36, 66, 24);
+    btnSnap.setBounds(416, knobY1 + 36, 66, 24);
 
-    // PITCH (3ノブ)
-    knobOctave.setBounds(480 + 0 * 68,   knobY1, knobW, knobH);
-    knobSemitone.setBounds(480 + 1 * 68, knobY1, knobW, knobH);
-    knobFineTune.setBounds(480 + 2 * 68, knobY1, knobW, knobH);
+    // ENVELOPE (4ノブ + LINK ボタン: 広大なゆとり)
+    knobAttack.setBounds(550 + 0 * 82,  knobY1, knobW, knobH);
+    knobDecay.setBounds(550 + 1 * 82,   knobY1, knobW, knobH);
+    knobSustain.setBounds(550 + 2 * 82, knobY1, knobW, knobH);
+    knobRelease.setBounds(550 + 3 * 82, knobY1, knobW, knobH);
 
-    // ENVELOPE (4ノブ + LINK ボタン)
-    knobAttack.setBounds(710 + 0 * 64,  knobY1, knobW, knobH);
-    knobDecay.setBounds(710 + 1 * 64,   knobY1, knobW, knobH);
-    knobSustain.setBounds(710 + 2 * 64, knobY1, knobW, knobH);
-    knobRelease.setBounds(710 + 3 * 64, knobY1, knobW, knobH);
-
-    btnLinkEnv.setBounds(975, knobY1 + 24, 56, 24);
+    btnLinkEnv.setBounds(885, knobY1 + 24, 56, 24);
 
     // --- 2段目 ---
-    // MASTER (4ノブ: HPF, LPF, Ceiling, Gain)
     const int knobY2 = 232;
-    knobMasterHpf.setBounds(20 + 0 * 75, knobY2, knobW, knobH);
-    knobMasterLpf.setBounds(20 + 1 * 75, knobY2, knobW, knobH);
-    knobCeiling.setBounds(20 + 2 * 75,   knobY2, knobW, knobH);
-    knobOutGain.setBounds(20 + 3 * 75,   knobY2, knobW, knobH);
+    // PITCH (3ノブ: 左側)
+    knobOctave.setBounds(20 + 0 * 75,   knobY2, knobW, knobH);
+    knobSemitone.setBounds(20 + 1 * 75, knobY2, knobW, knobH);
+    knobFineTune.setBounds(20 + 2 * 75, knobY2, knobW, knobH);
+
+    // MASTER (4ノブ: HPF, LPF, Gain, Ceiling の順！)
+    knobMasterHpf.setBounds(340 + 0 * 75, knobY2, knobW, knobH);
+    knobMasterLpf.setBounds(340 + 1 * 75, knobY2, knobW, knobH);
+    knobOutGain.setBounds(340 + 2 * 75,   knobY2, knobW, knobH);
+    knobCeiling.setBounds(340 + 3 * 75,   knobY2, knobW, knobH);
 }
