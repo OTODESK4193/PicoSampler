@@ -1,6 +1,6 @@
 // ==========================================
 // File: MainPanel.h
-// メイン操作パネル (LOOP / STRETCH モード ＆ ADSR LINK ボタン対応)
+// メイン操作パネル (2段目MASTER移動 ＆ REVERSE, LoopEnd, 英語ダイアログ)
 // ==========================================
 #pragma once
 
@@ -55,9 +55,10 @@ private:
     juce::TextButton btnLayer  { "LAYER" };
     juce::TextButton btnRandom { "RANDOM" };
 
-    // Loop & Stretch Toggles
+    // Loop, Stretch & Reverse Toggles
     GlowToggle btnLoop    { "LOOP" };
     GlowToggle btnStretch { "STRETCH" };
+    GlowToggle btnReverse { "REVERSE" };
 
     // ADSR Link Toggle
     GlowToggle btnLinkEnv { "LINK" };
@@ -67,7 +68,7 @@ private:
     LabeledKnob knobSampleStart { "Start",   PicoColors::peach };
     LabeledKnob knobSampleEnd   { "End",     PicoColors::peach };
     LabeledKnob knobLoopStart   { "L-Start", PicoColors::peach };
-    LabeledKnob knobLoopLength  { "L-Len",   PicoColors::peach };
+    LabeledKnob knobLoopEnd     { "L-End",   PicoColors::peach };
     LabeledKnob knobCrossfade   { "X-Fade",  PicoColors::peach };
 
     LabeledKnob knobOctave    { "Octave", PicoColors::lavender };
@@ -91,6 +92,7 @@ private:
     std::vector<std::unique_ptr<Attachment>> attachments;
     std::unique_ptr<ButtonAttach> loopAttach;
     std::unique_ptr<ButtonAttach> stretchAttach;
+    std::unique_ptr<ButtonAttach> reverseAttach;
 
     std::unique_ptr<Attachment> outGainAttach;
     std::unique_ptr<Attachment> hpfAttach;

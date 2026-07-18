@@ -1,6 +1,6 @@
 // ==========================================
 // File: SamplerVoice.h
-// 単一ボイス定義 (Repitch / StretchMode 対応)
+// 単一ボイス定義 (loopEnd & isReverse パラメーター拡張)
 // ==========================================
 #pragma once
 
@@ -25,10 +25,11 @@ struct SamplerVoiceParams
     float sampleStartRatio = 0.0f;
     float sampleEndRatio = 1.0f;
     float loopStartRatio = 0.2f;
-    float loopLengthRatio = 0.5f;
+    float loopEndRatio = 0.7f;
     float crossfadeRatio = 0.05f;
     bool isLooping = false;
-    bool isStretchMode = false; // true: TimeStretch, false: Repitch
+    bool isStretchMode = false;
+    bool isReverse = false;
 
     int lowNote = 0;
     int highNote = 127;

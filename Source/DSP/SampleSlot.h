@@ -1,97 +1,58 @@
 // ==========================================
 // File: SampleSlot.h
-// 8スロット個別のサンプル＆24アンカー管理
-// SignalStretch によるオフラインピッチシフトアンカー生成
+// スロット管理 (prepare メソッド追加)
 // ==========================================
 #pragma once
 
 #include <JuceHeader.h>
-#include <vector>
+#include <array>
 #include <atomic>
 #include "signalsmith-stretch/signalsmith-stretch.h"
 
 class SampleSlot
 {
 public:
-    static constexpr int kNumAnchors = 24; // ルート音の -12 ~ +11 半音
-
-    enum class Status
-    {
-        Empty,
-        Loading,
-        Analyzing,
-        Stretching,
-        Ready,
-        Failed
-    };
+    static constexpr int kNumAnchors = 24;
 
     struct Metadata
     {
         juce::String filePath;
         juce::String fileName;
-        int rootKey = 60;              // 検出/指定ルートキー (0-127)
+        int rootKey = 60;
         float centsOffset = 0.0f;
-        int lowNote = 0;               // Layer モード音域下限
-        int highNote = 127;            // Layer モード音域上限
-        double originalSampleRate = 44100.0;
-        int numChannels = 2;
-        int lengthInSamples = 0;
-        bool isLooping = false;
-        int sampleStart = 0;
-        int sampleEnd = 0;
-        int loopStart = 0;
-        int loopLength = 0;
-        float crossfadeSec = 0.05f;
-
-        // 比率ベースフィールド (WaveformDisplay / SamplerEngine 用)
         float sampleStartRatio = 0.0f;
         float sampleEndRatio = 1.0f;
         float loopStartRatio = 0.2f;
         float loopLengthRatio = 0.5f;
         float crossfadeRatio = 0.05f;
+        bool isLooping = false;
+        bool isReverse = false;
     };
 
     SampleSlot() = default;
     ~SampleSlot() = default;
 
-    void prepare(double targetSampleRate)
-    {
-        hostSampleRate = targetSampleRate > 1000.0 ? targetSampleRate : 44100.0;
-    }
+    void prepare(double sr) noexcept { juce::ignoreUnused(sr); }
+    bool loadFromFile(const juce::File& file);
+    void clear();
 
-    bool loadFromFile(const juce::File& file, int rootKeyOverride = -1);
-
-    void clear()
-    {
-        status.store(Status::Empty);
-        originalBuffer.setSize(0, 0);
-        for (auto& b : anchorBuffers) b.setSize(0, 0);
-        meta = {};
-    }
-
-    Status getStatus() const noexcept { return status.load(std::memory_order_relaxed); }
-    bool isReady() const noexcept { return getStatus() == Status::Ready; }
-
-    const Metadata& getMetadata() const noexcept { return meta; }
-    Metadata& getMetadata() noexcept { return meta; }
-
-    const juce::AudioBuffer<float>* getAnchorBuffer(int stOffsetFromRoot) const noexcept
-    {
-        const int idx = juce::jlimit(0, kNumAnchors - 1, stOffsetFromRoot + 12);
-        if (anchorBuffers[(size_t)idx].getNumSamples() > 0)
-            return &anchorBuffers[(size_t)idx];
-        return originalBuffer.getNumSamples() > 0 ? &originalBuffer : nullptr;
-    }
+    bool isReady() const noexcept { return ready.load(std::memory_order_relaxed); }
+    bool isAnalyzing() const noexcept { return analyzing.load(std::memory_order_relaxed); }
 
     const juce::AudioBuffer<float>& getOriginalBuffer() const noexcept { return originalBuffer; }
+    const juce::AudioBuffer<float>* getAnchorBuffer(int stOffset) const noexcept;
+    const Metadata& getMetadata() const noexcept { return metadata; }
+    Metadata& getMetadata() noexcept { return metadata; }
 
 private:
-    void generateAnchorsSignalStretch();
+    void renderAnchors();
 
-    double hostSampleRate = 44100.0;
-    std::atomic<Status> status { Status::Empty };
-    Metadata meta;
+    std::atomic<bool> ready { false };
+    std::atomic<bool> analyzing { false };
 
     juce::AudioBuffer<float> originalBuffer;
     std::array<juce::AudioBuffer<float>, kNumAnchors> anchorBuffers;
+    Metadata metadata;
+
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SampleSlot)
 };

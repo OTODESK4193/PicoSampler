@@ -1,6 +1,6 @@
 // ==========================================
 // File: WaveformDisplay.h
-// 波形表示コンポーネント (APVTSノブ双方向連動対応)
+// 波形表示コンポーネント (解析演出 ＆ LoopEnd / 4点ドラッグ連動対応)
 // ==========================================
 #pragma once
 
@@ -45,6 +45,8 @@ private:
 
     enum class DragTarget { None, SampleStart, SampleEnd, LoopStart, LoopEnd };
     DragTarget activeDrag = DragTarget::None;
+
+    float animPhase = 0.0f;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(WaveformDisplay)
 };

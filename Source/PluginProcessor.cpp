@@ -1,6 +1,6 @@
 // ==========================================
 // File: PluginProcessor.cpp
-// PicoSampler メインプロセッサ実装 (DAWプロジェクト完全保存復元 & StretchMode対応)
+// PicoSampler メインプロセッサ実装 (safe APVTS パラメーター読み込みガード)
 // ==========================================
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
@@ -49,10 +49,11 @@ juce::AudioProcessorValueTreeState::ParameterLayout PicoSamplerAudioProcessor::c
         params.push_back(std::make_unique<juce::AudioParameterFloat>("sampleStart_" + s, "Start " + s, 0.0f, 1.0f, 0.0f));
         params.push_back(std::make_unique<juce::AudioParameterFloat>("sampleEnd_" + s, "End " + s, 0.0f, 1.0f, 1.0f));
         params.push_back(std::make_unique<juce::AudioParameterFloat>("loopStart_" + s, "Loop Start " + s, 0.0f, 1.0f, 0.2f));
-        params.push_back(std::make_unique<juce::AudioParameterFloat>("loopLength_" + s, "Loop Length " + s, 0.01f, 1.0f, 0.5f));
+        params.push_back(std::make_unique<juce::AudioParameterFloat>("loopEnd_" + s, "Loop End " + s, 0.0f, 1.0f, 0.7f));
         params.push_back(std::make_unique<juce::AudioParameterFloat>("crossfade_" + s, "Crossfade " + s, 0.0f, 0.5f, 0.05f));
         params.push_back(std::make_unique<juce::AudioParameterBool>("isLooping_" + s, "Looping " + s, false));
         params.push_back(std::make_unique<juce::AudioParameterBool>("isStretchMode_" + s, "Stretch Mode " + s, false));
+        params.push_back(std::make_unique<juce::AudioParameterBool>("isReverse_" + s, "Reverse " + s, false));
 
         params.push_back(std::make_unique<juce::AudioParameterInt>("slotLowNote_" + s, "Low Note " + s, 0, 127, 0));
         params.push_back(std::make_unique<juce::AudioParameterInt>("slotHighNote_" + s, "High Note " + s, 0, 127, 127));
@@ -99,6 +100,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout PicoSamplerAudioProcessor::c
 
 void PicoSamplerAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
 {
+    juce::ignoreUnused(samplesPerBlock);
     samplerEngine.prepare(sampleRate);
     arpeggiator.prepare(sampleRate);
     modMatrix.prepare(sampleRate);
@@ -125,26 +127,31 @@ void PicoSamplerAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
 
     // 1. Host BPM 取得
     double bpm = 120.0;
-    if (auto* playHead = getPlayHead())
+    if (auto* ph = getPlayHead())
     {
-        if (auto pos = playHead->getPosition())
+        if (auto pos = ph->getPosition())
         {
             if (pos->getBpm().hasValue()) bpm = *pos->getBpm();
         }
     }
 
+    auto getParamFloat = [this](const juce::String& name, float defVal) {
+        if (auto* p = apvts.getRawParameterValue(name)) return p->load();
+        return defVal;
+    };
+
     // 2. Arpeggiator 処理
     Arpeggiator::Params arpP;
-    arpP.enable = apvts.getRawParameterValue("arpEnable")->load() > 0.5f;
-    arpP.latch  = apvts.getRawParameterValue("arpLatch")->load() > 0.5f;
-    arpP.sync   = apvts.getRawParameterValue("arpSync")->load() > 0.5f;
-    arpP.pattern = (int)apvts.getRawParameterValue("arpPattern")->load();
-    arpP.rateSync = (int)apvts.getRawParameterValue("arpRateSync")->load();
-    arpP.rateFreeHz = apvts.getRawParameterValue("arpRateFree")->load();
-    arpP.octaves = (int)apvts.getRawParameterValue("arpOctaves")->load();
-    arpP.gatePct = apvts.getRawParameterValue("arpGate")->load();
-    arpP.key = (int)apvts.getRawParameterValue("key")->load();
-    arpP.scale = (int)apvts.getRawParameterValue("scale")->load();
+    arpP.enable = getParamFloat("arpEnable", 0.0f) > 0.5f;
+    arpP.latch  = getParamFloat("arpLatch", 0.0f) > 0.5f;
+    arpP.sync   = getParamFloat("arpSync", 1.0f) > 0.5f;
+    arpP.pattern = (int)getParamFloat("arpPattern", 0.0f);
+    arpP.rateSync = (int)getParamFloat("arpRateSync", 6.0f);
+    arpP.rateFreeHz = getParamFloat("arpRateFree", 4.0f);
+    arpP.octaves = (int)getParamFloat("arpOctaves", 1.0f);
+    arpP.gatePct = getParamFloat("arpGate", 0.8f);
+    arpP.key = (int)getParamFloat("key", 0.0f);
+    arpP.scale = (int)getParamFloat("scale", 0.0f);
     arpP.bpm = bpm;
 
     arpeggiator.process(midiMessages, numSamples, arpP);
@@ -157,36 +164,37 @@ void PicoSamplerAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
 
     // 4. Sampler Engine 処理
     SamplerEngine::Params engineP;
-    engineP.mode = (SamplerEngine::PlaybackMode)(int)apvts.getRawParameterValue("samplerMode")->load();
-    engineP.activeSlot = (int)apvts.getRawParameterValue("activeSlot")->load();
-    engineP.masterHpfHz = apvts.getRawParameterValue("masterHPF")->load();
-    engineP.masterLpfHz = apvts.getRawParameterValue("masterLPF")->load();
-    engineP.is24dBFilter = (int)apvts.getRawParameterValue("filterSlope")->load() > 0;
-    engineP.outGainDb = apvts.getRawParameterValue("outGain")->load();
-    engineP.polyphonyLimit = (int)apvts.getRawParameterValue("poly")->load();
+    engineP.mode = (SamplerEngine::PlaybackMode)(int)getParamFloat("samplerMode", 0.0f);
+    engineP.activeSlot = (int)getParamFloat("activeSlot", 0.0f);
+    engineP.masterHpfHz = getParamFloat("masterHPF", 20.0f);
+    engineP.masterLpfHz = getParamFloat("masterLPF", 20000.0f);
+    engineP.is24dBFilter = (int)getParamFloat("filterSlope", 0.0f) > 0;
+    engineP.outGainDb = getParamFloat("outGain", 0.0f);
+    engineP.polyphonyLimit = (int)getParamFloat("poly", 32.0f);
 
     for (int i = 0; i < 8; ++i)
     {
         const juce::String s = juce::String(i);
         auto& sp = engineP.slotParams[(size_t)i];
-        sp.attack = apvts.getRawParameterValue("attack_" + s)->load();
-        sp.decay = apvts.getRawParameterValue("decay_" + s)->load();
-        sp.sustain = apvts.getRawParameterValue("sustain_" + s)->load();
-        sp.release = apvts.getRawParameterValue("release_" + s)->load();
-        sp.octave = (int)apvts.getRawParameterValue("octave_" + s)->load();
-        sp.semitone = (int)apvts.getRawParameterValue("pitchSt_" + s)->load();
-        sp.fineTune = apvts.getRawParameterValue("fineTune_" + s)->load();
-        sp.pan = apvts.getRawParameterValue("pan_" + s)->load();
-        sp.slotGainDb = apvts.getRawParameterValue("slotGain_" + s)->load();
-        sp.sampleStartRatio = apvts.getRawParameterValue("sampleStart_" + s)->load();
-        sp.sampleEndRatio = apvts.getRawParameterValue("sampleEnd_" + s)->load();
-        sp.loopStartRatio = apvts.getRawParameterValue("loopStart_" + s)->load();
-        sp.loopLengthRatio = apvts.getRawParameterValue("loopLength_" + s)->load();
-        sp.crossfadeRatio = apvts.getRawParameterValue("crossfade_" + s)->load();
-        sp.isLooping = apvts.getRawParameterValue("isLooping_" + s)->load() > 0.5f;
-        sp.isStretchMode = apvts.getRawParameterValue("isStretchMode_" + s)->load() > 0.5f;
-        sp.lowNote = (int)apvts.getRawParameterValue("slotLowNote_" + s)->load();
-        sp.highNote = (int)apvts.getRawParameterValue("slotHighNote_" + s)->load();
+        sp.attack = getParamFloat("attack_" + s, 0.01f);
+        sp.decay = getParamFloat("decay_" + s, 0.3f);
+        sp.sustain = getParamFloat("sustain_" + s, 1.0f);
+        sp.release = getParamFloat("release_" + s, 0.3f);
+        sp.octave = (int)getParamFloat("octave_" + s, 0.0f);
+        sp.semitone = (int)getParamFloat("pitchSt_" + s, 0.0f);
+        sp.fineTune = getParamFloat("fineTune_" + s, 0.0f);
+        sp.pan = getParamFloat("pan_" + s, 0.0f);
+        sp.slotGainDb = getParamFloat("slotGain_" + s, 0.0f);
+        sp.sampleStartRatio = getParamFloat("sampleStart_" + s, 0.0f);
+        sp.sampleEndRatio = getParamFloat("sampleEnd_" + s, 1.0f);
+        sp.loopStartRatio = getParamFloat("loopStart_" + s, 0.2f);
+        sp.loopEndRatio = getParamFloat("loopEnd_" + s, 0.7f);
+        sp.crossfadeRatio = getParamFloat("crossfade_" + s, 0.05f);
+        sp.isLooping = getParamFloat("isLooping_" + s, 0.0f) > 0.5f;
+        sp.isStretchMode = getParamFloat("isStretchMode_" + s, 0.0f) > 0.5f;
+        sp.isReverse = getParamFloat("isReverse_" + s, 0.0f) > 0.5f;
+        sp.lowNote = (int)getParamFloat("slotLowNote_" + s, 0.0f);
+        sp.highNote = (int)getParamFloat("slotHighNote_" + s, 127.0f);
     }
 
     buffer.clear();
@@ -196,11 +204,11 @@ void PicoSamplerAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
     // 5. FX Chain 処理
     FxChain::Params fxP;
     fxP.bpm = bpm;
-    for (int i = 0; i < 5; ++i)
+    for (int i = 1; i <= 5; ++i)
     {
-        const juce::String s = juce::String(i + 1);
-        fxP.type[(size_t)i] = (int)apvts.getRawParameterValue("fx" + s + "Type")->load();
-        fxP.amount[(size_t)i] = apvts.getRawParameterValue("fx" + s + "Amount")->load();
+        const juce::String s = juce::String(i);
+        fxP.type[(size_t)(i - 1)] = (int)getParamFloat("fx" + s + "Type", 0.0f);
+        fxP.amount[(size_t)(i - 1)] = getParamFloat("fx" + s + "Amount", 0.0f);
     }
     fxChain.process(buffer, fxP);
 }
@@ -244,7 +252,6 @@ void PicoSamplerAudioProcessor::setStateInformation(const void* data, int sizeIn
             {
                 const int idx = sXml->getIntAttribute("index", -1);
                 const juce::String path = sXml->getStringAttribute("filePath");
-                const int rKey = sXml->getIntAttribute("rootKey", 60);
 
                 if (idx >= 0 && idx < 8 && path.isNotEmpty())
                 {

@@ -1,6 +1,6 @@
 // ==========================================
 // File: SamplerVoice.cpp
-// PicoVoice レンダリング実装 (Repitch / StretchMode 分岐対応)
+// PicoVoice レンダリング実装 (ヌルポインタ・無効チャネル鉄壁ガード)
 // ==========================================
 #include "SamplerVoice.h"
 
@@ -14,19 +14,34 @@ void PicoVoice::startNote(int midiNoteNumber, float noteVelocity, int slotIdx,
     releasing = false;
     ageCounter++;
 
+    if (!slot.isReady())
+    {
+        active = false;
+        return;
+    }
+
     const auto& meta = slot.getMetadata();
     const int stOffset = midiNoteNumber - meta.rootKey + (p.octave * 12) + p.semitone;
     const auto* buffer = slot.getAnchorBuffer(stOffset);
 
-    if (!buffer || buffer->getNumSamples() == 0)
+    if (!buffer || buffer->getNumSamples() < 4 || buffer->getNumChannels() < 1)
     {
         active = false;
         return;
     }
 
     const int bufLen = buffer->getNumSamples();
-    const int startSmp = (int)(bufLen * juce::jlimit(0.0f, 1.0f, p.sampleStartRatio));
-    readPosition = (double)startSmp;
+    const float startR = juce::jlimit(0.0f, 1.0f, p.sampleStartRatio);
+    const float endR   = juce::jlimit(0.01f, 1.0f, p.sampleEndRatio);
+
+    if (p.isReverse)
+    {
+        readPosition = (double)juce::jlimit(0.0f, (float)(bufLen - 1), (float)bufLen * endR - 1.0f);
+    }
+    else
+    {
+        readPosition = (double)juce::jlimit(0.0f, (float)(bufLen - 1), (float)bufLen * startR);
+    }
 
     if (p.attack <= 0.005f)
     {
@@ -56,7 +71,7 @@ void PicoVoice::stopNote(bool allowTailOff) noexcept
 void PicoVoice::renderNextBlock(juce::AudioBuffer<float>& outputBuffer, int startSample, int numSamples,
                                  const SampleSlot& slot, const SamplerVoiceParams& p) noexcept
 {
-    if (!active) return;
+    if (!active || !slot.isReady()) return;
 
     const auto& meta = slot.getMetadata();
     const int stOffset = midiNote - meta.rootKey + (p.octave * 12) + p.semitone;
@@ -67,7 +82,7 @@ void PicoVoice::renderNextBlock(juce::AudioBuffer<float>& outputBuffer, int star
 
     const auto* buffer = slot.getAnchorBuffer(stOffset);
 
-    if (!buffer || buffer->getNumSamples() < 4)
+    if (!buffer || buffer->getNumSamples() < 4 || buffer->getNumChannels() < 1)
     {
         active = false;
         return;
@@ -76,19 +91,18 @@ void PicoVoice::renderNextBlock(juce::AudioBuffer<float>& outputBuffer, int star
     const int bufLen = buffer->getNumSamples();
     const int numCh = buffer->getNumChannels();
 
+    const int smpStart = (int)(bufLen * juce::jlimit(0.0f, 0.99f, p.sampleStartRatio));
     const int smpEnd   = (int)(bufLen * juce::jlimit(0.01f, 1.0f, p.sampleEndRatio));
     const int lpStart  = (int)(bufLen * juce::jlimit(0.0f, 0.99f, p.loopStartRatio));
-    const int lpLen    = juce::jmax(64, (int)(bufLen * juce::jlimit(0.01f, 1.0f, p.loopLengthRatio)));
-    const int lpEnd    = std::min(smpEnd, lpStart + lpLen);
+    const int lpEnd    = std::min(smpEnd, (int)(bufLen * juce::jlimit(0.01f, 1.0f, p.loopEndRatio)));
+    const int lpLen    = std::max(64, lpEnd - lpStart);
     const int xfadeLen = juce::jmax(1, (int)(lpLen * juce::jlimit(0.0f, 0.5f, p.crossfadeRatio)));
 
-    // 再生インクリメント: StretchMode 時はピッチに依らず時間不変 (1.0 * speed)
     double pitchInc = (double)p.speed;
-    if (!p.isStretchMode)
-    {
-        const double pitchRatio = std::pow(2.0, (double)residualSemis / 12.0);
-        pitchInc *= pitchRatio;
-    }
+    const double pitchRatio = std::pow(2.0, (double)residualSemis / 12.0);
+    pitchInc *= pitchRatio;
+
+    if (p.isReverse) pitchInc = -pitchInc;
 
     const float pan = juce::jlimit(-1.0f, 1.0f, p.pan);
     const float gainL = std::sqrt(0.5f * (1.0f - pan)) * velocity * juce::Decibels::decibelsToGain(p.slotGainDb);
@@ -124,18 +138,26 @@ void PicoVoice::renderNextBlock(juce::AudioBuffer<float>& outputBuffer, int star
 
         if (!active) break;
 
-        if (p.isLooping)
+        if (!p.isReverse)
         {
-            if (readPosition >= (double)lpEnd)
+            if (p.isLooping)
             {
-                readPosition -= (double)(lpEnd - lpStart);
+                if (readPosition >= (double)lpEnd) readPosition -= (double)(lpEnd - lpStart);
+            }
+            else
+            {
+                if (readPosition >= (double)smpEnd) { envStage = EnvStage::Release; }
             }
         }
         else
         {
-            if (readPosition >= (double)smpEnd)
+            if (p.isLooping)
             {
-                envStage = EnvStage::Release;
+                if (readPosition <= (double)lpStart) readPosition += (double)(lpEnd - lpStart);
+            }
+            else
+            {
+                if (readPosition <= (double)smpStart) { envStage = EnvStage::Release; }
             }
         }
 
@@ -148,20 +170,23 @@ void PicoVoice::renderNextBlock(juce::AudioBuffer<float>& outputBuffer, int star
         const int i3 = juce::jlimit(0, bufLen - 1, iPos + 2);
 
         float sL = 0.0f, sR = 0.0f;
+        const float* chL = buffer->getReadPointer(0);
+        if (chL == nullptr) { active = false; break; }
+
         if (numCh >= 2)
         {
-            const float* chL = buffer->getReadPointer(0);
             const float* chR = buffer->getReadPointer(1);
+            if (chR == nullptr) chR = chL;
             sL = lagrange3rdInterpolate(chL[i0], chL[i1], chL[i2], chL[i3], frac);
             sR = lagrange3rdInterpolate(chR[i0], chR[i1], chR[i2], chR[i3], frac);
         }
         else
         {
-            const float* chL = buffer->getReadPointer(0);
             sL = sR = lagrange3rdInterpolate(chL[i0], chL[i1], chL[i2], chL[i3], frac);
         }
 
-        if (p.isLooping && readPosition >= (double)(lpEnd - xfadeLen))
+        // Crossfade
+        if (p.isLooping && !p.isReverse && readPosition >= (double)(lpEnd - xfadeLen))
         {
             const float xfFactor = (float)(readPosition - (double)(lpEnd - xfadeLen)) / (float)xfadeLen;
             const float fadeOut = std::cos(xfFactor * juce::MathConstants<float>::halfPi);
@@ -173,10 +198,10 @@ void PicoVoice::renderNextBlock(juce::AudioBuffer<float>& outputBuffer, int star
             const int li2 = juce::jlimit(0, bufLen - 1, loopOffsetPos + 1);
             const int li3 = juce::jlimit(0, bufLen - 1, loopOffsetPos + 2);
 
-            const float* chL = buffer->getReadPointer(0);
             const float* chR = numCh >= 2 ? buffer->getReadPointer(1) : chL;
-            const float inL = lagrange3rdInterpolate(chL[li0], chL[li1], chL[li2], chL[li3], frac);
-            const float inR = lagrange3rdInterpolate(chR[li0], chR[li1], chR[li2], chR[li3], frac);
+            if (chR == nullptr) chR = chL;
+            const float inL = lagrange3rdInterpolate(chL[li0], chL[li1], chL[li2], li3 < bufLen ? chL[li3] : chL[li2], frac);
+            const float inR = lagrange3rdInterpolate(chR[li0], chR[li1], chR[li2], li3 < bufLen ? chR[li3] : chR[li2], frac);
 
             sL = sL * fadeOut + inL * fadeIn;
             sR = sR * fadeOut + inR * fadeIn;
