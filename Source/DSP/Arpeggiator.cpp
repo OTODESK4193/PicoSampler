@@ -1,6 +1,6 @@
 // ==========================================
 // File: Arpeggiator.cpp
-// 13パターン アルペジエイター実装 (Sync/Free即時追従 ＆ Swing機能追加)
+// 13パターン アルペジエイター実装 (Sync OFF時の極小周波数停止防止 & スムーズ追従)
 // ==========================================
 #include "Arpeggiator.h"
 
@@ -74,7 +74,7 @@ void Arpeggiator::process(juce::MidiBuffer& midi, int numSamples, const Params& 
     const int stepSamples = calculateStepSamples(p, numSamples);
     const int gateSamples = calculateGateSamples(p, stepSamples);
 
-    // SyncモードまたはRate値がリアルタイム変更された場合、カウントダウンを即座に適応
+    // SyncモードまたはRate値がリアルタイム変更された場合、カウントダウンを即座に安全適応
     if (p.sync != prevSyncState || p.rateFreeHz != prevRateFree || p.rateSync != prevRateSync)
     {
         prevSyncState = p.sync;
@@ -327,7 +327,10 @@ int Arpeggiator::calculateStepSamples(const Params& p, int) const noexcept
     }
     else
     {
-        secPerStep = 1.0 / (double)juce::jmax(0.1f, p.rateFreeHz);
+        // Sync OFF 時: rateFreeHz (1.0..30.0 Hz) で直感的なステップ間隔を算出
+        // 最低周波数を 1.0 Hz (1秒) に下限制限して停止状態を防止
+        const float freeHz = juce::jlimit(1.0f, 30.0f, p.rateFreeHz);
+        secPerStep = 1.0 / (double)freeHz;
     }
 
     return juce::jmax(1, (int)(secPerStep * sr));
@@ -335,15 +338,7 @@ int Arpeggiator::calculateStepSamples(const Params& p, int) const noexcept
 
 int Arpeggiator::calculateGateSamples(const Params& p, int stepSamples) const noexcept
 {
-    if (p.durMode == GateLength)
-    {
-        return juce::jlimit(1, stepSamples, (int)(stepSamples * p.gatePct));
-    }
-
-    static const float fixedBeats[4] = { 0.125f, 0.25f, 0.5f, 1.0f };
-    const double bpm = p.bpm > 1.0 ? p.bpm : 120.0;
-    const double sec = (60.0 / bpm) * fixedBeats[juce::jlimit(0, 3, p.durMode - 1)];
-    return juce::jlimit(1, stepSamples, (int)(sec * sr));
+    return juce::jlimit(1, stepSamples, (int)((float)stepSamples * juce::jlimit(0.1f, 1.0f, p.gatePct)));
 }
 
 void Arpeggiator::stopAllActiveNotes(juce::MidiBuffer& outMidi, int sampleOffset) noexcept

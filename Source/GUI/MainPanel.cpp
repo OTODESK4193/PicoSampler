@@ -232,10 +232,14 @@ void MainPanel::bindSlotParameters(int slotIdx)
 
 void MainPanel::updateStates()
 {
-    const int activeSlotIdx = (int)vts.getRawParameterValue("activeSlot")->load();
+    auto* pActive = vts.getRawParameterValue("activeSlot");
+    auto* pMode   = vts.getRawParameterValue("samplerMode");
+    if (!pActive || !pMode) return;
+
+    const int activeSlotIdx = (int)pActive->load();
     bindSlotParameters(activeSlotIdx);
 
-    const int modeVal = (int)vts.getRawParameterValue("samplerMode")->load();
+    const int modeVal = (int)pMode->load();
     auto styleModeBtn = [](juce::TextButton& b, bool active) {
         b.setColour(juce::TextButton::buttonColourId, active ? PicoColors::mint : PicoColors::knobTrack);
         b.setColour(juce::TextButton::textColourOffId, active ? juce::Colours::black : PicoColors::textDim);

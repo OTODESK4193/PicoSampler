@@ -49,7 +49,7 @@ ArpPanel::ArpPanel(juce::AudioProcessorValueTreeState& apvts) : vts(apvts)
     comboAttachments.push_back(std::make_unique<ComboAttach>(vts, "scale", comboScale));
 
     knobOctaves.knob.setDoubleClickReturnValue(true, 1.0);
-    knobRateFree.knob.setDoubleClickReturnValue(true, 4.0);
+    knobRateFree.knob.setDoubleClickReturnValue(true, 8.0);
     knobGate.knob.setDoubleClickReturnValue(true, 0.8);
     knobOffset.knob.setDoubleClickReturnValue(true, 0.0);
     knobSwing.knob.setDoubleClickReturnValue(true, 0.0);

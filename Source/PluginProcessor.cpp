@@ -91,7 +91,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout PicoSamplerAudioProcessor::c
     params.push_back(std::make_unique<juce::AudioParameterBool>("arpSync", "Arp Sync", true));
     params.push_back(std::make_unique<juce::AudioParameterChoice>("arpPattern", "Arp Pattern", Arpeggiator::getPatternNames(), 0));
     params.push_back(std::make_unique<juce::AudioParameterChoice>("arpRateSync", "Arp Rate Sync", Arpeggiator::getSyncRateNames(), 6));
-    params.push_back(std::make_unique<juce::AudioParameterFloat>("arpRateFree", "Arp Rate Free", 0.1f, 20.0f, 4.0f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("arpRateFree", "Arp Rate Free", 1.0f, 30.0f, 8.0f));
     params.push_back(std::make_unique<juce::AudioParameterInt>("arpOctaves", "Arp Octaves", 1, 4, 1));
     params.push_back(std::make_unique<juce::AudioParameterInt>("arpOffset", "Arp Offset", -12, 12, 0));
     params.push_back(std::make_unique<juce::AudioParameterFloat>("arpSwing", "Arp Swing", 0.0f, 0.75f, 0.0f));
@@ -144,6 +144,7 @@ void PicoSamplerAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
     engineParams.masterLpfHz = getParamFloat("masterLPF", 20000.0f);
     engineParams.ceilingDb = getParamFloat("ceiling", 0.0f);
     engineParams.limReleaseMs = getParamFloat("limRelease", 50.0f);
+    engineParams.is24dBFilter = (getParamFloat("filterSlope", 0.0f) > 0.5f);
 
     const float rawMasterPitch = getParamFloat("masterPitch", 0.0f);
     const int keyVal = (int)getParamFloat("key", 0.0f);
@@ -241,51 +242,67 @@ juce::AudioProcessorEditor* PicoSamplerAudioProcessor::createEditor()
 
 void PicoSamplerAudioProcessor::getStateInformation(juce::MemoryBlock& destData)
 {
-    auto state = apvts.copyState();
+    juce::XmlElement xmlState("PicoSamplerState");
 
-    juce::ValueTree slotsTree("LoadedSlots");
+    auto apvtsXml = apvts.copyState().createXml();
+    if (apvtsXml != nullptr)
+    {
+        xmlState.addChildElement(apvtsXml.release());
+    }
+
+    auto* slotsXml = new juce::XmlElement("LoadedSlots");
     for (int i = 0; i < 8; ++i)
     {
-        juce::ValueTree sTree("Slot");
-        sTree.setProperty("index", i, nullptr);
-        sTree.setProperty("path", samplerEngine.getSlot(i).getMetadata().filePath, nullptr);
-        slotsTree.addChild(sTree, -1, nullptr);
+        auto* sXml = new juce::XmlElement("Slot");
+        sXml->setAttribute("index", i);
+        sXml->setAttribute("path", samplerEngine.getSlot(i).getMetadata().filePath);
+        slotsXml->addChildElement(sXml);
     }
-    state.addChild(slotsTree, -1, nullptr);
+    xmlState.addChildElement(slotsXml);
 
-    std::unique_ptr<juce::XmlElement> xml(state.createXml());
-    copyXmlToBinary(*xml, destData);
+    copyXmlToBinary(xmlState, destData);
 }
 
 void PicoSamplerAudioProcessor::setStateInformation(const void* data, int sizeInBytes)
 {
     std::unique_ptr<juce::XmlElement> xmlState(getXmlFromBinary(data, sizeInBytes));
-    if (xmlState != nullptr && xmlState->hasTagName(apvts.state.getType()))
-    {
-        apvts.replaceState(juce::ValueTree::fromXml(*xmlState));
+    if (xmlState == nullptr) return;
 
-        auto slotsTree = apvts.state.getChildWithName("LoadedSlots");
-        if (slotsTree.isValid())
+    if (xmlState->hasTagName("PicoSamplerState"))
+    {
+        if (auto* paramXml = xmlState->getChildByName(apvts.state.getType().toString()))
+        {
+            apvts.replaceState(juce::ValueTree::fromXml(*paramXml));
+        }
+
+        if (auto* slotsXml = xmlState->getChildByName("LoadedSlots"))
         {
             const juce::ScopedLock lock(jobLock);
             pendingJobs.clear();
 
-            for (int i = 0; i < slotsTree.getNumChildren(); ++i)
+            for (auto* sXml : slotsXml->getChildIterator())
             {
-                auto sTree = slotsTree.getChild(i);
-                int idx = sTree.getProperty("index");
-                juce::String path = sTree.getProperty("path");
-
-                if (path.isNotEmpty())
+                if (sXml->hasTagName("Slot"))
                 {
-                    juce::File file(path);
-                    if (file.existsAsFile())
+                    int idx = sXml->getIntAttribute("index", -1);
+                    juce::String path = sXml->getStringAttribute("path");
+
+                    if (idx >= 0 && idx < 8 && path.isNotEmpty())
                     {
-                        pendingJobs.add({ idx, file });
+                        juce::File file(path);
+                        if (file.existsAsFile())
+                        {
+                            pendingJobs.add({ idx, file });
+                        }
                     }
                 }
             }
         }
+    }
+    else if (xmlState->hasTagName(apvts.state.getType().toString()))
+    {
+        // 互換性フォールバック (直に PARAMETERTREE が保存されている旧プリセット対応)
+        apvts.replaceState(juce::ValueTree::fromXml(*xmlState));
     }
 }
 

@@ -193,7 +193,10 @@ void PicoSamplerAudioProcessorEditor::resized()
 
 void PicoSamplerAudioProcessorEditor::timerCallback()
 {
-    const int activeIdx = (int)audioProcessor.getAPVTS().getRawParameterValue("activeSlot")->load();
+    auto* pActive = audioProcessor.getAPVTS().getRawParameterValue("activeSlot");
+    if (pActive == nullptr) return;
+
+    const int activeIdx = (int)pActive->load();
     waveDisplay.setSampleSlot(&audioProcessor.getSamplerEngine().getSlot(activeIdx));
     waveDisplay.setActiveSlotIndex(activeIdx);
 
@@ -206,8 +209,11 @@ void PicoSamplerAudioProcessorEditor::timerCallback()
     for (int i = 0; i < 8; ++i)
     {
         const juce::String s = juce::String(i);
-        const int low = (int)audioProcessor.getAPVTS().getRawParameterValue("slotLowNote_" + s)->load();
-        const int high = (int)audioProcessor.getAPVTS().getRawParameterValue("slotHighNote_" + s)->load();
+        auto* pLow  = audioProcessor.getAPVTS().getRawParameterValue("slotLowNote_" + s);
+        auto* pHigh = audioProcessor.getAPVTS().getRawParameterValue("slotHighNote_" + s);
+
+        const int low  = pLow  ? (int)pLow->load()  : 0;
+        const int high = pHigh ? (int)pHigh->load() : 127;
         ranges[(size_t)i] = { low, high };
 
         const auto& slot = audioProcessor.getSamplerEngine().getSlot(i);
