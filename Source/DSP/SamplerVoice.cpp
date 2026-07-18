@@ -1,6 +1,6 @@
 // ==========================================
 // File: SamplerVoice.cpp
-// PicoVoice レンダリング実装 (クロマチック発音正確ピッチ修正)
+// PicoVoice レンダリング実装 (発音レスポンス即時化 & アタックラグ解消)
 // ==========================================
 #include "SamplerVoice.h"
 
@@ -28,8 +28,17 @@ void PicoVoice::startNote(int midiNoteNumber, float noteVelocity, int slotIdx,
     const int startSmp = (int)(bufLen * juce::jlimit(0.0f, 1.0f, p.sampleStartRatio));
     readPosition = (double)startSmp;
 
-    envStage = EnvStage::Attack;
-    envValue = 0.0f;
+    // アタックが極小 (<= 5ms) の場合は即座にフルボリューム発音
+    if (p.attack <= 0.005f)
+    {
+        envStage = EnvStage::Decay;
+        envValue = 1.0f;
+    }
+    else
+    {
+        envStage = EnvStage::Attack;
+        envValue = 0.0f;
+    }
 }
 
 void PicoVoice::stopNote(bool allowTailOff) noexcept

@@ -1,6 +1,6 @@
 // ==========================================
 // File: PluginEditor.h
-// PicoSampler メインエディタ GUI 定義 (WaveformDisplayインクルード追加)
+// PicoSampler メインエディタ GUI 定義 (SLOTタブ廃止 ＆ ヘッダー情報領域拡張)
 // ==========================================
 #pragma once
 
@@ -9,7 +9,6 @@
 #include "GUI/ArcDial.h"
 #include "GUI/WaveformDisplay.h"
 #include "GUI/MainPanel.h"
-#include "GUI/SlotPanel.h"
 #include "GUI/ArpPanel.h"
 #include "GUI/ModPanel.h"
 #include "GUI/FxPanel.h"
@@ -35,9 +34,8 @@ private:
 
     WaveformDisplay waveDisplay;
 
-    // Header Toolbar Buttons
+    // Header Toolbar Buttons (SLOTタブ削除)
     juce::TextButton btnTabMain   { "MAIN" };
-    juce::TextButton btnTabSlot   { "SLOT" };
     juce::TextButton btnTabArp    { "ARP" };
     juce::TextButton btnTabMod    { "MOD" };
     juce::TextButton btnTabFx     { "FX" };
@@ -46,7 +44,6 @@ private:
 
     // Panels
     MainPanel mainPanel;
-    SlotPanel slotPanel;
     ArpPanel arpPanel;
     ModPanel modPanel;
     FxPanel fxPanel;

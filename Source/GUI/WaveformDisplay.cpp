@@ -1,6 +1,6 @@
 // ==========================================
 // File: WaveformDisplay.cpp
-// WaveformDisplay 実装 (波形 + KeyRange統合 ＆ D&D完全対応)
+// WaveformDisplay 実装 (リアル88鍵盤 ＋ 黒鍵 ＋ C音表記統合)
 // ==========================================
 #include "WaveformDisplay.h"
 
@@ -30,8 +30,9 @@ void WaveformDisplay::paint(juce::Graphics& g)
 {
     const float w = (float)getWidth();
     const float h = (float)getHeight();
-    const float waveH = h - 60.0f;
-    const float kbY = h - 55.0f;
+    const float kbAreaH = 75.0f;
+    const float waveH = h - kbAreaH;
+    const float kbY = h - kbAreaH;
 
     // 1. 背景パネル
     g.setColour(PicoColors::panel);
@@ -119,10 +120,10 @@ void WaveformDisplay::paint(juce::Graphics& g)
 
     // --- 3. KeyRangeMap (88鍵音域オーバーレイ) エリア描画 (kbY .. h) ---
     g.setColour(PicoColors::track);
-    g.fillRect(10.0f, kbY, w - 20.0f, 50.0f);
+    g.fillRect(10.0f, kbY, w - 20.0f, kbAreaH - 4.0f);
 
-    // 8スロット音域バー描画 (8レーン)
-    const float laneH = 4.5f;
+    // 8スロット音域バー描画 (8レーン, 上部 40px)
+    const float laneH = 4.0f;
     for (int s = 0; s < 8; ++s)
     {
         const float lY = kbY + 2.0f + (float)s * (laneH + 1.0f);
@@ -148,23 +149,53 @@ void WaveformDisplay::paint(juce::Graphics& g)
         }
     }
 
-    // 88鍵盤ビジュアル (下部 12px)
-    const float numWhite = 52.0f;
-    const float whiteW = (w - 20.0f) / numWhite;
+    // --- リアリスティック 88鍵盤描画 (下部 32px) ---
+    const float keyY = h - 33.0f;
+    const float keyH = 30.0f;
+    const float whiteW = (w - 20.0f) / 52.0f;
     static const bool isBlackNote[12] = { false, true, false, true, false, false, true, false, true, false, true, false };
 
+    // A: 白鍵 52個描画 ＋ C音（C1〜C8）文字表示
     int whiteIdx = 0;
-    const float keyY = h - 14.0f;
-
     for (int note = 21; note <= 108; ++note)
     {
         const int noteInOct = note % 12;
         if (!isBlackNote[noteInOct])
         {
             const float x = 10.0f + (float)whiteIdx * whiteW;
-            g.setColour(juce::Colours::white.withAlpha(0.85f));
-            g.fillRect(x + 0.5f, keyY, whiteW - 1.0f, 12.0f);
+            g.setColour(juce::Colours::white.withAlpha(0.92f));
+            g.fillRoundedRectangle(x + 0.5f, keyY, whiteW - 1.0f, keyH, 1.5f);
+            g.setColour(juce::Colours::grey);
+            g.drawRoundedRectangle(x + 0.5f, keyY, whiteW - 1.0f, keyH, 1.5f, 0.5f);
+
+            // C音 (Note 24, 36, 48, 60, 72, 84, 96, 108) 表記
+            if (noteInOct == 0)
+            {
+                const int octaveNum = (note / 12) - 1;
+                g.setColour(juce::Colours::black);
+                g.setFont(juce::FontOptions(8.5f, juce::Font::bold));
+                g.drawText("C" + juce::String(octaveNum), (int)x, (int)(keyY + keyH - 12.0f), (int)whiteW, 11, juce::Justification::centred);
+            }
             whiteIdx++;
+        }
+    }
+
+    // B: 黒鍵 36個描画 (白鍵の上にレイヤー重ね)
+    whiteIdx = 0;
+    for (int note = 21; note <= 108; ++note)
+    {
+        const int noteInOct = note % 12;
+        if (!isBlackNote[noteInOct])
+        {
+            whiteIdx++;
+        }
+        else
+        {
+            const float x = 10.0f + ((float)whiteIdx - 0.35f) * whiteW;
+            g.setColour(juce::Colours::black);
+            g.fillRoundedRectangle(x, keyY, whiteW * 0.68f, keyH * 0.62f, 1.0f);
+            g.setColour(PicoColors::knobTrack);
+            g.drawRoundedRectangle(x, keyY, whiteW * 0.68f, keyH * 0.62f, 1.0f, 0.5f);
         }
     }
 }
@@ -198,7 +229,7 @@ void WaveformDisplay::mouseDown(const juce::MouseEvent& e)
     const float mouseX = (float)e.x;
     const float mouseY = (float)e.y;
 
-    if (mouseY > h - 60.0f)
+    if (mouseY > h - 75.0f)
     {
         // KeyRange エリア操作
         activeDrag = DragTarget::KeyRangeLow;

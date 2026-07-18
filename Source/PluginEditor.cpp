@@ -1,6 +1,6 @@
 // ==========================================
 // File: PluginEditor.cpp
-// PicoSampler メインエディタ GUI 実装 (KeyRangeMap波形統合 ＆ D&D対応)
+// PicoSampler メインエディタ GUI 実装 (ヘッダー情報拡張 ＆ SLOTタブ削除)
 // ==========================================
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
@@ -8,7 +8,6 @@
 PicoSamplerAudioProcessorEditor::PicoSamplerAudioProcessorEditor(PicoSamplerAudioProcessor& p)
     : AudioProcessorEditor(&p), audioProcessor(p),
       mainPanel(p.getAPVTS()),
-      slotPanel(p.getAPVTS(), p.getSamplerEngine()),
       arpPanel(p.getAPVTS()),
       modPanel(p.getAPVTS()),
       fxPanel(p.getAPVTS()),
@@ -19,7 +18,7 @@ PicoSamplerAudioProcessorEditor::PicoSamplerAudioProcessorEditor(PicoSamplerAudi
 
     addAndMakeVisible(waveDisplay);
 
-    for (auto* b : { &btnTabMain, &btnTabSlot, &btnTabArp, &btnTabMod, &btnTabFx, &btnTabConfig })
+    for (auto* b : { &btnTabMain, &btnTabArp, &btnTabMod, &btnTabFx, &btnTabConfig })
     {
         addAndMakeVisible(*b);
     }
@@ -29,15 +28,13 @@ PicoSamplerAudioProcessorEditor::PicoSamplerAudioProcessorEditor(PicoSamplerAudi
     addAndMakeVisible(btnPresets);
 
     btnTabMain.onClick   = [this] { setActiveTab(0); };
-    btnTabSlot.onClick   = [this] { setActiveTab(1); };
-    btnTabArp.onClick    = [this] { setActiveTab(2); };
-    btnTabMod.onClick    = [this] { setActiveTab(3); };
-    btnTabFx.onClick     = [this] { setActiveTab(4); };
-    btnTabConfig.onClick = [this] { setActiveTab(5); };
+    btnTabArp.onClick    = [this] { setActiveTab(1); };
+    btnTabMod.onClick    = [this] { setActiveTab(2); };
+    btnTabFx.onClick     = [this] { setActiveTab(3); };
+    btnTabConfig.onClick = [this] { setActiveTab(4); };
     btnPresets.onClick   = [this] { presetBrowser.setVisible(!presetBrowser.isVisible()); };
 
     addAndMakeVisible(mainPanel);
-    addChildComponent(slotPanel);
     addChildComponent(arpPanel);
     addChildComponent(modPanel);
     addChildComponent(fxPanel);
@@ -48,11 +45,10 @@ PicoSamplerAudioProcessorEditor::PicoSamplerAudioProcessorEditor(PicoSamplerAudi
 
     waveDisplay.setVisualizerData(&p.getVisualizerData());
 
-    // 波形エリアへの D&D ファイルドロップ対応 (アクティブスロットにロード)
+    // 波形エリアへの D&D ファイルドロップ対応
     waveDisplay.onFileDropped = [this](const juce::File& file) {
         const int activeIdx = (int)audioProcessor.getAPVTS().getRawParameterValue("activeSlot")->load();
         audioProcessor.getSamplerEngine().getSlot(activeIdx).loadFromFile(file);
-        slotPanel.updateSlotStates();
         repaint();
     };
 
@@ -62,7 +58,6 @@ PicoSamplerAudioProcessorEditor::PicoSamplerAudioProcessorEditor(PicoSamplerAudi
             pLow->setValueNotifyingHost((float)low / 127.0f);
         if (auto* pHigh = audioProcessor.getAPVTS().getParameter("slotHighNote_" + juce::String(slotIdx)))
             pHigh->setValueNotifyingHost((float)high / 127.0f);
-        slotPanel.updateSlotStates();
         repaint();
     };
 
@@ -90,18 +85,16 @@ void PicoSamplerAudioProcessorEditor::setActiveTab(int tabIndex)
     if (presetBrowser.isVisible()) presetBrowser.setVisible(false);
 
     mainPanel.setVisible(activeTab == 0);
-    slotPanel.setVisible(activeTab == 1);
-    arpPanel.setVisible(activeTab == 2);
-    modPanel.setVisible(activeTab == 3);
-    fxPanel.setVisible(activeTab == 4);
-    configPanel.setVisible(activeTab == 5);
+    arpPanel.setVisible(activeTab == 1);
+    modPanel.setVisible(activeTab == 2);
+    fxPanel.setVisible(activeTab == 3);
+    configPanel.setVisible(activeTab == 4);
 
     styleTabButton(btnTabMain,   activeTab == 0);
-    styleTabButton(btnTabSlot,   activeTab == 1);
-    styleTabButton(btnTabArp,    activeTab == 2);
-    styleTabButton(btnTabMod,    activeTab == 3);
-    styleTabButton(btnTabFx,     activeTab == 4);
-    styleTabButton(btnTabConfig, activeTab == 5);
+    styleTabButton(btnTabArp,    activeTab == 1);
+    styleTabButton(btnTabMod,    activeTab == 2);
+    styleTabButton(btnTabFx,     activeTab == 3);
+    styleTabButton(btnTabConfig, activeTab == 4);
 
     repaint(0, 290, getWidth(), 45);
 }
@@ -110,25 +103,33 @@ void PicoSamplerAudioProcessorEditor::paint(juce::Graphics& g)
 {
     g.fillAll(PicoColors::bgDk);
 
-    // 1. ヘッダーロゴ (グラデーション)
+    // 1. ヘッダーロゴ
     g.setFont(juce::FontOptions(22.0f, juce::Font::bold));
     juce::ColourGradient titleGrad(PicoColors::mint, 20.0f, 15.0f, PicoColors::pink, 280.0f, 35.0f, false);
     titleGrad.addColour(0.5, PicoColors::lavender);
     g.setGradientFill(titleGrad);
     g.drawText("P I C O  S A M P L E R", 20, 10, 280, 28, juce::Justification::centredLeft);
 
-    // 2. HUD 情報 (アクティブスロットのファイル名 & ルートキー)
+    // 2. HUD 情報 (アクティブスロットのファイル名・RootKey・KeyRange情報)
     const int activeIdx = (int)audioProcessor.getAPVTS().getRawParameterValue("activeSlot")->load();
     const auto& slot = audioProcessor.getSamplerEngine().getSlot(activeIdx);
     const auto& meta = slot.getMetadata();
 
-    g.setColour(juce::Colours::white.withAlpha(0.85f));
-    g.setFont(juce::FontOptions(11.0f, juce::Font::plain));
-    g.drawText("Slot " + juce::String(activeIdx + 1) + ": " + (slot.isReady() ? meta.fileName : "Empty"), 310, 10, 300, 14, juce::Justification::left, true);
-    g.setColour(PicoColors::textDim);
-    g.drawText("Root Key: " + (slot.isReady() ? juce::MidiMessage::getMidiNoteName(meta.rootKey, true, true, 4) : "-"), 310, 25, 300, 14, juce::Justification::left);
+    const int lowNote = (int)audioProcessor.getAPVTS().getRawParameterValue("slotLowNote_" + juce::String(activeIdx))->load();
+    const int highNote = (int)audioProcessor.getAPVTS().getRawParameterValue("slotHighNote_" + juce::String(activeIdx))->load();
 
-    // 3. アクティブタブの下線バー描画 (Granularスタイル)
+    g.setColour(juce::Colours::white.withAlpha(0.9f));
+    g.setFont(juce::FontOptions(11.5f, juce::Font::bold));
+    g.drawText("Slot " + juce::String(activeIdx + 1) + ": " + (slot.isReady() ? meta.fileName : "Empty"), 310, 8, 380, 15, juce::Justification::left, true);
+
+    g.setColour(PicoColors::mint);
+    g.setFont(juce::FontOptions(10.5f, juce::Font::plain));
+    const juce::String rootStr = slot.isReady() ? juce::MidiMessage::getMidiNoteName(meta.rootKey, true, true, 4) : "-";
+    const juce::String rangeStr = juce::MidiMessage::getMidiNoteName(lowNote, true, true, 4) + " ~ " + juce::MidiMessage::getMidiNoteName(highNote, true, true, 4);
+
+    g.drawText("Root Key: " + rootStr + "  |  Key Range: " + rangeStr, 310, 25, 380, 15, juce::Justification::left);
+
+    // 3. アクティブタブの下線バー描画
     auto drawUnderline = [&g](const juce::TextButton& b, juce::Colour c)
     {
         const auto r = b.getBounds();
@@ -138,41 +139,38 @@ void PicoSamplerAudioProcessorEditor::paint(juce::Graphics& g)
     };
 
     if (activeTab == 0) drawUnderline(btnTabMain, PicoColors::mint);
-    if (activeTab == 1) drawUnderline(btnTabSlot, PicoColors::peach);
-    if (activeTab == 2) drawUnderline(btnTabArp, PicoColors::lavender);
-    if (activeTab == 3) drawUnderline(btnTabMod, PicoColors::babyBlue);
-    if (activeTab == 4) drawUnderline(btnTabFx, PicoColors::pink);
-    if (activeTab == 5) drawUnderline(btnTabConfig, PicoColors::sage);
+    if (activeTab == 1) drawUnderline(btnTabArp, PicoColors::lavender);
+    if (activeTab == 2) drawUnderline(btnTabMod, PicoColors::babyBlue);
+    if (activeTab == 3) drawUnderline(btnTabFx, PicoColors::pink);
+    if (activeTab == 4) drawUnderline(btnTabConfig, PicoColors::sage);
 }
 
 void PicoSamplerAudioProcessorEditor::resized()
 {
-    // 波形表示 (波形 + 下部88鍵 KeyRangeMap 統合エリア)
-    waveDisplay.setBounds(20, 48, 1040, 240);
+    // 波形表示 (高さ 240px)
+    waveDisplay.setBounds(20, 46, 1040, 240);
 
-    const int tabY = 296;
-    const int tabW = 88;
+    const int tabY = 294;
+    const int tabW = 92;
     const int tabH = 26;
 
     btnTabMain.setBounds(20,               tabY, tabW, tabH);
-    btnTabSlot.setBounds(20 + (tabW + 8),  tabY, tabW, tabH);
-    btnTabArp.setBounds(20 + (tabW + 8)*2, tabY, tabW, tabH);
-    btnTabMod.setBounds(20 + (tabW + 8)*3, tabY, tabW, tabH);
-    btnTabFx.setBounds(20 + (tabW + 8)*4,  tabY, tabW, tabH);
-    btnTabConfig.setBounds(20 + (tabW + 8)*5, tabY, tabW, tabH);
+    btnTabArp.setBounds(20 + (tabW + 8),   tabY, tabW, tabH);
+    btnTabMod.setBounds(20 + (tabW + 8)*2, tabY, tabW, tabH);
+    btnTabFx.setBounds(20 + (tabW + 8)*3,  tabY, tabW, tabH);
+    btnTabConfig.setBounds(20 + (tabW + 8)*4, tabY, tabW, tabH);
 
     btnPresets.setBounds(1080 - 100, 10, 80, 26);
 
     // パネル領域
-    const auto panelBounds = juce::Rectangle<int>(0, 330, 1080, 370);
+    const auto panelBounds = juce::Rectangle<int>(0, 328, 1080, 372);
     mainPanel.setBounds(panelBounds);
-    slotPanel.setBounds(panelBounds);
     arpPanel.setBounds(panelBounds);
     modPanel.setBounds(panelBounds);
     fxPanel.setBounds(panelBounds);
     configPanel.setBounds(panelBounds);
 
-    presetBrowser.setBounds(0, 330, 1080, 370);
+    presetBrowser.setBounds(0, 328, 1080, 372);
 }
 
 void PicoSamplerAudioProcessorEditor::timerCallback()
@@ -180,13 +178,24 @@ void PicoSamplerAudioProcessorEditor::timerCallback()
     const int activeIdx = (int)audioProcessor.getAPVTS().getRawParameterValue("activeSlot")->load();
     waveDisplay.setSampleSlot(&audioProcessor.getSamplerEngine().getSlot(activeIdx));
 
-    slotPanel.updateSlotStates();
     mainPanel.updateStates();
 
-    waveDisplay.updateKeyRanges(slotPanel.getSlotRanges(),
-                                slotPanel.getRootKeys(),
-                                slotPanel.getSlotReadyStates(),
-                                activeIdx);
+    std::array<std::pair<int, int>, 8> ranges {};
+    std::array<int, 8> roots {};
+    std::array<bool, 8> readyStates {};
 
-    repaint(0, 0, 600, 48);
+    for (int i = 0; i < 8; ++i)
+    {
+        const juce::String s = juce::String(i);
+        const int low = (int)audioProcessor.getAPVTS().getRawParameterValue("slotLowNote_" + s)->load();
+        const int high = (int)audioProcessor.getAPVTS().getRawParameterValue("slotHighNote_" + s)->load();
+        ranges[(size_t)i] = { low, high };
+
+        const auto& slot = audioProcessor.getSamplerEngine().getSlot(i);
+        roots[(size_t)i] = slot.getMetadata().rootKey;
+        readyStates[(size_t)i] = slot.isReady();
+    }
+
+    waveDisplay.updateKeyRanges(ranges, roots, readyStates, activeIdx);
+    repaint(0, 0, 700, 46);
 }
