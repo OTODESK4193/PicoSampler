@@ -34,10 +34,17 @@ juce::AudioProcessorValueTreeState::ParameterLayout PicoSamplerAudioProcessor::c
     params.push_back(std::make_unique<juce::AudioParameterChoice>("samplerMode", "Sampler Mode", juce::StringArray{ "Single", "Layer", "Random" }, 0));
     params.push_back(std::make_unique<juce::AudioParameterInt>("activeSlot", "Active Slot", 0, 7, 0));
     params.push_back(std::make_unique<juce::AudioParameterFloat>("outGain", "Output Gain", -36.0f, 12.0f, 0.0f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("masterPitch", "Master Pitch", -24.0f, 24.0f, 0.0f));
     params.push_back(std::make_unique<juce::AudioParameterFloat>("masterHPF", "Master HPF", 20.0f, 2000.0f, 20.0f));
     params.push_back(std::make_unique<juce::AudioParameterFloat>("masterLPF", "Master LPF", 200.0f, 20000.0f, 20000.0f));
     params.push_back(std::make_unique<juce::AudioParameterFloat>("ceiling", "Limiter Ceiling", -12.0f, 0.0f, 0.0f));
     params.push_back(std::make_unique<juce::AudioParameterFloat>("limRelease", "Limiter Release", 1.0f, 500.0f, 50.0f));
+
+    // Config / Global Settings
+    params.push_back(std::make_unique<juce::AudioParameterChoice>("analysisEngine", "Analysis Engine", juce::StringArray{ "Auto", "Crisp", "Smooth", "Formant" }, 0));
+    params.push_back(std::make_unique<juce::AudioParameterChoice>("filterSlope", "Filter Slope", juce::StringArray{ "12dB/oct", "24dB/oct" }, 0));
+    params.push_back(std::make_unique<juce::AudioParameterChoice>("colorTheme", "Color Theme", juce::StringArray{ "Midnight", "Sakura", "Ocean", "Forest", "Sunset", "Mono" }, 0));
+    params.push_back(std::make_unique<juce::AudioParameterChoice>("polyphony", "Polyphony", juce::StringArray{ "1 Voice", "2 Voices", "4 Voices", "8 Voices", "16 Voices", "32 Voices" }, 4));
 
     // Slots 1-8 Parameters
     for (int i = 0; i < 8; ++i)
@@ -137,6 +144,18 @@ void PicoSamplerAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
     engineParams.ceilingDb = getParamFloat("ceiling", 0.0f);
     engineParams.limReleaseMs = getParamFloat("limRelease", 50.0f);
 
+    const float rawMasterPitch = getParamFloat("masterPitch", 0.0f);
+    const int keyVal = (int)getParamFloat("key", 0.0f);
+    const int scaleVal = (int)getParamFloat("scale", 0.0f);
+
+    float effectiveMasterPitch = rawMasterPitch;
+    if (scaleVal > 0)
+    {
+        const int rootNote = (keyVal >= 1) ? (keyVal - 1) : 0;
+        const float quantizedTarget = ScaleQuantizer::quantize(60.0f + (float)rootNote + rawMasterPitch, rootNote, scaleVal);
+        effectiveMasterPitch = quantizedTarget - (60.0f + (float)rootNote);
+    }
+
     for (int i = 0; i < 8; ++i)
     {
         const juce::String s = juce::String(i);
@@ -147,8 +166,8 @@ void PicoSamplerAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
         sp.release = getParamFloat("release_" + s, 0.3f);
 
         sp.octave   = (int)getParamFloat("octave_" + s, 0.0f);
-        sp.semitone = (int)getParamFloat("pitchSt_" + s, 0.0f);
-        sp.fineTune = getParamFloat("fineTune_" + s, 0.0f);
+        sp.semitone = (int)getParamFloat("pitchSt_" + s, 0.0f) + (int)std::round(effectiveMasterPitch);
+        sp.fineTune = getParamFloat("fineTune_" + s, 0.0f) + (effectiveMasterPitch - std::round(effectiveMasterPitch)) * 100.0f;
         sp.pan      = getParamFloat("pan_" + s, 0.0f);
         sp.slotGainDb = getParamFloat("slotGain_" + s, 0.0f);
 

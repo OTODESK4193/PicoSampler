@@ -85,10 +85,11 @@ private:
     LabeledKnob knobSustain  { "Sustain", PicoColors::pink };
     LabeledKnob knobRelease  { "Release", PicoColors::pink };
 
-    LabeledKnob knobMasterHpf { "HPF",     PicoColors::mint };
-    LabeledKnob knobMasterLpf { "LPF",     PicoColors::mint };
-    LabeledKnob knobCeiling   { "Ceiling", PicoColors::mint };
-    LabeledKnob knobOutGain   { "Gain",    PicoColors::mint };
+    LabeledKnob knobMasterPitch { "Pitch",   PicoColors::mint };
+    LabeledKnob knobMasterHpf   { "HPF",     PicoColors::mint };
+    LabeledKnob knobMasterLpf   { "LPF",     PicoColors::mint };
+    LabeledKnob knobOutGain     { "Gain",    PicoColors::mint };
+    LabeledKnob knobCeiling     { "Ceiling", PicoColors::mint };
 
     int currentBoundSlot = -1;
 
@@ -101,9 +102,10 @@ private:
     std::unique_ptr<ButtonAttach> reverseAttach;
     std::unique_ptr<ButtonAttach> snapAttach;
 
+    std::unique_ptr<Attachment> masterPitchAttach;
+    std::unique_ptr<Attachment> masterHpfAttach;
+    std::unique_ptr<Attachment> masterLpfAttach;
     std::unique_ptr<Attachment> outGainAttach;
-    std::unique_ptr<Attachment> hpfAttach;
-    std::unique_ptr<Attachment> lpfAttach;
     std::unique_ptr<Attachment> ceilingAttach;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MainPanel)

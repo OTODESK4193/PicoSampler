@@ -1,6 +1,6 @@
 // ==========================================
 // File: ConfigPanel.cpp
-// ConfigPanel 実装 (Limiter Release ノブ対応)
+// ConfigPanel 実装 (Global Settings パラメータの完全バインド & スタイリング)
 // ==========================================
 #include "ConfigPanel.h"
 
@@ -11,17 +11,31 @@ ConfigPanel::ConfigPanel(juce::AudioProcessorValueTreeState& apvts) : vts(apvts)
     choiceTheme.combo.addItemList({ "Midnight", "Sakura", "Ocean", "Forest", "Sunset", "Mono" }, 1);
     choicePoly.combo.addItemList({ "1 Voice", "2 Voices", "4 Voices", "8 Voices", "16 Voices", "32 Voices" }, 1);
 
+    auto styleCombo = [](juce::ComboBox& c) {
+        c.setColour(juce::ComboBox::backgroundColourId, PicoColors::panel);
+        c.setColour(juce::ComboBox::outlineColourId, PicoColors::knobTrack);
+        c.setColour(juce::ComboBox::textColourId, juce::Colours::white);
+        c.setColour(juce::ComboBox::arrowColourId, PicoColors::mint);
+    };
+
+    styleCombo(choiceMaterial.combo);
+    styleCombo(choiceFilter.combo);
+    styleCombo(choiceTheme.combo);
+    styleCombo(choicePoly.combo);
+
     addAndMakeVisible(choiceMaterial);
     addAndMakeVisible(choiceFilter);
     addAndMakeVisible(choiceTheme);
     addAndMakeVisible(choicePoly);
     addAndMakeVisible(knobLimRelease);
 
-    materialAttach   = std::make_unique<ChoiceAttach>(vts, "materialMode", choiceMaterial.combo);
+    materialAttach   = std::make_unique<ChoiceAttach>(vts, "analysisEngine", choiceMaterial.combo);
     filterAttach     = std::make_unique<ChoiceAttach>(vts, "filterSlope", choiceFilter.combo);
     themeAttach      = std::make_unique<ChoiceAttach>(vts, "colorTheme", choiceTheme.combo);
-    polyAttach       = std::make_unique<ChoiceAttach>(vts, "poly", choicePoly.combo);
+    polyAttach       = std::make_unique<ChoiceAttach>(vts, "polyphony", choicePoly.combo);
     limReleaseAttach = std::make_unique<SliderAttach>(vts, "limRelease", knobLimRelease.knob);
+
+    knobLimRelease.knob.setDoubleClickReturnValue(true, 50.0);
 }
 
 void ConfigPanel::paint(juce::Graphics& g)

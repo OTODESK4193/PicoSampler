@@ -115,6 +115,8 @@ void Arpeggiator::process(juce::MidiBuffer& midi, int numSamples, const Params& 
 
 void Arpeggiator::handleIncomingMidi(const juce::MidiBuffer& midi, bool latch) noexcept
 {
+    const bool wasEmpty = heldNotes.empty();
+
     for (const auto m : midi)
     {
         const auto msg = m.getMessage();
@@ -154,6 +156,12 @@ void Arpeggiator::handleIncomingMidi(const juce::MidiBuffer& midi, bool latch) n
             heldNotes.clear();
             if (!latch) latchedNotes.clear();
         }
+    }
+
+    if (wasEmpty && !heldNotes.empty())
+    {
+        stepSampleCounter = 0;
+        sequenceIndex = 0;
     }
 }
 

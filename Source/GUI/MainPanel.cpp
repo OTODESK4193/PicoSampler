@@ -136,10 +136,11 @@ MainPanel::MainPanel(juce::AudioProcessorValueTreeState& apvts) : vts(apvts)
     setupEnvCallback(knobRelease, "release");
 
     // Master ノブ
-    hpfAttach = std::make_unique<Attachment>(vts, "masterHPF", knobMasterHpf.knob);
-    lpfAttach = std::make_unique<Attachment>(vts, "masterLPF", knobMasterLpf.knob);
-    outGainAttach = std::make_unique<Attachment>(vts, "outGain", knobOutGain.knob);
-    ceilingAttach = std::make_unique<Attachment>(vts, "ceiling", knobCeiling.knob);
+    masterPitchAttach = std::make_unique<Attachment>(vts, "masterPitch", knobMasterPitch.knob);
+    masterHpfAttach = std::make_unique<Attachment>(vts, "masterHPF", knobMasterHpf.knob);
+    masterLpfAttach = std::make_unique<Attachment>(vts, "masterLPF", knobMasterLpf.knob);
+    outGainAttach   = std::make_unique<Attachment>(vts, "outGain", knobOutGain.knob);
+    ceilingAttach   = std::make_unique<Attachment>(vts, "ceiling", knobCeiling.knob);
 
     // ノブダブルクリック時のデフォルト値リセット設定
     knobSampleStart.knob.setDoubleClickReturnValue(true, 0.0);
@@ -158,6 +159,7 @@ MainPanel::MainPanel(juce::AudioProcessorValueTreeState& apvts) : vts(apvts)
     knobSustain.knob.setDoubleClickReturnValue(true, 1.0);
     knobRelease.knob.setDoubleClickReturnValue(true, 0.3);
 
+    knobMasterPitch.knob.setDoubleClickReturnValue(true, 0.0);
     knobMasterHpf.knob.setDoubleClickReturnValue(true, 20.0);
     knobMasterLpf.knob.setDoubleClickReturnValue(true, 20000.0);
     knobOutGain.knob.setDoubleClickReturnValue(true, 0.0);
@@ -179,6 +181,7 @@ MainPanel::MainPanel(juce::AudioProcessorValueTreeState& apvts) : vts(apvts)
     addAndMakeVisible(knobSustain);
     addAndMakeVisible(knobRelease);
 
+    addAndMakeVisible(knobMasterPitch);
     addAndMakeVisible(knobMasterHpf);
     addAndMakeVisible(knobMasterLpf);
     addAndMakeVisible(knobOutGain);
@@ -323,9 +326,10 @@ void MainPanel::resized()
     knobSemitone.setBounds(20 + 2 * 75, knobY2, knobW, knobH);
     knobFineTune.setBounds(20 + 3 * 75, knobY2, knobW, knobH);
 
-    // MASTER (4ノブ: HPF, LPF, Gain, Ceiling の順)
-    knobMasterHpf.setBounds(360 + 0 * 75, knobY2, knobW, knobH);
-    knobMasterLpf.setBounds(360 + 1 * 75, knobY2, knobW, knobH);
-    knobOutGain.setBounds(360 + 2 * 75,   knobY2, knobW, knobH);
-    knobCeiling.setBounds(360 + 3 * 75,   knobY2, knobW, knobH);
+    // MASTER (5ノブ: Pitch, HPF, LPF, Gain, Ceiling の順)
+    knobMasterPitch.setBounds(360 + 0 * 68, knobY2, knobW, knobH);
+    knobMasterHpf.setBounds(360 + 1 * 68,   knobY2, knobW, knobH);
+    knobMasterLpf.setBounds(360 + 2 * 68,   knobY2, knobW, knobH);
+    knobOutGain.setBounds(360 + 3 * 68,     knobY2, knobW, knobH);
+    knobCeiling.setBounds(360 + 4 * 68,     knobY2, knobW, knobH);
 }
