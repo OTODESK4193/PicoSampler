@@ -1,6 +1,6 @@
 // ==========================================
 // File: WaveformDisplay.h
-// 波形表示コンポーネント (純粋波形表示)
+// 波形表示コンポーネント (APVTSノブ双方向連動対応)
 // ==========================================
 #pragma once
 
@@ -23,9 +23,9 @@ public:
     void setSampleSlot(const SampleSlot* slot) { currentSlot = slot; }
     void setVisualizerData(SampleVisualizerData* data) { visualizerData = data; }
     void setActiveSlotIndex(int idx) { activeSlot = idx; }
+    void setAPVTS(juce::AudioProcessorValueTreeState* state) { vts = state; }
 
     std::function<void(const juce::File& file)> onFileDropped;
-    std::function<void(float startRatio, float endRatio)> onSampleRangeChanged;
 
     bool isInterestedInFileDrag(const juce::StringArray& files) override;
     void filesDropped(const juce::StringArray& files, int x, int y) override;
@@ -40,9 +40,10 @@ private:
 
     const SampleSlot* currentSlot = nullptr;
     SampleVisualizerData* visualizerData = nullptr;
+    juce::AudioProcessorValueTreeState* vts = nullptr;
     int activeSlot = 0;
 
-    enum class DragTarget { None, SampleStart, SampleEnd };
+    enum class DragTarget { None, SampleStart, SampleEnd, LoopStart, LoopEnd };
     DragTarget activeDrag = DragTarget::None;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(WaveformDisplay)

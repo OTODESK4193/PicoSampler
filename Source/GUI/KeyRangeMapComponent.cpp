@@ -27,13 +27,13 @@ void KeyRangeMapComponent::paint(juce::Graphics& g)
     g.setColour(PicoColors::knobTrack);
     g.drawRoundedRectangle(0.0f, 0.0f, w, h, 6.0f, 1.0f);
 
-    // --- 1. 8スロット 音域レーン (上部 46px, 各レーン高さ 5.0px) ---
-    const float laneH = 5.0f;
+    // --- 1. 8スロット 音域レーン (上部 85px, 各レーン高さ 9.5px) ---
+    const float laneH = 9.5f;
     const float laneStartY = 4.0f;
 
     for (int s = 0; s < 8; ++s)
     {
-        const float lY = laneStartY + (float)s * (laneH + 0.5f);
+        const float lY = laneStartY + (float)s * (laneH + 1.0f);
         const auto col = PicoColors::getSlotColor(s);
         const bool isAct = (s == activeSlot);
 
@@ -41,16 +41,16 @@ void KeyRangeMapComponent::paint(juce::Graphics& g)
         {
             const float x1 = noteToX(slotRanges[(size_t)s].first, w);
             const float x2 = noteToX(slotRanges[(size_t)s].second, w);
-            const float bandW = std::max(5.0f, x2 - x1);
+            const float bandW = std::max(6.0f, x2 - x1);
 
-            // 音域帯描画
+            // 太い音域帯描画
             g.setColour(col.withAlpha(isAct ? 0.95f : 0.45f));
-            g.fillRoundedRectangle(x1, lY, bandW, laneH, 1.5f);
+            g.fillRoundedRectangle(x1, lY, bandW, laneH, 2.5f);
 
             if (isAct)
             {
                 g.setColour(juce::Colours::white);
-                g.drawRoundedRectangle(x1, lY, bandW, laneH, 1.5f, 1.0f);
+                g.drawRoundedRectangle(x1, lY, bandW, laneH, 2.5f, 1.5f);
             }
 
             // ルートキー表示 'R' 発光イエロードット
@@ -58,14 +58,14 @@ void KeyRangeMapComponent::paint(juce::Graphics& g)
             if (rx >= x1 && rx <= x2)
             {
                 g.setColour(juce::Colours::yellow);
-                g.fillEllipse(rx - 3.0f, lY - 0.5f, 6.0f, 6.0f);
+                g.fillEllipse(rx - 3.5f, lY + 1.0f, 7.0f, 7.0f);
             }
         }
     }
 
-    // --- 2. リアリスティック 88鍵盤描画 (下部 30px) ---
-    const float keyY = h - 30.0f;
-    const float keyH = 28.0f;
+    // --- 2. リアリスティック 88鍵盤描画 (下部 32px) ---
+    const float keyY = h - 33.0f;
+    const float keyH = 30.0f;
     const float whiteW = (w - 20.0f) / 52.0f;
     static const bool isBlackNote[12] = { false, true, false, true, false, false, true, false, true, false, true, false };
 

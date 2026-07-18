@@ -1,6 +1,6 @@
 // ==========================================
 // File: PluginEditor.cpp
-// PicoSampler メインエディタ GUI 実装 (KeyRangeMapコンポーネント独立配置)
+// PicoSampler メインエディタ GUI 実装 (画面レイアウト調整 & 波形連動)
 // ==========================================
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
@@ -16,6 +16,7 @@ PicoSamplerAudioProcessorEditor::PicoSamplerAudioProcessorEditor(PicoSamplerAudi
     setLookAndFeel(&lookAndFeel);
     setSize(1080, 700);
 
+    waveDisplay.setAPVTS(&p.getAPVTS());
     addAndMakeVisible(waveDisplay);
     addAndMakeVisible(keyRangeMap);
 
@@ -97,21 +98,21 @@ void PicoSamplerAudioProcessorEditor::setActiveTab(int tabIndex)
     styleTabButton(btnTabFx,     activeTab == 3);
     styleTabButton(btnTabConfig, activeTab == 4);
 
-    repaint(0, 290, getWidth(), 45);
+    repaint(0, 310, getWidth(), 45);
 }
 
 void PicoSamplerAudioProcessorEditor::paint(juce::Graphics& g)
 {
     g.fillAll(PicoColors::bgDk);
 
-    // 1. ヘッダーロゴ (グラデーション)
+    // 1. ヘッダーロゴ
     g.setFont(juce::FontOptions(22.0f, juce::Font::bold));
     juce::ColourGradient titleGrad(PicoColors::mint, 20.0f, 15.0f, PicoColors::pink, 280.0f, 35.0f, false);
     titleGrad.addColour(0.5, PicoColors::lavender);
     g.setGradientFill(titleGrad);
     g.drawText("P I C O  S A M P L E R", 20, 10, 280, 28, juce::Justification::centredLeft);
 
-    // 2. HUD 情報 (アクティブスロットのファイル名・RootKey・KeyRange情報)
+    // 2. HUD 情報
     const int activeIdx = (int)audioProcessor.getAPVTS().getRawParameterValue("activeSlot")->load();
     const auto& slot = audioProcessor.getSamplerEngine().getSlot(activeIdx);
     const auto& meta = slot.getMetadata();
@@ -148,13 +149,14 @@ void PicoSamplerAudioProcessorEditor::paint(juce::Graphics& g)
 
 void PicoSamplerAudioProcessorEditor::resized()
 {
-    // 波形表示 (高さ 160px)
-    waveDisplay.setBounds(20, 44, 1040, 160);
+    // 1. 波形表示 (高さ 140px)
+    waveDisplay.setBounds(20, 44, 1040, 140);
 
-    // KeyRangeMap 独立コンポーネント (波形とタブボタンの間に配置: 高さ 78px)
-    keyRangeMap.setBounds(20, 210, 1040, 78);
+    // 2. 倍幅 KeyRangeMap コンポーネント (高さ 122px)
+    keyRangeMap.setBounds(20, 190, 1040, 122);
 
-    const int tabY = 294;
+    // 3. タブボタン群 (Y=322)
+    const int tabY = 322;
     const int tabW = 92;
     const int tabH = 26;
 
@@ -166,15 +168,15 @@ void PicoSamplerAudioProcessorEditor::resized()
 
     btnPresets.setBounds(1080 - 100, 10, 80, 26);
 
-    // パネル領域
-    const auto panelBounds = juce::Rectangle<int>(0, 328, 1080, 372);
+    // 4. パネル領域 (Y=356)
+    const auto panelBounds = juce::Rectangle<int>(0, 356, 1080, 344);
     mainPanel.setBounds(panelBounds);
     arpPanel.setBounds(panelBounds);
     modPanel.setBounds(panelBounds);
     fxPanel.setBounds(panelBounds);
     configPanel.setBounds(panelBounds);
 
-    presetBrowser.setBounds(0, 328, 1080, 372);
+    presetBrowser.setBounds(0, 356, 1080, 344);
 }
 
 void PicoSamplerAudioProcessorEditor::timerCallback()

@@ -1,6 +1,6 @@
 // ==========================================
 // File: WaveformDisplay.cpp
-// WaveformDisplay 実装 (純粋波形描画)
+// WaveformDisplay 実装 (APVTSノブ双方向連動対応)
 // ==========================================
 #include "WaveformDisplay.h"
 
@@ -39,7 +39,6 @@ void WaveformDisplay::paint(juce::Graphics& g)
     const int numSamples = buffer.getNumSamples();
     if (numSamples == 0) return;
 
-    const auto& meta = currentSlot->getMetadata();
     const float* samples = buffer.getReadPointer(0);
 
     const float stepX = 4.0f;
@@ -68,9 +67,38 @@ void WaveformDisplay::paint(juce::Graphics& g)
         g.drawLine(x, yMin, x, yMax, 2.0f);
     }
 
+    // 3. APVTSからのリアルタイムパラメーター描画
+    const juce::String s = juce::String(activeSlot);
+    float startRatio = 0.0f;
+    float endRatio   = 1.0f;
+    float loopStart  = 0.2f;
+    float loopLen    = 0.5f;
+    float crossfade  = 0.05f;
+    bool isLooping   = false;
+
+    if (vts)
+    {
+        startRatio = vts->getRawParameterValue("sampleStart_" + s)->load();
+        endRatio   = vts->getRawParameterValue("sampleEnd_" + s)->load();
+        loopStart  = vts->getRawParameterValue("loopStart_" + s)->load();
+        loopLen    = vts->getRawParameterValue("loopLength_" + s)->load();
+        crossfade  = vts->getRawParameterValue("crossfade_" + s)->load();
+        isLooping  = vts->getRawParameterValue("isLooping_" + s)->load() > 0.5f;
+    }
+    else
+    {
+        const auto& meta = currentSlot->getMetadata();
+        startRatio = meta.sampleStartRatio;
+        endRatio   = meta.sampleEndRatio;
+        loopStart  = meta.loopStartRatio;
+        loopLen    = meta.loopLengthRatio;
+        crossfade  = meta.crossfadeRatio;
+        isLooping  = meta.isLooping;
+    }
+
     // サンプルStart / End マーカー描画
-    const float sX = meta.sampleStartRatio * w;
-    const float eX = meta.sampleEndRatio * w;
+    const float sX = startRatio * w;
+    const float eX = endRatio * w;
 
     g.setColour(juce::Colours::yellow);
     g.drawLine(sX, 0.0f, sX, h, 2.0f);
@@ -86,12 +114,12 @@ void WaveformDisplay::paint(juce::Graphics& g)
     triE.addTriangle(eX, 0.0f, eX - 6.0f, 0.0f, eX, 8.0f);
     g.fillPath(triE);
 
-    // ループStart / End
-    if (meta.isLooping)
+    // ループStart / End & クロスフェード
+    if (isLooping)
     {
-        const float lsX = meta.loopStartRatio * w;
-        const float leX = (meta.loopStartRatio + meta.loopLengthRatio) * w;
-        const float xfX = (meta.loopStartRatio + meta.loopLengthRatio - meta.crossfadeRatio) * w;
+        const float lsX = loopStart * w;
+        const float leX = (loopStart + loopLen) * w;
+        const float xfX = (loopStart + loopLen - crossfade) * w;
 
         g.setColour(PicoColors::mint.withAlpha(0.15f));
         g.fillRect(xfX, 0.0f, leX - xfX, h);
@@ -128,10 +156,17 @@ void WaveformDisplay::mouseDown(const juce::MouseEvent& e)
 
     const float w = (float)getWidth();
     const float mouseX = (float)e.x;
-    const auto& meta = currentSlot->getMetadata();
+    const juce::String s = juce::String(activeSlot);
 
-    const float sX = meta.sampleStartRatio * w;
-    const float eX = meta.sampleEndRatio * w;
+    float startRatio = 0.0f, endRatio = 1.0f;
+    if (vts)
+    {
+        startRatio = vts->getRawParameterValue("sampleStart_" + s)->load();
+        endRatio   = vts->getRawParameterValue("sampleEnd_" + s)->load();
+    }
+
+    const float sX = startRatio * w;
+    const float eX = endRatio * w;
 
     if (std::abs(mouseX - sX) < 10.0f) activeDrag = DragTarget::SampleStart;
     else if (std::abs(mouseX - eX) < 10.0f) activeDrag = DragTarget::SampleEnd;
@@ -140,21 +175,26 @@ void WaveformDisplay::mouseDown(const juce::MouseEvent& e)
 
 void WaveformDisplay::mouseDrag(const juce::MouseEvent& e)
 {
-    if (activeDrag == DragTarget::None || !currentSlot) return;
+    if (activeDrag == DragTarget::None || !currentSlot || !vts) return;
 
     const float w = (float)getWidth();
     const float normX = juce::jlimit(0.0f, 1.0f, (float)e.x / w);
-    auto& meta = const_cast<SampleSlot*>(currentSlot)->getMetadata();
+    const juce::String s = juce::String(activeSlot);
+
+    float startVal = vts->getRawParameterValue("sampleStart_" + s)->load();
+    float endVal   = vts->getRawParameterValue("sampleEnd_" + s)->load();
 
     if (activeDrag == DragTarget::SampleStart)
     {
-        meta.sampleStartRatio = std::min(normX, meta.sampleEndRatio - 0.01f);
-        if (onSampleRangeChanged) onSampleRangeChanged(meta.sampleStartRatio, meta.sampleEndRatio);
+        const float val = std::min(normX, endVal - 0.01f);
+        if (auto* p = vts->getParameter("sampleStart_" + s))
+            p->setValueNotifyingHost(val);
     }
     else if (activeDrag == DragTarget::SampleEnd)
     {
-        meta.sampleEndRatio = std::max(normX, meta.sampleStartRatio + 0.01f);
-        if (onSampleRangeChanged) onSampleRangeChanged(meta.sampleStartRatio, meta.sampleEndRatio);
+        const float val = std::max(normX, startVal + 0.01f);
+        if (auto* p = vts->getParameter("sampleEnd_" + s))
+            p->setValueNotifyingHost(val);
     }
     repaint();
 }
