@@ -1,7 +1,6 @@
 // ==========================================
 // File: SlotPanel.h
-// 8スロット カード ＆ 88鍵ミニ鍵盤ビジュアル パネル
-// Single / Layer / Random モード連携
+// 8スロット カード ＆ 88鍵ビジュアル パネル (グラフィック強化版)
 // ==========================================
 #pragma once
 
@@ -39,9 +38,10 @@ private:
         void filesDropped(const juce::StringArray& files, int, int) override;
     };
 
-    struct MiniKeyboardComponent : public juce::Component
+    struct GraphicalKeyboardComponent : public juce::Component
     {
         std::array<std::pair<int, int>, 8> slotRanges {};
+        std::array<int, 8> rootKeys {};
         std::array<bool, 8> slotEnabled {};
         int activeSlot = 0;
         std::function<void(int slotIdx, int low, int high)> onRangeChanged;
@@ -49,8 +49,12 @@ private:
         void paint(juce::Graphics& g) override;
         void mouseDown(const juce::MouseEvent& e) override;
         void mouseDrag(const juce::MouseEvent& e) override;
+        void mouseUp(const juce::MouseEvent& e) override;
 
     private:
+        float noteToX(int midiNote) const noexcept;
+        int xToNote(float x) const noexcept;
+
         int draggingSlot = -1;
         bool draggingLowEdge = true;
     };
@@ -59,7 +63,7 @@ private:
     SamplerEngine& samplerEngine;
 
     std::array<std::unique_ptr<SlotCardComponent>, 8> slotCards;
-    MiniKeyboardComponent keyboardVisualizer;
+    GraphicalKeyboardComponent keyboardVisualizer;
 
     std::array<std::unique_ptr<juce::Slider>, 8> lowNoteKnobs;
     std::array<std::unique_ptr<juce::Slider>, 8> highNoteKnobs;

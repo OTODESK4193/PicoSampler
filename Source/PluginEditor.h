@@ -1,6 +1,7 @@
 // ==========================================
 // File: PluginEditor.h
 // PicoSampler メインエディタ GUI 定義 (1080x700)
+// Granular スタイルタブアンダーライン対応
 // ==========================================
 #pragma once
 
@@ -27,18 +28,19 @@ public:
 
 private:
     void setActiveTab(int tabIndex);
+    void styleTabButton(juce::TextButton& b, bool active);
 
     PicoSamplerAudioProcessor& audioProcessor;
     ArcDialLookAndFeel lookAndFeel;
 
     // Header Toolbar
-    juce::TextButton btnTabMain { "MAIN" };
-    juce::TextButton btnTabSlot { "SLOT" };
-    juce::TextButton btnTabArp  { "ARP" };
-    juce::TextButton btnTabMod  { "MOD" };
-    juce::TextButton btnTabFx   { "FX" };
+    juce::TextButton btnTabMain   { "MAIN" };
+    juce::TextButton btnTabSlot   { "SLOT" };
+    juce::TextButton btnTabArp    { "ARP" };
+    juce::TextButton btnTabMod    { "MOD" };
+    juce::TextButton btnTabFx     { "FX" };
     juce::TextButton btnTabConfig { "CONFIG" };
-    juce::TextButton btnPresets { "PRESETS" };
+    juce::TextButton btnPresets   { "PRESETS" };
 
     // Panels
     MainPanel mainPanel;

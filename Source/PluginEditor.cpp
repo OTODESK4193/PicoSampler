@@ -1,6 +1,6 @@
 // ==========================================
 // File: PluginEditor.cpp
-// PicoSampler メインエディタ GUI 実装
+// PicoSampler メインエディタ GUI 実装 (Granularタブアンダーラインスタイル)
 // ==========================================
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
@@ -17,12 +17,13 @@ PicoSamplerAudioProcessorEditor::PicoSamplerAudioProcessorEditor(PicoSamplerAudi
     setLookAndFeel(&lookAndFeel);
     setSize(1080, 700);
 
-    addAndMakeVisible(btnTabMain);
-    addAndMakeVisible(btnTabSlot);
-    addAndMakeVisible(btnTabArp);
-    addAndMakeVisible(btnTabMod);
-    addAndMakeVisible(btnTabFx);
-    addAndMakeVisible(btnTabConfig);
+    for (auto* b : { &btnTabMain, &btnTabSlot, &btnTabArp, &btnTabMod, &btnTabFx, &btnTabConfig })
+    {
+        addAndMakeVisible(*b);
+    }
+
+    btnPresets.setColour(juce::TextButton::buttonColourId, PicoColors::knobTrack);
+    btnPresets.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
     addAndMakeVisible(btnPresets);
 
     btnTabMain.onClick   = [this] { setActiveTab(0); };
@@ -55,24 +56,71 @@ PicoSamplerAudioProcessorEditor::~PicoSamplerAudioProcessorEditor()
     setLookAndFeel(nullptr);
 }
 
+void PicoSamplerAudioProcessorEditor::styleTabButton(juce::TextButton& b, bool active)
+{
+    b.setColour(juce::TextButton::buttonColourId,
+                active ? PicoColors::panel : juce::Colours::transparentBlack);
+    b.setColour(juce::TextButton::textColourOffId,
+                active ? juce::Colours::white : juce::Colours::grey);
+}
+
+void PicoSamplerAudioProcessorEditor::setActiveTab(int tabIndex)
+{
+    activeTab = tabIndex;
+    if (presetBrowser.isVisible()) presetBrowser.setVisible(false);
+
+    mainPanel.setVisible(activeTab == 0);
+    slotPanel.setVisible(activeTab == 1);
+    arpPanel.setVisible(activeTab == 2);
+    modPanel.setVisible(activeTab == 3);
+    fxPanel.setVisible(activeTab == 4);
+    configPanel.setVisible(activeTab == 5);
+
+    styleTabButton(btnTabMain,   activeTab == 0);
+    styleTabButton(btnTabSlot,   activeTab == 1);
+    styleTabButton(btnTabArp,    activeTab == 2);
+    styleTabButton(btnTabMod,    activeTab == 3);
+    styleTabButton(btnTabFx,     activeTab == 4);
+    styleTabButton(btnTabConfig, activeTab == 5);
+
+    repaint(0, 0, getWidth(), 50);
+}
+
 void PicoSamplerAudioProcessorEditor::paint(juce::Graphics& g)
 {
     g.fillAll(PicoColors::bgDk);
 
-    // 1. ヘッダーロゴ ＆ HUD
-    g.setColour(PicoColors::mint);
-    g.setFont(juce::FontOptions(18.0f, juce::Font::bold));
-    g.drawText("PICO SAMPLER", 20, 10, 200, 30, juce::Justification::left);
+    // 1. ヘッダーロゴ
+    g.setFont(juce::FontOptions(22.0f, juce::Font::bold));
+    juce::ColourGradient titleGrad(PicoColors::mint, 20.0f, 15.0f, PicoColors::pink, 250.0f, 35.0f, false);
+    g.setGradientFill(titleGrad);
+    g.drawText("P I C O  S A M P L E R", 20, 10, 260, 28, juce::Justification::centredLeft);
 
-    // 2. アクティブスロット HUD 情報
+    // 2. HUD 情報 (ファイル名 & ルートキー)
     const int activeIdx = (int)audioProcessor.getAPVTS().getRawParameterValue("activeSlot")->load();
     const auto& slot = audioProcessor.getSamplerEngine().getSlot(activeIdx);
     const auto& meta = slot.getMetadata();
 
     g.setColour(juce::Colours::white.withAlpha(0.7f));
     g.setFont(juce::FontOptions(11.0f, juce::Font::plain));
-    g.drawText("File: " + (slot.isReady() ? meta.fileName : "Empty"), 200, 10, 250, 15, juce::Justification::left, true);
-    g.drawText("Root Key: " + (slot.isReady() ? juce::MidiMessage::getMidiNoteName(meta.rootKey, true, true, 4) : "-"), 200, 25, 250, 15, juce::Justification::left);
+    g.drawText("Slot " + juce::String(activeIdx + 1) + ": " + (slot.isReady() ? meta.fileName : "Empty"), 280, 10, 230, 14, juce::Justification::left, true);
+    g.drawText("Root Key: " + (slot.isReady() ? juce::MidiMessage::getMidiNoteName(meta.rootKey, true, true, 4) : "-"), 280, 25, 230, 14, juce::Justification::left);
+
+    // 3. アクティブタブの下線バー描画 (Granularスタイル)
+    auto drawUnderline = [&g](const juce::TextButton& b, juce::Colour c)
+    {
+        const auto r = b.getBounds();
+        g.setColour(c);
+        g.fillRoundedRectangle((float)r.getX() + 6.0f, (float)r.getBottom() - 3.0f,
+                               (float)r.getWidth() - 12.0f, 3.0f, 1.5f);
+    };
+
+    if (activeTab == 0) drawUnderline(btnTabMain, PicoColors::mint);
+    if (activeTab == 1) drawUnderline(btnTabSlot, PicoColors::peach);
+    if (activeTab == 2) drawUnderline(btnTabArp, PicoColors::lavender);
+    if (activeTab == 3) drawUnderline(btnTabMod, PicoColors::babyBlue);
+    if (activeTab == 4) drawUnderline(btnTabFx, PicoColors::pink);
+    if (activeTab == 5) drawUnderline(btnTabConfig, PicoColors::sage);
 }
 
 void PicoSamplerAudioProcessorEditor::resized()
@@ -100,20 +148,11 @@ void PicoSamplerAudioProcessorEditor::resized()
     presetBrowser.setBounds(getLocalBounds());
 }
 
-void PicoSamplerAudioProcessorEditor::setActiveTab(int tabIndex)
-{
-    activeTab = tabIndex;
-    mainPanel.setVisible(activeTab == 0);
-    slotPanel.setVisible(activeTab == 1);
-    arpPanel.setVisible(activeTab == 2);
-    modPanel.setVisible(activeTab == 3);
-    fxPanel.setVisible(activeTab == 4);
-    configPanel.setVisible(activeTab == 5);
-}
-
 void PicoSamplerAudioProcessorEditor::timerCallback()
 {
     const int activeIdx = (int)audioProcessor.getAPVTS().getRawParameterValue("activeSlot")->load();
     mainPanel.getWaveformDisplay().setSampleSlot(&audioProcessor.getSamplerEngine().getSlot(activeIdx));
-    repaint();
+    slotPanel.updateSlotStates();
+    mainPanel.updateStates();
+    repaint(0, 0, 520, 48);
 }
