@@ -1,6 +1,6 @@
 // ==========================================
 // File: Arpeggiator.cpp
-// 13パターン アルペジエイター実装 (堅牢化 ＆ バグ完全撃滅版)
+// 13パターン アルペジエイター実装 (Sync/Free即時追従 ＆ Swing機能追加)
 // ==========================================
 #include "Arpeggiator.h"
 
@@ -21,6 +21,9 @@ void Arpeggiator::reset() noexcept
     sequenceIndex = 0;
     directionUp = true;
     walkIndex = 0;
+    prevSyncState = true;
+    prevRateFree = 4.0f;
+    prevRateSync = 6;
 }
 
 void Arpeggiator::process(juce::MidiBuffer& midi, int numSamples, const Params& p) noexcept
@@ -71,12 +74,31 @@ void Arpeggiator::process(juce::MidiBuffer& midi, int numSamples, const Params& 
     const int stepSamples = calculateStepSamples(p, numSamples);
     const int gateSamples = calculateGateSamples(p, stepSamples);
 
+    // SyncモードまたはRate値がリアルタイム変更された場合、カウントダウンを即座に適応
+    if (p.sync != prevSyncState || p.rateFreeHz != prevRateFree || p.rateSync != prevRateSync)
+    {
+        prevSyncState = p.sync;
+        prevRateFree = p.rateFreeHz;
+        prevRateSync = p.rateSync;
+        if (stepSampleCounter > stepSamples)
+        {
+            stepSampleCounter = 0;
+        }
+    }
+
     int samplesProcessed = 0;
     while (samplesProcessed < numSamples)
     {
         if (stepSampleCounter <= 0)
         {
-            stepSampleCounter = stepSamples;
+            // スイング (裏拍のタイミング遅延) 計算
+            int currentStepSamples = stepSamples;
+            if (p.swing > 0.01f && (sequenceIndex % 2 == 1))
+            {
+                currentStepSamples = (int)((float)stepSamples * (1.0f + juce::jlimit(0.0f, 0.75f, p.swing)));
+            }
+
+            stepSampleCounter = currentStepSamples;
 
             if (p.pattern == Chord)
             {
@@ -131,7 +153,6 @@ void Arpeggiator::handleIncomingMidi(const juce::MidiBuffer& midi, bool latch) n
             const int note = msg.getNoteNumber();
             const float vel = msg.getFloatVelocity();
 
-            // 全ての鍵盤を離した後に新しく弾いた場合、Latchバッファを自動リセット
             if (latch && wasEmpty)
             {
                 latchedNotes.clear();
@@ -170,7 +191,6 @@ void Arpeggiator::handleIncomingMidi(const juce::MidiBuffer& midi, bool latch) n
         }
     }
 
-    // 鍵盤が押された瞬間に即時0サンプル遅延でスタート
     if (wasEmpty && !heldNotes.empty())
     {
         stepSampleCounter = 0;

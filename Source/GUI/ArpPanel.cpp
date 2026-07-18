@@ -1,6 +1,6 @@
 // ==========================================
 // File: ArpPanel.cpp
-// ArpPanel 実装 (Offset/Gateノブ追加 ＆ 見切れなしレイアウト)
+// ArpPanel 実装 (Swing ノブ追加 ＆ レイアウト最適化)
 // ==========================================
 #include "ArpPanel.h"
 #include "../DSP/Arpeggiator.h"
@@ -18,6 +18,17 @@ ArpPanel::ArpPanel(juce::AudioProcessorValueTreeState& apvts) : vts(apvts)
 
     comboPattern.addItemList(Arpeggiator::getPatternNames(), 1);
     comboRateSync.addItemList(Arpeggiator::getSyncRateNames(), 1);
+
+    auto styleCombo = [](juce::ComboBox& c) {
+        c.setColour(juce::ComboBox::backgroundColourId, PicoColors::panel);
+        c.setColour(juce::ComboBox::outlineColourId, PicoColors::knobTrack);
+        c.setColour(juce::ComboBox::textColourId, juce::Colours::white);
+        c.setColour(juce::ComboBox::arrowColourId, PicoColors::mint);
+    };
+
+    styleCombo(comboPattern);
+    styleCombo(comboRateSync);
+
     addAndMakeVisible(comboPattern);
     addAndMakeVisible(comboRateSync);
 
@@ -27,6 +38,10 @@ ArpPanel::ArpPanel(juce::AudioProcessorValueTreeState& apvts) : vts(apvts)
     static const juce::StringArray keys = { "Auto (Off)", "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" };
     comboKey.addItemList(keys, 1);
     comboScale.addItemList(ScaleQuantizer::getScaleNames(), 1);
+
+    styleCombo(comboKey);
+    styleCombo(comboScale);
+
     addAndMakeVisible(comboKey);
     addAndMakeVisible(comboScale);
 
@@ -37,16 +52,19 @@ ArpPanel::ArpPanel(juce::AudioProcessorValueTreeState& apvts) : vts(apvts)
     knobRateFree.knob.setDoubleClickReturnValue(true, 4.0);
     knobGate.knob.setDoubleClickReturnValue(true, 0.8);
     knobOffset.knob.setDoubleClickReturnValue(true, 0.0);
+    knobSwing.knob.setDoubleClickReturnValue(true, 0.0);
 
     addAndMakeVisible(knobOctaves);
     addAndMakeVisible(knobRateFree);
     addAndMakeVisible(knobGate);
     addAndMakeVisible(knobOffset);
+    addAndMakeVisible(knobSwing);
 
     attachments.push_back(std::make_unique<Attachment>(vts, "arpOctaves", knobOctaves.knob));
     attachments.push_back(std::make_unique<Attachment>(vts, "arpRateFree", knobRateFree.knob));
     attachments.push_back(std::make_unique<Attachment>(vts, "arpGate", knobGate.knob));
     attachments.push_back(std::make_unique<Attachment>(vts, "arpOffset", knobOffset.knob));
+    attachments.push_back(std::make_unique<Attachment>(vts, "arpSwing", knobSwing.knob));
 }
 
 void ArpPanel::paint(juce::Graphics& g)
@@ -83,6 +101,7 @@ void ArpPanel::resized()
     knobRateFree.setBounds(95, knobY, knobW, knobH);
     knobGate.setBounds(170,    knobY, knobW, knobH);
     knobOffset.setBounds(245,  knobY, knobW, knobH);
+    knobSwing.setBounds(320,   knobY, knobW, knobH);
 
     comboKey.setBounds(520, 34, 110, 26);
     comboScale.setBounds(638, 34, 180, 26);

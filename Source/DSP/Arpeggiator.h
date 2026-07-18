@@ -1,6 +1,6 @@
 // ==========================================
 // File: Arpeggiator.h
-// 13パターン アルペジエイター (Offset ＆ スケール量子化完全連携)
+// 13パターン アルペジエイター (Swingノリ制御 & Sync動的追従レスポンス)
 // ==========================================
 #pragma once
 
@@ -53,6 +53,7 @@ public:
         float rateFreeHz = 4.0f;
         int octaves = 1;            // 1..4
         int offset = 0;             // -12..+12 半音
+        float swing = 0.0f;         // 0.0..0.75 (スイング)
         int durMode = 0;
         float gatePct = 0.8f;       // 0.1..1.0
         int key = 0;
@@ -63,7 +64,7 @@ public:
     void prepare(double sampleRate) noexcept;
     void reset() noexcept;
 
-    // MIDIブロック処理 (入力MIDIをアルペジオノートに書き換え)
+    // MIDIブロック処理
     void process(juce::MidiBuffer& midi, int numSamples, const Params& p) noexcept;
 
 private:
@@ -98,6 +99,10 @@ private:
     size_t sequenceIndex = 0;
     bool directionUp = true;
     int walkIndex = 0;
+
+    bool prevSyncState = true;
+    float prevRateFree = 4.0f;
+    int prevRateSync = 6;
 
     juce::Random rng;
 };

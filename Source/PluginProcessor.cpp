@@ -94,6 +94,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout PicoSamplerAudioProcessor::c
     params.push_back(std::make_unique<juce::AudioParameterFloat>("arpRateFree", "Arp Rate Free", 0.1f, 20.0f, 4.0f));
     params.push_back(std::make_unique<juce::AudioParameterInt>("arpOctaves", "Arp Octaves", 1, 4, 1));
     params.push_back(std::make_unique<juce::AudioParameterInt>("arpOffset", "Arp Offset", -12, 12, 0));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("arpSwing", "Arp Swing", 0.0f, 0.75f, 0.0f));
     params.push_back(std::make_unique<juce::AudioParameterFloat>("arpGate", "Arp Gate", 0.1f, 1.0f, 0.8f));
     params.push_back(std::make_unique<juce::AudioParameterChoice>("key", "Root Key", juce::StringArray{ "Auto", "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" }, 0));
     params.push_back(std::make_unique<juce::AudioParameterChoice>("scale", "Scale", ScaleQuantizer::getScaleNames(), 0));
@@ -195,6 +196,7 @@ void PicoSamplerAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
     arpParams.rateFreeHz = getParamFloat("arpRateFree", 4.0f);
     arpParams.octaves    = (int)getParamFloat("arpOctaves", 1.0f);
     arpParams.offset     = (int)getParamFloat("arpOffset", 0.0f);
+    arpParams.swing      = getParamFloat("arpSwing", 0.0f);
     arpParams.gatePct    = getParamFloat("arpGate", 0.8f);
     arpParams.key        = (int)getParamFloat("key", 0.0f);
     arpParams.scale      = (int)getParamFloat("scale", 0.0f);

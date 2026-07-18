@@ -1,6 +1,6 @@
 // ==========================================
 // File: ArpPanel.h
-// アルペジエイター ＆ スケール量子化設定パネル (見切れなしラベル付きレイアウト)
+// アルペジエイター ＆ スケール量子化設定パネル (Swing ノブ追加 ＆ 動的UI視認性向上)
 // ==========================================
 #pragma once
 
@@ -59,6 +59,7 @@ private:
     LabeledKnob knobRateFree { "Rate (Hz)", PicoColors::lavender };
     LabeledKnob knobGate     { "Gate",     PicoColors::lavender };
     LabeledKnob knobOffset   { "Offset",   PicoColors::lavender };
+    LabeledKnob knobSwing    { "Swing",    PicoColors::mint };
 
     using Attachment = juce::AudioProcessorValueTreeState::SliderAttachment;
     using ComboAttach = juce::AudioProcessorValueTreeState::ComboBoxAttachment;
