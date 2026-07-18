@@ -1,0 +1,76 @@
+// ==========================================
+// File: ArcDial.cpp
+// ArcDial LookAndFeel 描画実装
+// ==========================================
+#include "ArcDial.h"
+
+void ArcDialLookAndFeel::drawRotarySlider(juce::Graphics& g, int x, int y, int width, int height,
+                                          float sliderPos, float rotaryStartAngle, float rotaryEndAngle,
+                                          juce::Slider& slider)
+{
+    const float radius = (float)std::min(width, height) * 0.5f - 4.0f;
+    const float centreX = (float)x + (float)width * 0.5f;
+    const float centreY = (float)y + (float)height * 0.5f;
+    const float angle = rotaryStartAngle + sliderPos * (rotaryEndAngle - rotaryStartAngle);
+
+    // 1. 背景トラック
+    juce::Path trackPath;
+    trackPath.addCentredArc(centreX, centreY, radius, radius, 0.0f, rotaryStartAngle, rotaryEndAngle, true);
+    g.setColour(PicoColors::knobTrack);
+    g.strokePath(trackPath, juce::PathStrokeType(4.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+
+    // 2. MOD変調レンジ帯 (プロパティから取得)
+    if (slider.getProperties().contains("mod_min") && slider.getProperties().contains("mod_max"))
+    {
+        const float modMin = (float)slider.getProperties()["mod_min"];
+        const float modMax = (float)slider.getProperties()["mod_max"];
+        const float aMin = rotaryStartAngle + juce::jlimit(0.0f, 1.0f, modMin) * (rotaryEndAngle - rotaryStartAngle);
+        const float aMax = rotaryStartAngle + juce::jlimit(0.0f, 1.0f, modMax) * (rotaryEndAngle - rotaryStartAngle);
+
+        juce::Path modArc;
+        modArc.addCentredArc(centreX, centreY, radius, radius, 0.0f, aMin, aMax, true);
+        g.setColour(juce::Colours::white.withAlpha(0.3f));
+        g.strokePath(modArc, juce::PathStrokeType(6.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+    }
+
+    // 3. 値アーク
+    juce::Path valuePath;
+    valuePath.addCentredArc(centreX, centreY, radius, radius, 0.0f, rotaryStartAngle, angle, true);
+    g.setColour(PicoColors::mint);
+    g.strokePath(valuePath, juce::PathStrokeType(4.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+
+    // 4. ポインター
+    const float pointerLen = radius * 0.6f;
+    juce::Path p;
+    p.addRoundedRectangle(-2.0f, -radius, 4.0f, pointerLen, 2.0f);
+    g.setColour(juce::Colours::white);
+    g.fillPath(p, juce::AffineTransform::rotation(angle).translated(centreX, centreY));
+
+    // 5. ライブ変調ドット
+    if (slider.getProperties().contains("mod_active"))
+    {
+        const float modActive = (float)slider.getProperties()["mod_active"];
+        const float aAct = rotaryStartAngle + juce::jlimit(0.0f, 1.0f, modActive) * (rotaryEndAngle - rotaryStartAngle);
+        const float dotX = centreX + radius * std::sin(aAct);
+        const float dotY = centreY - radius * std::cos(aAct);
+
+        g.setColour(juce::Colours::white);
+        g.fillEllipse(dotX - 3.0f, dotY - 3.0f, 6.0f, 6.0f);
+    }
+}
+
+void ArcDialLookAndFeel::drawToggleButton(juce::Graphics& g, juce::ToggleButton& button,
+                                           bool shouldDrawButtonAsHighlighted, bool shouldDrawButtonAsDown)
+{
+    const float boundsWidth = (float)button.getWidth();
+    const float boundsHeight = (float)button.getHeight();
+    const float r = std::min(boundsWidth, boundsHeight) * 0.4f;
+
+    const bool isOn = button.getToggleState();
+    g.setColour(isOn ? PicoColors::mint : PicoColors::knobTrack);
+    g.fillRoundedRectangle(2.0f, 2.0f, boundsWidth - 4.0f, boundsHeight - 4.0f, 4.0f);
+
+    g.setColour(isOn ? juce::Colours::black : juce::Colours::white.withAlpha(0.6f));
+    g.setFont(juce::FontOptions(12.0f, juce::Font::bold));
+    g.drawText(button.getButtonText(), button.getLocalBounds(), juce::Justification::centred, true);
+}
