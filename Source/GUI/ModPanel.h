@@ -1,65 +1,66 @@
 // ==========================================
 // File: ModPanel.h
-// モジュレーションマトリクス UI パネル (16スロット)
+// MODタブ: ソース段 (LFO / Env サブタブ ※Macro除外) + 16スロットマトリクス (Page1/Page2)
 // ==========================================
 #pragma once
 
 #include <JuceHeader.h>
-#include "ColorPalette.h"
-#include "ArcDial.h"
+#include <array>
+#include <memory>
+#include <vector>
+
+#include "../PluginProcessor.h"
 #include "ValueKnob.h"
 #include "GlowToggle.h"
+#include "ColorPalette.h"
 
 class ModPanel : public juce::Component
 {
 public:
-    ModPanel(juce::AudioProcessorValueTreeState& apvts);
+    explicit ModPanel(PicoSamplerAudioProcessor& processor);
+    explicit ModPanel(juce::AudioProcessorValueTreeState& apvts);
     ~ModPanel() override = default;
 
     void paint(juce::Graphics& g) override;
     void resized() override;
 
 private:
-    struct SlotRow : public juce::Component
-    {
-        int slotIndex = 0;
-        juce::ComboBox comboSrc;
-        juce::ComboBox comboDst;
-        juce::Slider sliderAmount;
-        juce::ToggleButton btnUni { "UNI" };
+    void setupKnob(ValueKnob& s, const juce::String& paramID, juce::Colour accent);
+    void setupCombo(juce::ComboBox& c, const juce::String& paramID);
+    void setSourceTab(int t);          // 0=LFO, 1=Env
+    void setMatrixPage(int p);         // 0=slot1-8, 1=slot9-16
+    void styleTab(juce::TextButton& b, bool active);
 
-        SlotRow()
-        {
-            sliderAmount.setSliderStyle(juce::Slider::LinearHorizontal);
-            sliderAmount.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
-            addAndMakeVisible(comboSrc);
-            addAndMakeVisible(comboDst);
-            addAndMakeVisible(sliderAmount);
-            addAndMakeVisible(btnUni);
-        }
-
-        void resized() override
-        {
-            comboSrc.setBounds(0, 2, 100, 24);
-            comboDst.setBounds(105, 2, 120, 24);
-            sliderAmount.setBounds(230, 2, 140, 24);
-            btnUni.setBounds(375, 2, 50, 24);
-        }
-    };
-
+    PicoSamplerAudioProcessor* procPtr = nullptr;
     juce::AudioProcessorValueTreeState& vts;
-    std::array<SlotRow, 8> slotRowsPage1;
-    std::array<SlotRow, 8> slotRowsPage2;
 
-    juce::TextButton btnPage1 { "PAGE 1 (1-8)" };
-    juce::TextButton btnPage2 { "PAGE 2 (9-16)" };
-    int activePage = 0;
+    // --- ソース・サブタブ (Macroなし) ---
+    juce::TextButton lfoTabBtn { "LFO" };
+    juce::TextButton envTabBtn { "ENV" };
+    int activeSrcTab = 0;
 
-    using Attachment = juce::AudioProcessorValueTreeState::SliderAttachment;
-    using ComboAttach = juce::AudioProcessorValueTreeState::ComboBoxAttachment;
-    using ButtonAttach = juce::AudioProcessorValueTreeState::ButtonAttachment;
+    // --- LFO ×4 ---
+    std::array<juce::ComboBox, ModMatrix::kNumLfos> lfoWaveBox;
+    std::array<std::unique_ptr<GlowToggle>, ModMatrix::kNumLfos> lfoSyncButton;
+    std::array<ValueKnob, ModMatrix::kNumLfos> lfoRateKnob;
+    std::array<juce::ComboBox, ModMatrix::kNumLfos> lfoSyncRateBox;
 
-    std::vector<std::unique_ptr<Attachment>> attachments;
-    std::vector<std::unique_ptr<ComboAttach>> comboAttachments;
-    std::vector<std::unique_ptr<ButtonAttach>> buttonAttachments;
+    // --- ENV ×3 (ADSR) ---
+    std::array<ValueKnob, ModMatrix::kNumEnvs> envAttackKnob, envDecayKnob, envSustainKnob, envReleaseKnob;
+    std::array<std::unique_ptr<GlowToggle>, ModMatrix::kNumEnvs> envLoopButton;
+
+    // --- マトリクス16行 (2ページ) ---
+    juce::TextButton page1Btn { "PAGE 1 (1-8)" };
+    juce::TextButton page2Btn { "PAGE 2 (9-16)" };
+    int matrixPage = 0;
+    std::array<juce::Label, ModMatrix::kNumSlots> rowLabel;
+    std::array<juce::ComboBox, ModMatrix::kNumSlots> srcBox, dstBox;
+    std::array<ValueKnob, ModMatrix::kNumSlots> amtSlider;
+    std::array<std::unique_ptr<GlowToggle>, ModMatrix::kNumSlots> uniButton;
+
+    std::vector<std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>>   sliderAttachments;
+    std::vector<std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment>> comboAttachments;
+    std::vector<std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment>>   buttonAttachments;
+
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ModPanel)
 };

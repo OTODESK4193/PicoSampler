@@ -223,5 +223,49 @@ void PicoSamplerAudioProcessorEditor::timerCallback()
     keyRangeMap.updateKeyRanges(ranges, roots, readyStates, activeIdx);
     keyRangeMap.setPlayingNotes(audioProcessor.getSamplerEngine().getPlayingNotes());
     arpPanel.updateFilterUIState();
+
+    // モジュレーション変調リング & ライブドット表示のGUIプロパティ更新
+    const auto& mod = audioProcessor.getModMatrix();
+
+    auto updateKnobProps = [&](juce::Slider& knob, int dstIdx)
+    {
+        const float minOffset = mod.getRangeMin(dstIdx);
+        const float maxOffset = mod.getRangeMax(dstIdx);
+        const float liveOffset = mod.get(dstIdx);
+        const bool active = (std::abs(minOffset) > 0.001f || std::abs(maxOffset) > 0.001f);
+
+        auto& props = knob.getProperties();
+        props.set("mod_active", active);
+        if (active)
+        {
+            const float normVal = (float)knob.valueToProportionOfLength(knob.getValue());
+            props.set("mod_min", juce::jlimit(0.0f, 1.0f, normVal + minOffset));
+            props.set("mod_max", juce::jlimit(0.0f, 1.0f, normVal + maxOffset));
+            props.set("mod_live", juce::jlimit(0.0f, 1.0f, normVal + liveOffset));
+        }
+    };
+
+    // MainPanel ノブ範囲更新
+    updateKnobProps(mainPanel.getSampleStartKnob(), ModMatrix::DstS1Start + activeIdx * 5);
+    updateKnobProps(mainPanel.getSampleEndKnob(),   ModMatrix::DstS1End + activeIdx * 5);
+    updateKnobProps(mainPanel.getLoopStartKnob(),   ModMatrix::DstS1LStart + activeIdx * 5);
+    updateKnobProps(mainPanel.getLoopEndKnob(),     ModMatrix::DstS1LEnd + activeIdx * 5);
+    updateKnobProps(mainPanel.getCrossfadeKnob(),   ModMatrix::DstS1XFade + activeIdx * 5);
+    updateKnobProps(mainPanel.getMasterPitchKnob(), ModMatrix::DstMasterPitch);
+
+    // ArpPanel ノブ範囲更新
+    updateKnobProps(arpPanel.getOctavesKnob(), ModMatrix::DstArpOctaves);
+    updateKnobProps(arpPanel.getRateKnob(),    ModMatrix::DstArpRate);
+    updateKnobProps(arpPanel.getGateKnob(),    ModMatrix::DstArpGate);
+    updateKnobProps(arpPanel.getOffsetKnob(),  ModMatrix::DstArpOffset);
+    updateKnobProps(arpPanel.getSwingKnob(),   ModMatrix::DstArpSwing);
+    updateKnobProps(arpPanel.getRepeatKnob(),  ModMatrix::DstArpRepeat);
+    updateKnobProps(arpPanel.getAccentKnob(),  ModMatrix::DstArpAccent);
+
+    updateKnobProps(arpPanel.getCutoffKnob(),  ModMatrix::DstFltCutoff);
+    updateKnobProps(arpPanel.getResoKnob(),    ModMatrix::DstFltReso);
+    updateKnobProps(arpPanel.getFormantKnob(), ModMatrix::DstFltFormant);
+    updateKnobProps(arpPanel.getCombMixKnob(), ModMatrix::DstFltCombMix);
+
     repaint(0, 0, 700, 44);
 }

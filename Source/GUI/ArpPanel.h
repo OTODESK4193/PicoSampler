@@ -23,6 +23,19 @@ public:
     void updateFilterCurveDisplay() noexcept;
     void updateFilterUIState() noexcept;
 
+    juce::Slider& getOctavesKnob() { return knobOctaves.knob; }
+    juce::Slider& getRateKnob()    { return knobRateFree.knob; }
+    juce::Slider& getGateKnob()    { return knobGate.knob; }
+    juce::Slider& getOffsetKnob()  { return knobOffset.knob; }
+    juce::Slider& getSwingKnob()   { return knobSwing.knob; }
+    juce::Slider& getRepeatKnob()  { return knobRepeat.knob; }
+    juce::Slider& getAccentKnob()  { return knobAccent.knob; }
+
+    juce::Slider& getCutoffKnob()  { return knobFilterCutoff.knob; }
+    juce::Slider& getResoKnob()    { return knobFilterRes.knob; }
+    juce::Slider& getFormantKnob() { return knobFilterFormant.knob; }
+    juce::Slider& getCombMixKnob() { return knobFilterCombMix.knob; }
+
 private:
     struct LabeledKnob : public juce::Component
     {

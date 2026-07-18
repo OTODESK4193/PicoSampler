@@ -49,6 +49,7 @@ public:
 
     juce::AudioProcessorValueTreeState& getAPVTS() { return apvts; }
     SamplerEngine& getSamplerEngine() { return samplerEngine; }
+    ModMatrix& getModMatrix() { return modMatrix; }
     SampleVisualizerData& getVisualizerData() { return visualizerData; }
 
 private:

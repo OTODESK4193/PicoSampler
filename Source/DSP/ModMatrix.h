@@ -1,7 +1,13 @@
 // ==========================================
 // File: ModMatrix.h
-// モジュレーションマトリクス（サンプラー対応拡張版）
-// ソース16種 → 16スロット → デスティネーション28種
+// モジュレーションマトリクス（PicoSampler専用・ブロックレート処理）
+//
+//  Sources : LFO×4 (テンポ同期/フリー, Sine/Tri/Saw/Sqr/S&H/Chaos)
+//            ENV×3 (ADSR + Loop)
+//            Velocity, Note, ModWheel, Random(ノート毎S&H)
+//  Slots   : 16 ( Source × Amount(-1..+1) → Destination, Uni/Bipolar )
+//  Dests   : 各スロットSample全ノブ(S1..S8 Start/End/L-Start/L-End/X-Fade),
+//            Master Pitch, ARP全ノブ, Filter全ノブ(ADSR除く), FX全ノブ
 // ==========================================
 #pragma once
 
@@ -14,7 +20,6 @@ class ModMatrix
 public:
     static constexpr int kNumLfos = 4;
     static constexpr int kNumEnvs = 3;
-    static constexpr int kNumMacros = 4;
     static constexpr int kNumSlots = 16;
 
     enum Src
@@ -23,39 +28,106 @@ public:
         SrcLfo1, SrcLfo2, SrcLfo3, SrcLfo4,
         SrcEnv1, SrcEnv2, SrcEnv3,
         SrcVelocity, SrcNote, SrcModWheel, SrcRandom,
-        SrcMacro1, SrcMacro2, SrcMacro3, SrcMacro4,
         NumSrcs
     };
 
     enum Dst
     {
         DstNone = 0,
-        DstSampleStart, DstSampleEnd, DstLoopStart, DstLoopLength, DstCrossfade,
-        DstPitchOctave, DstPitchSemi, DstPitchFine, DstPitchJitter,
-        DstPan, DstSlotGain, DstOutGain, DstSpeed,
-        DstHpf, DstLpf,
-        DstArpOct, DstArpRate, DstArpGate,
-        DstDryWet,
-        DstFx1, DstFx2, DstFx3, DstFx4, DstFx5,
+        
+        // Slot 1..8 Sample エリア (5ノブ×8 = 40個)
+        DstS1Start, DstS1End, DstS1LStart, DstS1LEnd, DstS1XFade,
+        DstS2Start, DstS2End, DstS2LStart, DstS2LEnd, DstS2XFade,
+        DstS3Start, DstS3End, DstS3LStart, DstS3LEnd, DstS3XFade,
+        DstS4Start, DstS4End, DstS4LStart, DstS4LEnd, DstS4XFade,
+        DstS5Start, DstS5End, DstS5LStart, DstS5LEnd, DstS5XFade,
+        DstS6Start, DstS6End, DstS6LStart, DstS6LEnd, DstS6XFade,
+        DstS7Start, DstS7End, DstS7LStart, DstS7LEnd, DstS7XFade,
+        DstS8Start, DstS8End, DstS8LStart, DstS8LEnd, DstS8XFade,
+
+        // Master
+        DstMasterPitch,
+
+        // ARP 全ノブ (7個)
+        DstArpOctaves, DstArpRate, DstArpGate, DstArpOffset, DstArpSwing, DstArpRepeat, DstArpAccent,
+
+        // Filter 全ノブ (ADSR除く 4個)
+        DstFltCutoff, DstFltReso, DstFltFormant, DstFltCombMix,
+
+        // FX1..5 Amount (5個)
+        DstFx1Amount, DstFx2Amount, DstFx3Amount, DstFx4Amount, DstFx5Amount,
+
+        // FX 詳細パラメータ (16個)
+        DstSatDrive, DstSatPreHz, DstSatTrim,
+        DstChoRate, DstChoDepth, DstChoWidth,
+        DstDlyFeedback, DstDlyDuck, DstDlyDamp,
+        DstFrzSize, DstFrzFeedback, DstFrzDamp,
+        DstRevDecay, DstRevShimmer, DstRevDamp, DstRevMod,
+
         NumDsts
     };
 
     static juce::StringArray getSourceNames()
     {
-        return { "None", "LFO 1", "LFO 2", "LFO 3", "LFO 4", "ENV 1", "ENV 2", "ENV 3",
-                 "Velocity", "Note", "Mod Wheel", "Random",
-                 "Macro 1", "Macro 2", "Macro 3", "Macro 4" };
+        return { "None", "LFO 1", "LFO 2", "LFO 3", "LFO 4",
+                 "ENV 1", "ENV 2", "ENV 3",
+                 "Velocity", "Note", "Mod Wheel", "Random" };
     }
 
     static juce::StringArray getDestNames()
     {
-        return { "None", "Sample Start", "Sample End", "Loop Start", "Loop Length", "Crossfade",
-                 "Pitch (Oct)", "Pitch (st)", "Fine Tune", "Pitch Jitter",
-                 "Pan", "Slot Gain", "Out Gain", "Playback Speed",
-                 "HPF", "LPF",
-                 "Arp Octaves", "Arp Rate", "Arp Gate",
-                 "FX Dry/Wet",
-                 "FX1 Amount", "FX2 Amount", "FX3 Amount", "FX4 Amount", "FX5 Amount" };
+        juce::StringArray list;
+        list.add("None");
+
+        for (int i = 1; i <= 8; ++i)
+        {
+            const juce::String s = "S" + juce::String(i) + "/";
+            list.add(s + "Start");
+            list.add(s + "End");
+            list.add(s + "L-Start");
+            list.add(s + "L-End");
+            list.add(s + "X-Fade");
+        }
+
+        list.add("Master Pitch");
+
+        list.add("Arp Octaves");
+        list.add("Arp Rate");
+        list.add("Arp Gate");
+        list.add("Arp Offset");
+        list.add("Arp Swing");
+        list.add("Arp Repeat");
+        list.add("Arp Accent");
+
+        list.add("Filter Cutoff");
+        list.add("Filter Reso");
+        list.add("Filter Formant");
+        list.add("Filter CombMix");
+
+        list.add("FX1 Amount");
+        list.add("FX2 Amount");
+        list.add("FX3 Amount");
+        list.add("FX4 Amount");
+        list.add("FX5 Amount");
+
+        list.add("Sat Drive");
+        list.add("Sat Pre-HPF");
+        list.add("Sat Trim");
+        list.add("Chorus Rate");
+        list.add("Chorus Depth");
+        list.add("Chorus Width");
+        list.add("Delay Feedback");
+        list.add("Delay Duck");
+        list.add("Delay Damp");
+        list.add("Freeze Size");
+        list.add("Freeze Feedback");
+        list.add("Freeze Damp");
+        list.add("Reverb Decay");
+        list.add("Reverb Shimmer");
+        list.add("Reverb Damp");
+        list.add("Reverb Mod");
+
+        return list;
     }
 
     static juce::StringArray getWaveNames()
@@ -77,14 +149,13 @@ public:
 
         std::array<Lfo, kNumLfos> lfo;
         std::array<Env, kNumEnvs> env;
-        std::array<float, kNumMacros> macro { 0.5f, 0.5f, 0.5f, 0.5f };
         std::array<Slot, kNumSlots> slot;
         double bpm = 120.0;
     };
 
     void prepare(double sr)
     {
-        sampleRate = sr;
+        sampleRate = sr > 1000.0 ? sr : 44100.0;
         reset();
     }
 
@@ -170,6 +241,7 @@ public:
             const float sus = juce::jlimit(0.0f, 1.0f, ep.sustain);
 
             src[SrcEnv1 + i] = st.value;
+
             const float blockSec = (float)((double)numSamples / sampleRate);
 
             if (!ep.loop && !gate && st.stage != EnvState::Idle && st.stage != EnvState::Release)
@@ -184,6 +256,7 @@ public:
                 st.value += blockSec / juce::jmax(0.001f, ep.attack);
                 if (st.value >= 1.0f) { st.value = 1.0f; st.stage = EnvState::Decay; }
                 break;
+
             case EnvState::Decay:
                 if (ep.loop)
                 {
@@ -196,26 +269,26 @@ public:
                     if (st.value <= sus) { st.value = sus; st.stage = EnvState::Sustain; }
                 }
                 break;
+
             case EnvState::Sustain:
                 st.value = sus;
                 break;
+
             case EnvState::Release:
                 st.value -= st.releaseStart * blockSec / juce::jmax(0.001f, ep.release);
                 if (st.value <= 0.0f) { st.value = 0.0f; st.stage = EnvState::Idle; }
                 break;
+
             default:
                 st.value = 0.0f;
                 break;
             }
         }
 
-        // MIDI / Macro
         src[SrcVelocity] = velocity;
-        src[SrcNote] = noteNorm;
+        src[SrcNote]     = noteNorm;
         src[SrcModWheel] = modWheel;
-        src[SrcRandom] = randomSH;
-        for (int i = 0; i < kNumMacros; ++i)
-            src[SrcMacro1 + i] = p.macro[(size_t)i];
+        src[SrcRandom]   = randomSH;
 
         destAccum.fill(0.0f);
         rangeMin.fill(0.0f);
@@ -227,10 +300,10 @@ public:
             if (std::abs(s.amt) < 0.0001f) continue;
 
             const bool srcBip = isBipolarSource(s.src);
+
             float v = src[s.src];
             if (s.uni) { if (srcBip) v = (v + 1.0f) * 0.5f; }
             else       { if (!srcBip) v = v * 2.0f - 1.0f; }
-
             destAccum[(size_t)s.dst] += v * s.amt;
 
             const float lo = s.uni ? 0.0f : -1.0f;

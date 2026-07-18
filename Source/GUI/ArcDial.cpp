@@ -1,8 +1,21 @@
-// ==========================================
-// File: ArcDial.cpp
-// ArcDial LookAndFeel 描画実装 (警告修正済み)
-// ==========================================
 #include "ArcDial.h"
+
+ArcDialLookAndFeel::ArcDialLookAndFeel()
+{
+    setColour(juce::Slider::textBoxTextColourId, PicoColors::text);
+    setColour(juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
+
+    // ARPタブと同等のコンボボックス形状・カラー全統一
+    setColour(juce::ComboBox::backgroundColourId, PicoColors::panel);
+    setColour(juce::ComboBox::textColourId, juce::Colours::white);
+    setColour(juce::ComboBox::outlineColourId, PicoColors::knobTrack);
+    setColour(juce::ComboBox::arrowColourId, PicoColors::mint);
+
+    setColour(juce::PopupMenu::backgroundColourId, PicoColors::panel);
+    setColour(juce::PopupMenu::textColourId, PicoColors::text);
+    setColour(juce::PopupMenu::highlightedBackgroundColourId, PicoColors::lavender.withAlpha(0.3f));
+    setColour(juce::PopupMenu::highlightedTextColourId, PicoColors::text);
+}
 
 void ArcDialLookAndFeel::drawRotarySlider(juce::Graphics& g, int x, int y, int width, int height,
                                           float sliderPos, float rotaryStartAngle, float rotaryEndAngle,

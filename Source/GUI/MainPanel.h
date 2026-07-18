@@ -21,6 +21,13 @@ public:
     void updateStates();
     void bindSlotParameters(int slotIdx);
 
+    juce::Slider& getSampleStartKnob() { return knobSampleStart.knob; }
+    juce::Slider& getSampleEndKnob()   { return knobSampleEnd.knob; }
+    juce::Slider& getLoopStartKnob()   { return knobLoopStart.knob; }
+    juce::Slider& getLoopEndKnob()     { return knobLoopEnd.knob; }
+    juce::Slider& getCrossfadeKnob()   { return knobCrossfade.knob; }
+    juce::Slider& getMasterPitchKnob() { return knobMasterPitch.knob; }
+
 private:
     struct LabeledKnob : public juce::Component
     {
