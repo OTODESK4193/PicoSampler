@@ -1,6 +1,6 @@
 // ==========================================
 // File: GlowToggle.h
-// LED発光点灯トグルボタン (Granularより移植)
+// LED発光点灯トグルボタン (Granularより移植, 警告解消済み)
 // ==========================================
 #pragma once
 
@@ -14,6 +14,8 @@ public:
 
     void paintButton(juce::Graphics& g, bool shouldDrawButtonAsHighlighted, bool shouldDrawButtonAsDown) override
     {
+        juce::ignoreUnused(shouldDrawButtonAsHighlighted, shouldDrawButtonAsDown);
+
         const float w = (float)getWidth();
         const float h = (float)getHeight();
         const bool activeState = getToggleState();

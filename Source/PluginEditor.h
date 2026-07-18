@@ -1,13 +1,13 @@
 // ==========================================
 // File: PluginEditor.h
-// PicoSampler メインエディタ GUI 定義 (1080x700)
-// Granular スタイルタブアンダーライン対応
+// PicoSampler メインエディタ GUI 定義 (WaveformDisplayインクルード追加)
 // ==========================================
 #pragma once
 
 #include <JuceHeader.h>
 #include "PluginProcessor.h"
 #include "GUI/ArcDial.h"
+#include "GUI/WaveformDisplay.h"
 #include "GUI/MainPanel.h"
 #include "GUI/SlotPanel.h"
 #include "GUI/ArpPanel.h"
@@ -33,7 +33,9 @@ private:
     PicoSamplerAudioProcessor& audioProcessor;
     ArcDialLookAndFeel lookAndFeel;
 
-    // Header Toolbar
+    WaveformDisplay waveDisplay;
+
+    // Header Toolbar Buttons
     juce::TextButton btnTabMain   { "MAIN" };
     juce::TextButton btnTabSlot   { "SLOT" };
     juce::TextButton btnTabArp    { "ARP" };

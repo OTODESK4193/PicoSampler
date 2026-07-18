@@ -1,6 +1,6 @@
 // ==========================================
 // File: ArcDial.cpp
-// ArcDial LookAndFeel 描画実装
+// ArcDial LookAndFeel 描画実装 (警告修正済み)
 // ==========================================
 #include "ArcDial.h"
 
@@ -62,9 +62,10 @@ void ArcDialLookAndFeel::drawRotarySlider(juce::Graphics& g, int x, int y, int w
 void ArcDialLookAndFeel::drawToggleButton(juce::Graphics& g, juce::ToggleButton& button,
                                            bool shouldDrawButtonAsHighlighted, bool shouldDrawButtonAsDown)
 {
+    juce::ignoreUnused(shouldDrawButtonAsHighlighted, shouldDrawButtonAsDown);
+
     const float boundsWidth = (float)button.getWidth();
     const float boundsHeight = (float)button.getHeight();
-    const float r = std::min(boundsWidth, boundsHeight) * 0.4f;
 
     const bool isOn = button.getToggleState();
     g.setColour(isOn ? PicoColors::mint : PicoColors::knobTrack);

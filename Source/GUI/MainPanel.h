@@ -1,6 +1,6 @@
 // ==========================================
 // File: MainPanel.h
-// メイン操作パネル (Slot切替 / Mode選択 / Sample / Pitch / Env / Master)
+// メイン操作パネル (Granularスタイル完全準拠)
 // ==========================================
 #pragma once
 
@@ -9,7 +9,6 @@
 #include "ArcDial.h"
 #include "ValueKnob.h"
 #include "GlowToggle.h"
-#include "WaveformDisplay.h"
 
 class MainPanel : public juce::Component
 {
@@ -20,8 +19,7 @@ public:
     void paint(juce::Graphics& g) override;
     void resized() override;
     void updateStates();
-
-    WaveformDisplay& getWaveformDisplay() { return waveformDisplay; }
+    void bindSlotParameters(int slotIdx);
 
 private:
     struct LabeledKnob : public juce::Component
@@ -29,12 +27,13 @@ private:
         ValueKnob knob;
         juce::Label label;
 
-        LabeledKnob(const juce::String& name)
+        LabeledKnob(const juce::String& name, juce::Colour accent = PicoColors::mint)
         {
+            knob.setColour(juce::Slider::rotarySliderFillColourId, accent);
             label.setText(name, juce::dontSendNotification);
             label.setJustificationType(juce::Justification::centred);
             label.setFont(juce::FontOptions(11.0f, juce::Font::bold));
-            label.setColour(juce::Label::textColourId, juce::Colours::white.withAlpha(0.85f));
+            label.setColour(juce::Label::textColourId, PicoColors::textDim);
             addAndMakeVisible(knob);
             addAndMakeVisible(label);
         }
@@ -47,9 +46,8 @@ private:
     };
 
     juce::AudioProcessorValueTreeState& vts;
-    WaveformDisplay waveformDisplay;
 
-    // Slot Selection Buttons (1-8)
+    // Slot 1-8 Selection Buttons
     std::array<juce::TextButton, 8> btnSlots;
 
     // Mode Toggle Buttons
@@ -57,27 +55,31 @@ private:
     juce::TextButton btnLayer  { "LAYER" };
     juce::TextButton btnRandom { "RANDOM" };
 
-    // Labeled Knobs
-    LabeledKnob knobSampleStart { "Start" };
-    LabeledKnob knobSampleEnd   { "End" };
-    LabeledKnob knobLoopStart   { "L-Start" };
-    LabeledKnob knobLoopLength  { "L-Len" };
-    LabeledKnob knobCrossfade   { "X-Fade" };
+    // Labeled Knobs (Granularパステルアクセントカラー適用)
+    LabeledKnob knobSampleStart { "Start",   PicoColors::peach };
+    LabeledKnob knobSampleEnd   { "End",     PicoColors::peach };
+    LabeledKnob knobLoopStart   { "L-Start", PicoColors::peach };
+    LabeledKnob knobLoopLength  { "L-Len",   PicoColors::peach };
+    LabeledKnob knobCrossfade   { "X-Fade",  PicoColors::peach };
 
-    LabeledKnob knobOctave    { "Octave" };
-    LabeledKnob knobSemitone  { "Semi" };
-    LabeledKnob knobFineTune  { "Fine" };
+    LabeledKnob knobOctave    { "Octave", PicoColors::lavender };
+    LabeledKnob knobSemitone  { "Semi",   PicoColors::lavender };
+    LabeledKnob knobFineTune  { "Fine",   PicoColors::lavender };
 
-    LabeledKnob knobAttack   { "Attack" };
-    LabeledKnob knobDecay    { "Decay" };
-    LabeledKnob knobSustain  { "Sustain" };
-    LabeledKnob knobRelease  { "Release" };
+    LabeledKnob knobAttack   { "Attack",  PicoColors::pink };
+    LabeledKnob knobDecay    { "Decay",   PicoColors::pink };
+    LabeledKnob knobSustain  { "Sustain", PicoColors::pink };
+    LabeledKnob knobRelease  { "Release", PicoColors::pink };
 
-    LabeledKnob knobMasterHpf { "HPF" };
-    LabeledKnob knobMasterLpf { "LPF" };
-    LabeledKnob knobOutGain   { "Gain" };
-    LabeledKnob knobCeiling   { "Ceil" };
+    LabeledKnob knobMasterHpf { "HPF",  PicoColors::mint };
+    LabeledKnob knobMasterLpf { "LPF",  PicoColors::mint };
+    LabeledKnob knobOutGain   { "Gain", PicoColors::mint };
+
+    int currentBoundSlot = -1;
 
     using Attachment = juce::AudioProcessorValueTreeState::SliderAttachment;
     std::vector<std::unique_ptr<Attachment>> attachments;
+    std::unique_ptr<Attachment> outGainAttach;
+    std::unique_ptr<Attachment> hpfAttach;
+    std::unique_ptr<Attachment> lpfAttach;
 };

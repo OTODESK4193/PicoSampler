@@ -14,8 +14,11 @@ namespace PicoColors
     inline juce::Colour panel       = juce::Colour(0xff222528);
     inline juce::Colour track       = juce::Colour(0xff0C0C0C);
     inline juce::Colour knobTrack   = juce::Colour(0xff2A2D32);
+    inline juce::Colour panelLine   = juce::Colour(0xff32363C);
+    inline juce::Colour text        = juce::Colour(0xffEEEEEE);
+    inline juce::Colour textDim     = juce::Colour(0xff888888);
 
-    // パステルアクセント
+    // パステルアクセント (Granular準拠)
     inline juce::Colour mint        = juce::Colour(0xff98FFB3);
     inline juce::Colour pink        = juce::Colour(0xffFF9EBB);
     inline juce::Colour lavender    = juce::Colour(0xffD6A4FF);
@@ -37,12 +40,12 @@ namespace PicoColors
         juce::Colour(0xffFFA3B5)  // 7: Rose
     };
 
-    static juce::Colour getSlotColor(int slotIdx) noexcept
+    inline juce::Colour getSlotColor(int slotIdx) noexcept
     {
         return slotColors[(size_t)juce::jlimit(0, 7, slotIdx)];
     }
 
-    static void setTheme(int themeIdx) noexcept
+    inline void setTheme(int themeIdx) noexcept
     {
         switch (themeIdx)
         {
