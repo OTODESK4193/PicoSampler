@@ -1,6 +1,6 @@
 // ==========================================
 // File: ValueKnob.h
-// 右クリックで数値直接入力ポップアップ対応ノブ
+// 数値常時表示 + ダブルクリック直接入力対応ノブ
 // ==========================================
 #pragma once
 
@@ -13,7 +13,11 @@ public:
     ValueKnob()
     {
         setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
-        setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
+        setTextBoxStyle(juce::Slider::TextBoxBelow, false, 56, 14);
+        setTextBoxIsEditable(false);
+        setColour(juce::Slider::textBoxTextColourId, PicoColors::textDim);
+        setColour(juce::Slider::textBoxBackgroundColourId, juce::Colours::transparentBlack);
+        setColour(juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
     }
 
     void mouseDown(const juce::MouseEvent& e) override
@@ -24,6 +28,11 @@ public:
             return;
         }
         juce::Slider::mouseDown(e);
+    }
+
+    void mouseDoubleClick(const juce::MouseEvent& /*e*/) override
+    {
+        showDirectInputEditor();
     }
 
 private:

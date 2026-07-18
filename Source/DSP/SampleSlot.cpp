@@ -1,6 +1,6 @@
 // ==========================================
 // File: SampleSlot.cpp
-// スロット管理実装 (stretch.setTransposeSemitones の正しい呼び出し)
+// スロット管理実装 (fileSampleRate保持 & Stretch事前レンダリング修正)
 // ==========================================
 #include "SampleSlot.h"
 #include "PitchAnalyzer.h"
@@ -30,13 +30,14 @@ bool SampleSlot::loadFromFile(const juce::File& file)
 
     metadata.filePath = file.getFullPathName();
     metadata.fileName = file.getFileName();
+    metadata.fileSampleRate = reader->sampleRate;  // ★ ファイルのサンプルレートを保持
 
     // Pitch & Feature Analysis
     auto analysis = PitchAnalyzer::analyzeOmni(originalBuffer, reader->sampleRate, PitchAnalyzer::Auto, metadata.fileName);
     metadata.rootKey = (analysis.rootNote >= 0) ? analysis.rootNote : 60;
     metadata.centsOffset = analysis.centsOffset;
 
-    // SignalsmithStretch 24音階アンカー事前生成
+    // SignalsmithStretch 24音階アンカー事前生成 (ファイルSR使用)
     renderAnchors();
 
     analyzing.store(false, std::memory_order_release);
@@ -48,7 +49,7 @@ void SampleSlot::renderAnchors()
 {
     const int numSamples = originalBuffer.getNumSamples();
     const int numCh = originalBuffer.getNumChannels();
-    const double sr = 44100.0;
+    const double sr = metadata.fileSampleRate > 1000.0 ? metadata.fileSampleRate : 44100.0;
 
     for (int i = 0; i < kNumAnchors; ++i)
     {

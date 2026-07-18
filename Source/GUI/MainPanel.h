@@ -1,6 +1,6 @@
 // ==========================================
 // File: MainPanel.h
-// メイン操作パネル (2行2列ボタン ＆ Master Ceilingノブ対応)
+// メイン操作パネル (RootKeyノブ追加 & 数値常時表示対応)
 // ==========================================
 #pragma once
 
@@ -40,8 +40,9 @@ private:
 
         void resized() override
         {
-            knob.setBounds(0, 0, getWidth(), getWidth());
-            label.setBounds(0, getWidth() + 2, getWidth(), 16);
+            auto area = getLocalBounds();
+            label.setBounds(area.removeFromBottom(16));
+            knob.setBounds(area);
         }
     };
 
@@ -66,6 +67,7 @@ private:
     bool isEnvLinked = false;
 
     // Labeled Knobs
+    LabeledKnob knobRootKey     { "Root",   PicoColors::peach };   // ★ 追加
     LabeledKnob knobSampleStart { "Start",   PicoColors::peach };
     LabeledKnob knobSampleEnd   { "End",     PicoColors::peach };
     LabeledKnob knobLoopStart   { "L-Start", PicoColors::peach };

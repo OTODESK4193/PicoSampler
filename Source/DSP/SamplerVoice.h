@@ -1,6 +1,6 @@
 // ==========================================
 // File: SamplerVoice.h
-// 単一ボイス定義 (loopEnd & isReverse パラメーター拡張)
+// 単一ボイス定義 (rootKeyOverride & pitchInc メンバー追加)
 // ==========================================
 #pragma once
 
@@ -33,6 +33,8 @@ struct SamplerVoiceParams
 
     int lowNote = 0;
     int highNote = 127;
+
+    int rootKeyOverride = -1;  // -1 = 自動解析値を使用, 0-127 = 手動設定
 };
 
 class PicoVoice
@@ -60,6 +62,7 @@ public:
         envStage = EnvStage::Idle;
         readPosition = 0.0;
         envValue = 0.0f;
+        pitchInc = 1.0;
     }
 
     bool isActive() const noexcept { return active; }
@@ -86,6 +89,7 @@ private:
     uint64_t ageCounter = 0;
 
     double readPosition = 0.0;
+    double pitchInc = 1.0;     // ★ メンバーに昇格 (SR補正を含む)
     EnvStage envStage = EnvStage::Idle;
     float envValue = 0.0f;
 };

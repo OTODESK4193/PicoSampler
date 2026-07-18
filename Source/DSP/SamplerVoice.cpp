@@ -1,6 +1,11 @@
 // ==========================================
 // File: SamplerVoice.cpp
-// PicoVoice レンダリング実装 (Repitch / Stretch ピッチ絶対整合 & ループクロスフェード)
+// PicoVoice レンダリング実装 (サンプルレート補正 & 正確なピッチマッピング)
+// 
+// ★ 根本バグ修正:
+//   1. fileSR / engineSR 補正係数を pitchInc のベースに適用
+//   2. rootKey から MIDI ノートへの変換は純粋な半音差のみ
+//   3. Stretch/Repitch で同一の音階を保証
 // ==========================================
 #include "SamplerVoice.h"
 
@@ -21,7 +26,9 @@ void PicoVoice::startNote(int midiNoteNumber, float noteVelocity, int slotIdx,
     }
 
     const auto& meta = slot.getMetadata();
-    const int stOffset = midiNoteNumber - meta.rootKey + (p.octave * 12) + p.semitone;
+    // rootKeyOverride >= 0 の場合はユーザー手動設定を優先
+    const int effectiveRoot = (p.rootKeyOverride >= 0) ? p.rootKeyOverride : meta.rootKey;
+    const int stOffset = midiNoteNumber - effectiveRoot + (p.octave * 12) + p.semitone;
 
     const auto* buffer = p.isStretchMode ? slot.getAnchorBuffer(stOffset) : &slot.getOriginalBuffer();
 
@@ -75,7 +82,8 @@ void PicoVoice::renderNextBlock(juce::AudioBuffer<float>& outputBuffer, int star
     if (!active || !slot.isReady()) return;
 
     const auto& meta = slot.getMetadata();
-    const int stOffset = midiNote - meta.rootKey + (p.octave * 12) + p.semitone;
+    const int effectiveRoot = (p.rootKeyOverride >= 0) ? p.rootKeyOverride : meta.rootKey;
+    const int stOffset = midiNote - effectiveRoot + (p.octave * 12) + p.semitone;
 
     const auto* buffer = p.isStretchMode ? slot.getAnchorBuffer(stOffset) : &slot.getOriginalBuffer();
 
@@ -95,21 +103,26 @@ void PicoVoice::renderNextBlock(juce::AudioBuffer<float>& outputBuffer, int star
     const int lpLen    = std::max(64, lpEnd - lpStart);
     const int xfadeLen = juce::jmax(1, (int)(lpLen * juce::jlimit(0.0f, 0.5f, p.crossfadeRatio)));
 
-    double pitchInc = (double)p.speed;
+    // ★ サンプルレート補正: ファイルのSRとエンジンのSRの比率をベースレートに適用
+    const double fileSR = meta.fileSampleRate > 1000.0 ? meta.fileSampleRate : 44100.0;
+    const double srRatio = fileSR / sampleRate;  // sampleRate はエンジンのSR (PicoVoice::prepare で設定)
 
     if (p.isStretchMode)
     {
+        // Stretch モード: アンカー(事前ピッチシフト済みバッファ)を原速再生
+        // アンカー範囲外の残差のみピッチシフト + SR補正
         const int anchorSemis = juce::jlimit(-12, 11, stOffset);
         const float residualSemis = (float)(stOffset - anchorSemis) + (p.fineTune / 100.0f);
         const double pitchRatio = std::pow(2.0, (double)residualSemis / 12.0);
-        pitchInc *= pitchRatio;
+        pitchInc = srRatio * pitchRatio;
     }
     else
     {
-        // Repitch モード: 原音バッファからのダイレクトな pitchRatio リサンプリング再生
+        // Repitch モード: 原音バッファから直接リサンプリング再生
+        // midiNote と rootKey の半音差 + fineTune を SR 補正付きで適用
         const float totalSemis = (float)stOffset + (p.fineTune / 100.0f);
         const double pitchRatio = std::pow(2.0, (double)totalSemis / 12.0);
-        pitchInc *= pitchRatio;
+        pitchInc = srRatio * pitchRatio;
     }
 
     if (p.isReverse) pitchInc = -pitchInc;
@@ -195,7 +208,8 @@ void PicoVoice::renderNextBlock(juce::AudioBuffer<float>& outputBuffer, int star
             sL = sR = lagrange3rdInterpolate(chL[i0], chL[i1], chL[i2], chL[i3], frac);
         }
 
-        // 滑らかなループ Crossfade
+        // 滑らかなループ Crossfade (ループ終端手前の X-Fade 区間で
+        // フェードアウト → ループ開始点のフェードインを等パワークロスフェード)
         if (p.isLooping && !p.isReverse && readPosition >= (double)(lpEnd - xfadeLen))
         {
             const float xfFactor = (float)(readPosition - (double)(lpEnd - xfadeLen)) / (float)xfadeLen;

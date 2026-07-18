@@ -56,6 +56,9 @@ juce::AudioProcessorValueTreeState::ParameterLayout PicoSamplerAudioProcessor::c
         params.push_back(std::make_unique<juce::AudioParameterBool>("isReverse_" + s, "Reverse " + s, false));
         params.push_back(std::make_unique<juce::AudioParameterBool>("isSnap_" + s, "Snap " + s, true));
 
+        // RootKey 手動オーバーライド (-1 = Auto, 0-127 = 手動)
+        params.push_back(std::make_unique<juce::AudioParameterInt>("rootKey_" + s, "Root Key " + s, -1, 127, -1));
+
         params.push_back(std::make_unique<juce::AudioParameterInt>("slotLowNote_" + s, "Low Note " + s, 0, 127, 0));
         params.push_back(std::make_unique<juce::AudioParameterInt>("slotHighNote_" + s, "High Note " + s, 0, 127, 127));
     }
@@ -197,6 +200,7 @@ void PicoSamplerAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
         sp.isLooping = getParamFloat("isLooping_" + s, 0.0f) > 0.5f;
         sp.isStretchMode = getParamFloat("isStretchMode_" + s, 0.0f) > 0.5f;
         sp.isReverse = getParamFloat("isReverse_" + s, 0.0f) > 0.5f;
+        sp.rootKeyOverride = (int)getParamFloat("rootKey_" + s, -1.0f);
         sp.lowNote = (int)getParamFloat("slotLowNote_" + s, 0.0f);
         sp.highNote = (int)getParamFloat("slotHighNote_" + s, 127.0f);
     }

@@ -1,6 +1,6 @@
 // ==========================================
 // File: SampleSlot.h
-// スロット管理 (prepare メソッド追加)
+// スロット管理 (fileSampleRate 保持 & rootKey 手動オーバーライド対応)
 // ==========================================
 #pragma once
 
@@ -20,6 +20,7 @@ public:
         juce::String fileName;
         int rootKey = 60;
         float centsOffset = 0.0f;
+        double fileSampleRate = 44100.0;  // ★ ファイル元のサンプルレートを保持
         float sampleStartRatio = 0.0f;
         float sampleEndRatio = 1.0f;
         float loopStartRatio = 0.2f;
@@ -32,7 +33,7 @@ public:
     SampleSlot() = default;
     ~SampleSlot() = default;
 
-    void prepare(double sr) noexcept { juce::ignoreUnused(sr); }
+    void prepare(double sr) noexcept { engineSampleRate = sr > 1000.0 ? sr : 44100.0; }
     bool loadFromFile(const juce::File& file);
     void clear();
 
@@ -44,12 +45,15 @@ public:
     const Metadata& getMetadata() const noexcept { return metadata; }
     Metadata& getMetadata() noexcept { return metadata; }
 
+    double getFileSampleRate() const noexcept { return metadata.fileSampleRate; }
+
 private:
     void renderAnchors();
 
     std::atomic<bool> ready { false };
     std::atomic<bool> analyzing { false };
 
+    double engineSampleRate = 44100.0;
     juce::AudioBuffer<float> originalBuffer;
     std::array<juce::AudioBuffer<float>, kNumAnchors> anchorBuffers;
     Metadata metadata;
