@@ -202,6 +202,18 @@ void MainPanel::bindSlotParameters(int slotIdx)
     reverseAttach.reset();
     snapAttach.reset();
 
+    // Slot固有のテーマカラー適用 & 変調残像の即時クリア
+    const auto slotColor = PicoColors::getSlotColor(slotIdx);
+    for (auto* lk : { &knobSampleStart, &knobSampleEnd, &knobLoopStart, &knobLoopEnd, &knobCrossfade })
+    {
+        lk->knob.setColour(juce::Slider::rotarySliderFillColourId, slotColor);
+        lk->knob.getProperties().remove("mod_active");
+        lk->knob.getProperties().remove("mod_min");
+        lk->knob.getProperties().remove("mod_max");
+        lk->knob.getProperties().remove("mod_live");
+        lk->knob.repaint();
+    }
+
     const juce::String s = juce::String(slotIdx);
 
     auto bind = [this, &s](LabeledKnob& lk, const juce::String& pName) {

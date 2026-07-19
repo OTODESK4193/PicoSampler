@@ -75,7 +75,7 @@ PicoSamplerAudioProcessorEditor::PicoSamplerAudioProcessorEditor(PicoSamplerAudi
     };
 
     setActiveTab(0);
-    startTimerHz(10);
+    startTimerHz(60);
 }
 
 PicoSamplerAudioProcessorEditor::~PicoSamplerAudioProcessorEditor()
@@ -225,7 +225,7 @@ void PicoSamplerAudioProcessorEditor::timerCallback()
     keyRangeMap.setPlayingNotes(audioProcessor.getSamplerEngine().getPlayingNotes());
     arpPanel.updateFilterUIState();
 
-    // モジュレーション変調リング & ライブドット表示のGUIプロパティ更新
+    // 6. モジュレーション変調リング & ライブドット表示のGUIプロパティ更新
     const auto& mod = audioProcessor.getModMatrix();
 
     auto updateKnobProps = [&](juce::Slider& knob, int dstIdx)
@@ -244,14 +244,21 @@ void PicoSamplerAudioProcessorEditor::timerCallback()
             props.set("mod_max", juce::jlimit(0.0f, 1.0f, normVal + maxOffset));
             props.set("mod_live", juce::jlimit(0.0f, 1.0f, normVal + liveOffset));
         }
+        else
+        {
+            props.remove("mod_min");
+            props.remove("mod_max");
+            props.remove("mod_live");
+        }
     };
 
-    // MainPanel ノブ範囲更新
-    updateKnobProps(mainPanel.getSampleStartKnob(), ModMatrix::DstS1Start + activeIdx * 5);
-    updateKnobProps(mainPanel.getSampleEndKnob(),   ModMatrix::DstS1End + activeIdx * 5);
-    updateKnobProps(mainPanel.getLoopStartKnob(),   ModMatrix::DstS1LStart + activeIdx * 5);
-    updateKnobProps(mainPanel.getLoopEndKnob(),     ModMatrix::DstS1LEnd + activeIdx * 5);
-    updateKnobProps(mainPanel.getCrossfadeKnob(),   ModMatrix::DstS1XFade + activeIdx * 5);
+    // MainPanel ノブ範囲更新 (現在画面にバインドされているスロットの変調を正確に指定)
+    const int boundSlot = mainPanel.getCurrentBoundSlot() >= 0 ? mainPanel.getCurrentBoundSlot() : activeIdx;
+    updateKnobProps(mainPanel.getSampleStartKnob(), ModMatrix::DstS1Start + boundSlot * 5);
+    updateKnobProps(mainPanel.getSampleEndKnob(),   ModMatrix::DstS1End + boundSlot * 5);
+    updateKnobProps(mainPanel.getLoopStartKnob(),   ModMatrix::DstS1LStart + boundSlot * 5);
+    updateKnobProps(mainPanel.getLoopEndKnob(),     ModMatrix::DstS1LEnd + boundSlot * 5);
+    updateKnobProps(mainPanel.getCrossfadeKnob(),   ModMatrix::DstS1XFade + boundSlot * 5);
     updateKnobProps(mainPanel.getMasterPitchKnob(), ModMatrix::DstMasterPitch);
 
     // ArpPanel ノブ範囲更新
@@ -267,6 +274,24 @@ void PicoSamplerAudioProcessorEditor::timerCallback()
     updateKnobProps(arpPanel.getResoKnob(),    ModMatrix::DstFltReso);
     updateKnobProps(arpPanel.getFormantKnob(), ModMatrix::DstFltFormant);
     updateKnobProps(arpPanel.getCombMixKnob(), ModMatrix::DstFltCombMix);
+
+    // FxPanel ノブ範囲更新
+    for (int i = 0; i < 5; ++i)
+    {
+        if (auto* k = fxPanel.getSlotAmountKnob(i))
+        {
+            updateKnobProps(*k, ModMatrix::DstFx1Amount + i);
+        }
+    }
+
+    const auto& detailKnobs = fxPanel.getDetailKnobs();
+    for (size_t i = 0; i < detailKnobs.size(); ++i)
+    {
+        if (detailKnobs[i])
+        {
+            updateKnobProps(*detailKnobs[i], ModMatrix::DstSatDrive + (int)i);
+        }
+    }
 
     repaint(0, 0, 700, 44);
 }

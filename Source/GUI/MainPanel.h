@@ -27,6 +27,7 @@ public:
     juce::Slider& getLoopEndKnob()     { return knobLoopEnd.knob; }
     juce::Slider& getCrossfadeKnob()   { return knobCrossfade.knob; }
     juce::Slider& getMasterPitchKnob() { return knobMasterPitch.knob; }
+    int getCurrentBoundSlot() const noexcept { return currentBoundSlot; }
 
 private:
     struct LabeledKnob : public juce::Component
@@ -98,6 +99,7 @@ private:
     LabeledKnob knobOutGain     { "Gain",    PicoColors::mint };
     LabeledKnob knobCeiling     { "Ceiling", PicoColors::mint };
 
+private:
     int currentBoundSlot = -1;
 
     using Attachment = juce::AudioProcessorValueTreeState::SliderAttachment;

@@ -44,6 +44,8 @@ public:
     void itemDragExit(const SourceDetails&) override { dragOver = false; repaint(); }
     void itemDropped(const SourceDetails& details) override;
 
+    ValueKnob& getAmountKnob() { return amountKnob; }
+
 private:
     PicoSamplerAudioProcessor& proc;
     const int slot; // 0-based
@@ -76,6 +78,16 @@ public:
 
     void paint(juce::Graphics& g) override;
     void resized() override;
+
+    ValueKnob* getSlotAmountKnob(int slotIdx)
+    {
+        if (slotIdx >= 0 && slotIdx < (int)cards.size() && cards[(size_t)slotIdx])
+            return &cards[(size_t)slotIdx]->getAmountKnob();
+        return nullptr;
+    }
+
+    int getSelectedSlot() const noexcept { return selectedSlot; }
+    const std::vector<std::unique_ptr<ValueKnob>>& getDetailKnobs() const { return detailKnobs; }
 
 private:
     void swapSlots(int a, int b);
