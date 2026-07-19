@@ -345,5 +345,5 @@ void WaveformDisplay::timerCallback()
 juce::Colour WaveformDisplay::getSpectralColor(float brightness) const noexcept
 {
     const float b = juce::jlimit(0.0f, 1.0f, brightness * 3.0f);
-    return PicoColors::babyBlue.interpolatedWith(PicoColors::pink, b);
+    return PicoColors::waveGradStart.interpolatedWith(PicoColors::waveGradEnd, b);
 }

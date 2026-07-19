@@ -205,6 +205,10 @@ public:
             4.0, 2.0, 4.0 / 3.0, 1.0, 1.5, 2.0 / 3.0,
             0.5, 0.75, 1.0 / 3.0, 0.25, 0.375, 1.0 / 6.0, 0.125 };
 
+        std::array<float, NumDsts> localAccum {};
+        std::array<float, NumDsts> localMin {};
+        std::array<float, NumDsts> localMax {};
+
         float src[NumSrcs] = {};
 
         // LFO
@@ -258,29 +262,21 @@ public:
                 break;
 
             case EnvState::Decay:
-                if (ep.loop)
-                {
-                    st.value -= blockSec / juce::jmax(0.001f, ep.decay);
-                    if (st.value <= 0.0f) { st.value = 0.0f; st.stage = EnvState::Attack; }
-                }
-                else
-                {
-                    st.value -= (1.0f - sus) * blockSec / juce::jmax(0.001f, ep.decay);
-                    if (st.value <= sus) { st.value = sus; st.stage = EnvState::Sustain; }
-                }
+                st.value -= blockSec / juce::jmax(0.001f, ep.decay) * (1.0f - sus);
+                if (st.value <= sus) { st.value = sus; st.stage = EnvState::Sustain; }
                 break;
 
             case EnvState::Sustain:
                 st.value = sus;
+                if (ep.loop) st.stage = EnvState::Attack;
                 break;
 
             case EnvState::Release:
-                st.value -= st.releaseStart * blockSec / juce::jmax(0.001f, ep.release);
+                st.value -= blockSec / juce::jmax(0.001f, ep.release) * st.releaseStart;
                 if (st.value <= 0.0f) { st.value = 0.0f; st.stage = EnvState::Idle; }
                 break;
 
             default:
-                st.value = 0.0f;
                 break;
             }
         }
@@ -290,13 +286,10 @@ public:
         src[SrcModWheel] = modWheel;
         src[SrcRandom]   = randomSH;
 
-        destAccum.fill(0.0f);
-        rangeMin.fill(0.0f);
-        rangeMax.fill(0.0f);
-
+        // Slot Matrix Accumulation
         for (const auto& s : p.slot)
         {
-            if (s.src <= 0 || s.src >= NumSrcs || s.dst <= 0 || s.dst >= NumDsts) continue;
+            if (s.src <= SrcNone || s.src >= NumSrcs || s.dst <= DstNone || s.dst >= NumDsts) continue;
             if (std::abs(s.amt) < 0.0001f) continue;
 
             const bool srcBip = isBipolarSource(s.src);
@@ -304,23 +297,44 @@ public:
             float v = src[s.src];
             if (s.uni) { if (srcBip) v = (v + 1.0f) * 0.5f; }
             else       { if (!srcBip) v = v * 2.0f - 1.0f; }
-            destAccum[(size_t)s.dst] += v * s.amt;
+            localAccum[(size_t)s.dst] += v * s.amt;
 
             const float lo = s.uni ? 0.0f : -1.0f;
             const float hi = 1.0f;
             const float c1 = lo * s.amt, c2 = hi * s.amt;
-            rangeMin[(size_t)s.dst] += juce::jmin(c1, c2);
-            rangeMax[(size_t)s.dst] += juce::jmax(c1, c2);
+            localMin[(size_t)s.dst] += juce::jmin(c1, c2);
+            localMax[(size_t)s.dst] += juce::jmax(c1, c2);
+        }
+
+        destAccum = localAccum;
+        rangeMin = localMin;
+        rangeMax = localMax;
+
+        for (size_t d = 0; d < NumDsts; ++d)
+        {
+            guiDestAccum[d].store(localAccum[d], std::memory_order_relaxed);
+            guiRangeMin[d].store(localMin[d], std::memory_order_relaxed);
+            guiRangeMax[d].store(localMax[d], std::memory_order_relaxed);
         }
     }
 
     float get(int dst) const noexcept
     {
-        return destAccum[(size_t)juce::jlimit(0, (int)NumDsts - 1, dst)];
+        const int idx = juce::jlimit(0, (int)NumDsts - 1, dst);
+        return guiDestAccum[(size_t)idx].load(std::memory_order_relaxed);
     }
 
-    float getRangeMin(int dst) const noexcept { return rangeMin[(size_t)juce::jlimit(0, (int)NumDsts - 1, dst)]; }
-    float getRangeMax(int dst) const noexcept { return rangeMax[(size_t)juce::jlimit(0, (int)NumDsts - 1, dst)]; }
+    float getRangeMin(int dst) const noexcept
+    {
+        const int idx = juce::jlimit(0, (int)NumDsts - 1, dst);
+        return guiRangeMin[(size_t)idx].load(std::memory_order_relaxed);
+    }
+
+    float getRangeMax(int dst) const noexcept
+    {
+        const int idx = juce::jlimit(0, (int)NumDsts - 1, dst);
+        return guiRangeMax[(size_t)idx].load(std::memory_order_relaxed);
+    }
 
     static bool isBipolarSource(int s) noexcept { return s >= SrcLfo1 && s <= SrcLfo4; }
 
@@ -369,5 +383,10 @@ private:
     std::array<float, NumDsts> destAccum {};
     std::array<float, NumDsts> rangeMin {};
     std::array<float, NumDsts> rangeMax {};
+
     juce::Random rng;
+
+    mutable std::array<std::atomic<float>, NumDsts> guiDestAccum {};
+    mutable std::array<std::atomic<float>, NumDsts> guiRangeMin {};
+    mutable std::array<std::atomic<float>, NumDsts> guiRangeMax {};
 };
