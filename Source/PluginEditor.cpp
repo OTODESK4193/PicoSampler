@@ -199,6 +199,7 @@ void PicoSamplerAudioProcessorEditor::timerCallback()
     waveDisplay.setSampleSlot(&audioProcessor.getSamplerEngine().getSlot(activeIdx));
     waveDisplay.setModMatrix(&audioProcessor.getModMatrix());
     waveDisplay.setActiveSlotIndex(activeIdx);
+    waveDisplay.repaint();
 
     auto* pTheme = audioProcessor.getAPVTS().getRawParameterValue("colorTheme");
     if (pTheme != nullptr)
@@ -248,19 +249,29 @@ void PicoSamplerAudioProcessorEditor::timerCallback()
         const bool active = (std::abs(minOffset) > 0.001f || std::abs(maxOffset) > 0.001f);
 
         auto& props = knob.getProperties();
+        const bool prevActive = props.getWithDefault("mod_active", false);
+        const float prevLive = props.getWithDefault("mod_live", -999.0f);
+
         props.set("mod_active", active);
         if (active)
         {
             const float normVal = (float)knob.valueToProportionOfLength(knob.getValue());
+            const float liveVal = juce::jlimit(0.0f, 1.0f, normVal + liveOffset);
             props.set("mod_min", juce::jlimit(0.0f, 1.0f, normVal + minOffset));
             props.set("mod_max", juce::jlimit(0.0f, 1.0f, normVal + maxOffset));
-            props.set("mod_live", juce::jlimit(0.0f, 1.0f, normVal + liveOffset));
+            props.set("mod_live", liveVal);
+
+            if (std::abs(liveVal - prevLive) > 0.0001f || !prevActive)
+            {
+                knob.repaint();
+            }
         }
         else
         {
             props.remove("mod_min");
             props.remove("mod_max");
             props.remove("mod_live");
+            if (prevActive) knob.repaint();
         }
     };
 
