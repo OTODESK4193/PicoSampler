@@ -132,12 +132,14 @@ int SamplerEngine::findOldestVoice() const noexcept
     return oldestIdx;
 }
 
-void SamplerEngine::renderNextBlock(juce::AudioBuffer<float>& outputBuffer, const Params& p,
-                                     SampleVisualizerData* visualizerData,
-                                     juce::AudioBuffer<float>* dryBuffer) noexcept
+void SamplerEngine::renderNextBlock(juce::AudioBuffer<float>& normalBuffer,
+                                     juce::AudioBuffer<float>& fltBypassBuffer,
+                                     juce::AudioBuffer<float>& fxBypassBuffer,
+                                     juce::AudioBuffer<float>& bothBypassBuffer,
+                                     const Params& p,
+                                     SampleVisualizerData* visualizerData) noexcept
 {
-    const int numSamples = outputBuffer.getNumSamples();
-    const int numCh = outputBuffer.getNumChannels();
+    const int numSamples = normalBuffer.getNumSamples();
 
     for (size_t i = 0; i < NUM_VOICES; ++i)
     {
@@ -148,7 +150,12 @@ void SamplerEngine::renderNextBlock(juce::AudioBuffer<float>& outputBuffer, cons
             if (slotIdx >= 0 && slotIdx < NUM_SLOTS)
             {
                 const auto& sp = p.slotParams[(size_t)slotIdx];
-                auto& targetBuf = (sp.isFxBypass && dryBuffer != nullptr) ? *dryBuffer : outputBuffer;
+                
+                juce::AudioBuffer<float>& targetBuf = 
+                    (sp.isFilterBypass && sp.isFxBypass)  ? bothBypassBuffer :
+                    (sp.isFilterBypass && !sp.isFxBypass) ? fltBypassBuffer :
+                    (!sp.isFilterBypass && sp.isFxBypass) ? fxBypassBuffer :
+                                                            normalBuffer;
 
                 v.renderNextBlock(targetBuf, 0, numSamples, slots[(size_t)slotIdx], sp);
 
@@ -168,8 +175,8 @@ void SamplerEngine::renderNextBlock(juce::AudioBuffer<float>& outputBuffer, cons
     limiter.setReleaseMs(p.limReleaseMs);
     const float ceilingLin = juce::Decibels::decibelsToGain(p.ceilingDb);
 
-    float* outL = outputBuffer.getWritePointer(0);
-    float* outR = numCh > 1 ? outputBuffer.getWritePointer(1) : outL;
+    float* outL = normalBuffer.getWritePointer(0);
+    float* outR = normalBuffer.getNumChannels() > 1 ? normalBuffer.getWritePointer(1) : outL;
     const float masterGain = juce::Decibels::decibelsToGain(p.outGainDb);
 
     for (int s = 0; s < numSamples; ++s)

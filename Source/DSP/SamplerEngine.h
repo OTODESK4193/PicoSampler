@@ -116,9 +116,12 @@ public:
     }
 
     void handleMidi(const juce::MidiBuffer& midi, const Params& p) noexcept;
-    void renderNextBlock(juce::AudioBuffer<float>& outputBuffer, const Params& p,
-                         SampleVisualizerData* visualizerData = nullptr,
-                         juce::AudioBuffer<float>* dryBuffer = nullptr) noexcept;
+    void renderNextBlock(juce::AudioBuffer<float>& normalBuffer,
+                         juce::AudioBuffer<float>& fltBypassBuffer,
+                         juce::AudioBuffer<float>& fxBypassBuffer,
+                         juce::AudioBuffer<float>& bothBypassBuffer,
+                         const Params& p,
+                         SampleVisualizerData* visualizerData = nullptr) noexcept;
 
     std::function<void(int newActiveSlot)> onActiveSlotTriggered;
 

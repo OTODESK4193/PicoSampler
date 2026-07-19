@@ -377,12 +377,19 @@ void PicoSamplerAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
     const float envVal = filterAdsr.getNextSample();
     const float envAmt = getParamFloat("fltEnvAmt", 0.0f);
 
-    juce::AudioBuffer<float> dryBuffer(buffer.getNumChannels(), numSamples);
-    dryBuffer.clear();
+    const int numChannels = buffer.getNumChannels();
+    juce::AudioBuffer<float> fltBypassBuffer(numChannels, numSamples);
+    juce::AudioBuffer<float> fxBypassBuffer(numChannels, numSamples);
+    juce::AudioBuffer<float> bothBypassBuffer(numChannels, numSamples);
 
-    samplerEngine.renderNextBlock(buffer, engineParams, &visualizerData, &dryBuffer);
+    fltBypassBuffer.clear();
+    fxBypassBuffer.clear();
+    bothBypassBuffer.clear();
 
-    // PicoFilter (CleanSVF, Vowel, Comb) 適用 (Filter Bypassがオフのスロット音声に適用)
+    // 1. 各スロットのボイスをルーティングに応じて各バッファにレンダリング
+    samplerEngine.renderNextBlock(buffer, fltBypassBuffer, fxBypassBuffer, bothBypassBuffer, engineParams, &visualizerData);
+
+    // 2. PicoFilter (CleanSVF, Vowel, Comb) 適用 (Filter Bypassがオフの音声: normalBuffer, fxBypassBuffer)
     PicoFilter::Params fltParams;
     fltParams.enable  = getParamFloat("fltEnable", 0.0f) > 0.5f;
     fltParams.model   = (int)getParamFloat("fltModel", 0.0f);
@@ -403,8 +410,15 @@ void PicoSamplerAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
     fltParams.combMix = juce::jlimit(0.0f, 1.0f, getParamFloat("fltCombMix", 0.5f) + modMatrix.get(ModMatrix::DstFltCombMix));
 
     mainFilter.process(buffer, fltParams);
+    mainFilter.process(fxBypassBuffer, fltParams);
 
-    // FX Rack 適用 (FX Bypassがオフの音声に適用)
+    // 3. Filter Bypass音 (fltBypassBuffer) を FX前バッファ (buffer) に合流
+    for (int ch = 0; ch < numChannels; ++ch)
+    {
+        buffer.addFrom(ch, 0, fltBypassBuffer, ch, 0, numSamples);
+    }
+
+    // 4. FX Rack 適用 (FX Bypassがオフの音声: buffer)
     FxChain::Params fxP;
     for (int i = 0; i < 5; ++i)
     {
@@ -433,10 +447,11 @@ void PicoSamplerAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
 
     fxChain.process(buffer, fxP);
 
-    // FX Bypass音 (dryBuffer) をマスター出力に合流
-    for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
+    // 5. FX Bypass音 (fxBypassBuffer, bothBypassBuffer) をマスター出力に合流
+    for (int ch = 0; ch < numChannels; ++ch)
     {
-        buffer.addFrom(ch, 0, dryBuffer, ch, 0, numSamples);
+        buffer.addFrom(ch, 0, fxBypassBuffer, ch, 0, numSamples);
+        buffer.addFrom(ch, 0, bothBypassBuffer, ch, 0, numSamples);
     }
 }
 

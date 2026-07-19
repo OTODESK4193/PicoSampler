@@ -204,6 +204,8 @@ void MainPanel::bindSlotParameters(int slotIdx)
     stretchAttach.reset();
     reverseAttach.reset();
     snapAttach.reset();
+    fltBypassAttach.reset();
+    fxBypassAttach.reset();
 
     // Slot固有のテーマカラー適用 & 変調残像の即時クリア
     const auto slotColor = PicoColors::getSlotColor(slotIdx);
