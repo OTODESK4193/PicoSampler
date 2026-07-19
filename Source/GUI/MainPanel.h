@@ -64,6 +64,10 @@ private:
     juce::TextButton btnLayer  { "LAYER" };
     juce::TextButton btnRandom { "RANDOM" };
 
+    // Routing Toggles
+    GlowToggle btnFltBypass { "FLT BYPASS", PicoColors::rose };
+    GlowToggle btnFxBypass  { "FX BYPASS",  PicoColors::peach };
+
     // Loop, Stretch, Reverse & Snap Toggles (2列2行)
     GlowToggle btnLoop    { "LOOP" };
     GlowToggle btnStretch { "STRETCH" };
@@ -110,6 +114,8 @@ private:
     std::unique_ptr<ButtonAttach> stretchAttach;
     std::unique_ptr<ButtonAttach> reverseAttach;
     std::unique_ptr<ButtonAttach> snapAttach;
+    std::unique_ptr<ButtonAttach> fltBypassAttach;
+    std::unique_ptr<ButtonAttach> fxBypassAttach;
 
     std::unique_ptr<Attachment> masterPitchAttach;
     std::unique_ptr<Attachment> masterHpfAttach;

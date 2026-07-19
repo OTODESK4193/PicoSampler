@@ -71,6 +71,9 @@ MainPanel::MainPanel(juce::AudioProcessorValueTreeState& apvts) : vts(apvts)
     addAndMakeVisible(btnReverse);
     addAndMakeVisible(btnSnap);
 
+    addAndMakeVisible(btnFltBypass);
+    addAndMakeVisible(btnFxBypass);
+
     // RootKey ノブのテキスト表示関数設定 (-1 = Auto, 0-127 = C-1~G9)
     knobRootKey.knob.textFromValueFunction = [](double val) {
         const int v = (int)val;
@@ -236,10 +239,12 @@ void MainPanel::bindSlotParameters(int slotIdx)
     bind(knobSustain, "sustain");
     bind(knobRelease, "release");
 
-    loopAttach    = std::make_unique<ButtonAttach>(vts, "isLooping_" + s, btnLoop);
-    stretchAttach = std::make_unique<ButtonAttach>(vts, "isStretchMode_" + s, btnStretch);
-    reverseAttach = std::make_unique<ButtonAttach>(vts, "isReverse_" + s, btnReverse);
-    snapAttach    = std::make_unique<ButtonAttach>(vts, "isSnap_" + s, btnSnap);
+    loopAttach      = std::make_unique<ButtonAttach>(vts, "isLooping_" + s, btnLoop);
+    stretchAttach   = std::make_unique<ButtonAttach>(vts, "isStretchMode_" + s, btnStretch);
+    reverseAttach   = std::make_unique<ButtonAttach>(vts, "isReverse_" + s, btnReverse);
+    snapAttach      = std::make_unique<ButtonAttach>(vts, "isSnap_" + s, btnSnap);
+    fltBypassAttach = std::make_unique<ButtonAttach>(vts, "filterBypass_" + s, btnFltBypass);
+    fxBypassAttach  = std::make_unique<ButtonAttach>(vts, "fxBypass_" + s, btnFxBypass);
 }
 
 void MainPanel::updateStates()
@@ -285,7 +290,8 @@ void MainPanel::paint(juce::Graphics& g)
 
     // セパレーター下線 (Y=26)
     drawSectionHeader("ACTIVE SLOT",   20,  10, 320, PicoColors::mint);
-    drawSectionHeader("PLAYBACK MODE", 360, 10, 240, PicoColors::babyBlue);
+    drawSectionHeader("PLAYBACK MODE", 360, 10, 220, PicoColors::babyBlue);
+    drawSectionHeader("ROUTING",       600, 10, 220, PicoColors::rose);
 
     // 1段目: SAMPLE / LOOP, ENVELOPE (Y=80)
     drawSectionHeader("SAMPLE / LOOP", 20,  80, 480, PicoColors::peach);
@@ -305,9 +311,12 @@ void MainPanel::resized()
         btnSlots[(size_t)i].setBounds(20 + i * 31, btnY, 28, 22);
     }
 
-    btnSingle.setBounds(360, btnY, 70, 22);
-    btnLayer.setBounds(435, btnY, 70, 22);
-    btnRandom.setBounds(510, btnY, 70, 22);
+    btnSingle.setBounds(360, btnY, 68, 22);
+    btnLayer.setBounds(433, btnY, 68, 22);
+    btnRandom.setBounds(506, btnY, 68, 22);
+
+    btnFltBypass.setBounds(600, btnY, 102, 22);
+    btnFxBypass.setBounds(707, btnY, 102, 22);
 
     const int knobY1 = 106;
     const int knobW = 60;

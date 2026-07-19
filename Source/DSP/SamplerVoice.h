@@ -30,6 +30,8 @@ struct SamplerVoiceParams
     bool isLooping = false;
     bool isStretchMode = false;
     bool isReverse = false;
+    bool isFilterBypass = false;
+    bool isFxBypass = false;
 
     int lowNote = 0;
     int highNote = 127;

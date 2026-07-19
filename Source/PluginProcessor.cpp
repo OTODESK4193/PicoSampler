@@ -76,6 +76,8 @@ juce::AudioProcessorValueTreeState::ParameterLayout PicoSamplerAudioProcessor::c
         params.push_back(std::make_unique<juce::AudioParameterBool>("isStretchMode_" + s, "Stretch Mode " + s, false));
         params.push_back(std::make_unique<juce::AudioParameterBool>("isReverse_" + s, "Reverse " + s, false));
         params.push_back(std::make_unique<juce::AudioParameterBool>("isSnap_" + s, "Snap " + s, true));
+        params.push_back(std::make_unique<juce::AudioParameterBool>("filterBypass_" + s, "Filter Bypass " + s, false));
+        params.push_back(std::make_unique<juce::AudioParameterBool>("fxBypass_" + s, "FX Bypass " + s, false));
 
         // RootKey 手動オーバーライド (-1 = Auto, 0-127 = 手動)
         params.push_back(std::make_unique<juce::AudioParameterInt>(
@@ -344,6 +346,8 @@ void PicoSamplerAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
         sp.isLooping = getParamFloat("isLooping_" + s, 0.0f) > 0.5f;
         sp.isStretchMode = getParamFloat("isStretchMode_" + s, 0.0f) > 0.5f;
         sp.isReverse = getParamFloat("isReverse_" + s, 0.0f) > 0.5f;
+        sp.isFilterBypass = getParamFloat("filterBypass_" + s, 0.0f) > 0.5f;
+        sp.isFxBypass = getParamFloat("fxBypass_" + s, 0.0f) > 0.5f;
         sp.rootKeyOverride = (int)getParamFloat("rootKey_" + s, -1.0f);
         sp.lowNote = (int)getParamFloat("slotLowNote_" + s, 0.0f);
         sp.highNote = (int)getParamFloat("slotHighNote_" + s, 127.0f);
@@ -373,9 +377,12 @@ void PicoSamplerAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
     const float envVal = filterAdsr.getNextSample();
     const float envAmt = getParamFloat("fltEnvAmt", 0.0f);
 
-    samplerEngine.renderNextBlock(buffer, engineParams, &visualizerData);
+    juce::AudioBuffer<float> dryBuffer(buffer.getNumChannels(), numSamples);
+    dryBuffer.clear();
 
-    // PicoFilter (CleanSVF, Vowel, Comb) 適用
+    samplerEngine.renderNextBlock(buffer, engineParams, &visualizerData, &dryBuffer);
+
+    // PicoFilter (CleanSVF, Vowel, Comb) 適用 (Filter Bypassがオフのスロット音声に適用)
     PicoFilter::Params fltParams;
     fltParams.enable  = getParamFloat("fltEnable", 0.0f) > 0.5f;
     fltParams.model   = (int)getParamFloat("fltModel", 0.0f);
@@ -397,12 +404,11 @@ void PicoSamplerAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
 
     mainFilter.process(buffer, fltParams);
 
-    // FX 5スロット & 詳細パラメータ適用
+    // FX Rack 適用 (FX Bypassがオフの音声に適用)
     FxChain::Params fxP;
     for (int i = 0; i < 5; ++i)
     {
         const juce::String s = juce::String(i + 1);
-        fxP.type[(size_t)i]   = (int)getParamFloat("fx" + s + "Type", 0.0f);
         fxP.amount[(size_t)i] = juce::jlimit(0.0f, 1.0f, getParamFloat("fx" + s + "Amount", 0.0f) + modMatrix.get(ModMatrix::DstFx1Amount + i));
     }
     fxP.bpm        = arpParams.bpm;
@@ -426,6 +432,12 @@ void PicoSamplerAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
     fxP.revMod     = juce::jlimit(0.0f, 1.0f, getParamFloat("revMod", 0.4f) + modMatrix.get(ModMatrix::DstRevMod));
 
     fxChain.process(buffer, fxP);
+
+    // FX Bypass音 (dryBuffer) をマスター出力に合流
+    for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
+    {
+        buffer.addFrom(ch, 0, dryBuffer, ch, 0, numSamples);
+    }
 }
 
 void PicoSamplerAudioProcessor::reanalyzeSlot(int slotIdx)

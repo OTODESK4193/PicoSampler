@@ -132,7 +132,9 @@ int SamplerEngine::findOldestVoice() const noexcept
     return oldestIdx;
 }
 
-void SamplerEngine::renderNextBlock(juce::AudioBuffer<float>& outputBuffer, const Params& p, SampleVisualizerData* visualizerData) noexcept
+void SamplerEngine::renderNextBlock(juce::AudioBuffer<float>& outputBuffer, const Params& p,
+                                     SampleVisualizerData* visualizerData,
+                                     juce::AudioBuffer<float>* dryBuffer) noexcept
 {
     const int numSamples = outputBuffer.getNumSamples();
     const int numCh = outputBuffer.getNumChannels();
@@ -145,11 +147,14 @@ void SamplerEngine::renderNextBlock(juce::AudioBuffer<float>& outputBuffer, cons
             const int slotIdx = v.getSlotIndex();
             if (slotIdx >= 0 && slotIdx < NUM_SLOTS)
             {
-                v.renderNextBlock(outputBuffer, 0, numSamples, slots[(size_t)slotIdx], p.slotParams[(size_t)slotIdx]);
+                const auto& sp = p.slotParams[(size_t)slotIdx];
+                auto& targetBuf = (sp.isFxBypass && dryBuffer != nullptr) ? *dryBuffer : outputBuffer;
+
+                v.renderNextBlock(targetBuf, 0, numSamples, slots[(size_t)slotIdx], sp);
 
                 if (visualizerData && v.isActive())
                 {
-                    visualizerData->push(slotIdx, 0.5f, p.slotParams[(size_t)slotIdx].pan, 0.0f, 0.1f);
+                    visualizerData->push(slotIdx, 0.5f, sp.pan, 0.0f, 0.1f);
                 }
             }
         }
