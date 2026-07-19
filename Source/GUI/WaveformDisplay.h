@@ -28,6 +28,7 @@ public:
     void setModMatrix(const ModMatrix* mod) { modMatrix = mod; }
 
     std::function<void(const juce::File& file)> onFileDropped;
+    std::function<void(int slotIdx)> onClearSlotRequested;
 
     bool isInterestedInFileDrag(const juce::StringArray& files) override;
     void filesDropped(const juce::StringArray& files, int x, int y) override;

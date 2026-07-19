@@ -58,10 +58,15 @@ PicoSamplerAudioProcessorEditor::PicoSamplerAudioProcessorEditor(PicoSamplerAudi
 
     waveDisplay.setVisualizerData(&p.getVisualizerData());
 
-    // 波形エリア D&D
+    // 波形エリア D&D & Clear
     waveDisplay.onFileDropped = [this](const juce::File& file) {
         const int activeIdx = (int)audioProcessor.getAPVTS().getRawParameterValue("activeSlot")->load();
         audioProcessor.getSamplerEngine().getSlot(activeIdx).loadFromFile(file);
+        repaint();
+    };
+
+    waveDisplay.onClearSlotRequested = [this](int slotIdx) {
+        audioProcessor.clearSlot(slotIdx);
         repaint();
     };
 

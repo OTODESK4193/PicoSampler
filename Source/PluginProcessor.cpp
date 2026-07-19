@@ -11,6 +11,12 @@ PicoSamplerAudioProcessor::PicoSamplerAudioProcessor()
       apvts(*this, nullptr, "Parameters", createParameterLayout())
 {
     samplerEngine.prepare(44100.0);
+
+    samplerEngine.onActiveSlotTriggered = [this](int newActiveSlot) {
+        if (auto* p = apvts.getParameter("activeSlot"))
+            p->setValueNotifyingHost((float)juce::jlimit(0, 7, newActiveSlot) / 7.0f);
+    };
+
     startThread();
 }
 
@@ -430,6 +436,12 @@ void PicoSamplerAudioProcessor::reanalyzeSlot(int slotIdx)
     const int matMode = (int)getParamFloat("analysisEngine", 0.0f);
 
     samplerEngine.getSlot(slotIdx).reanalyze(matMode, rootOverride);
+}
+
+void PicoSamplerAudioProcessor::clearSlot(int slotIdx)
+{
+    if (slotIdx < 0 || slotIdx >= 8) return;
+    samplerEngine.getSlot(slotIdx).clear();
 }
 
 juce::AudioProcessorEditor* PicoSamplerAudioProcessor::createEditor()

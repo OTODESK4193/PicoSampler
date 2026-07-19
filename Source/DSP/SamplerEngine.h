@@ -118,6 +118,8 @@ public:
     void handleMidi(const juce::MidiBuffer& midi, const Params& p) noexcept;
     void renderNextBlock(juce::AudioBuffer<float>& outputBuffer, const Params& p, SampleVisualizerData* visualizerData = nullptr) noexcept;
 
+    std::function<void(int newActiveSlot)> onActiveSlotTriggered;
+
 private:
     void triggerSlotNote(int slotIdx, int midiNote, float velocity, const Params& p) noexcept;
     int findFreeVoice() const noexcept;

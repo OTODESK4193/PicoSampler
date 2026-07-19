@@ -256,6 +256,28 @@ void WaveformDisplay::filesDropped(const juce::StringArray& files, int, int)
 
 void WaveformDisplay::mouseDown(const juce::MouseEvent& e)
 {
+    if (e.mods.isPopupMenu() || e.mods.isRightButtonDown())
+    {
+        if (currentSlot && currentSlot->isReady())
+        {
+            const int slotNum = activeSlot + 1;
+            juce::AlertWindow::showOkCancelBox(
+                juce::AlertWindow::WarningIcon,
+                "Delete Sample",
+                "Are you sure you want to delete the loaded sample in Slot " + juce::String(slotNum) + "?",
+                "Yes (Delete)", "No (Cancel)",
+                this,
+                juce::ModalCallbackFunction::create([this](int result) {
+                    if (result == 1 && onClearSlotRequested)
+                    {
+                        onClearSlotRequested(activeSlot);
+                    }
+                })
+            );
+        }
+        return;
+    }
+
     if (!currentSlot || !currentSlot->isReady()) return;
 
     const float w = (float)getWidth();

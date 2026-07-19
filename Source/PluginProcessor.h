@@ -46,6 +46,7 @@ public:
     void run() override; // スレッド処理 (ファイルロード)
 
     void reanalyzeSlot(int slotIdx); // ★ スロットの再解析・再配置
+    void clearSlot(int slotIdx);     // ★ スロットの全消去・初期化
 
     juce::AudioProcessorValueTreeState& getAPVTS() { return apvts; }
     SamplerEngine& getSamplerEngine() { return samplerEngine; }

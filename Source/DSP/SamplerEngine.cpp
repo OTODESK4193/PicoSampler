@@ -65,6 +65,7 @@ void SamplerEngine::handleMidi(const juce::MidiBuffer& midi, const Params& p) no
                     }
                     lastRandomSlot = chosen;
                     triggerSlotNote(chosen, note, vel, p);
+                    if (onActiveSlotTriggered) onActiveSlotTriggered(chosen);
                 }
                 break;
             }
