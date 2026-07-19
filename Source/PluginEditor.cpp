@@ -200,6 +200,18 @@ void PicoSamplerAudioProcessorEditor::timerCallback()
     waveDisplay.setModMatrix(&audioProcessor.getModMatrix());
     waveDisplay.setActiveSlotIndex(activeIdx);
 
+    auto* pTheme = audioProcessor.getAPVTS().getRawParameterValue("colorTheme");
+    if (pTheme != nullptr)
+    {
+        const int themeIdx = (int)pTheme->load();
+        if (themeIdx != lastThemeIdx)
+        {
+            lastThemeIdx = themeIdx;
+            PicoColors::setTheme(themeIdx);
+            repaint();
+        }
+    }
+
     mainPanel.updateStates();
 
     std::array<std::pair<int, int>, 8> ranges {};

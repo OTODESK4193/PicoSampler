@@ -56,6 +56,7 @@ private:
     PresetBrowser presetBrowser;
 
     int activeTab = 0;
+    int lastThemeIdx = -1;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PicoSamplerAudioProcessorEditor)
 };

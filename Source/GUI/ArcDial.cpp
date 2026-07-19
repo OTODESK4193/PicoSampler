@@ -55,7 +55,8 @@ void ArcDialLookAndFeel::drawRotarySlider(juce::Graphics& g, int x, int y, int w
     // 3. 値アーク
     juce::Path valuePath;
     valuePath.addCentredArc(centreX, centreY, radius, radius, 0.0f, rotaryStartAngle, angle, true);
-    g.setColour(PicoColors::mint);
+    const auto fillColour = slider.findColour(juce::Slider::rotarySliderFillColourId, true);
+    g.setColour(fillColour.isOpaque() || fillColour.getAlpha() > 0 ? fillColour : PicoColors::mint);
     g.strokePath(valuePath, juce::PathStrokeType(4.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
 
     // 4. ポインター
