@@ -170,6 +170,44 @@ MainPanel::MainPanel(juce::AudioProcessorValueTreeState& apvts) : vts(apvts)
     knobSlotVolume.knob.setDoubleClickReturnValue(true, 0.0);   // 0 dB = ユニティ
     knobSlotPan.knob.setDoubleClickReturnValue(true, 0.0);      // センター
 
+    // ------------------------------------------------------------------
+    // MASTER の単位表記
+    //
+    // これらのノブはこのコンストラクタ内でアタッチ済み (masterPitchAttach ほか) で、
+    // bindSlotParameters() では貼り替えられないため、ここで設定して問題ない。
+    // スロット別ノブ (Pan / Volume) は bind のたびに上書きされるので、
+    // そちらは bindSlotParameters() の末尾で設定している。
+    // ------------------------------------------------------------------
+    auto dbText = [](double v)
+    {
+        if (v <= -35.99) return juce::String("-inf");
+        return juce::String(v, 1) + " dB";
+    };
+
+    knobOutGain.knob.textFromValueFunction = dbText;
+    knobCeiling.knob.textFromValueFunction = [](double v)
+    {
+        // Ceiling は -12..0 dB。-inf は取り得ないので常に数値表記。
+        return juce::String(v, 1) + " dB";
+    };
+
+    knobMasterPitch.knob.textFromValueFunction = [](double v)
+    {
+        return juce::String(v, 2) + " st";
+    };
+
+    // HPF / LPF は Hz / kHz を自動で切り替える (20000.00 では桁が読みづらい)
+    auto hzText = [](double v)
+    {
+        if (v >= 1000.0) return juce::String(v / 1000.0, 2) + " kHz";
+        return juce::String(v, 1) + " Hz";
+    };
+    knobMasterHpf.knob.textFromValueFunction = hzText;
+    knobMasterLpf.knob.textFromValueFunction = hzText;
+
+    for (auto* lk : { &knobMasterPitch, &knobMasterHpf, &knobMasterLpf, &knobOutGain, &knobCeiling })
+        lk->knob.updateText();
+
     addAndMakeVisible(knobSampleStart);
     addAndMakeVisible(knobSampleEnd);
     addAndMakeVisible(knobLoopStart);
