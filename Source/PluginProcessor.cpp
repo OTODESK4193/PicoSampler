@@ -395,7 +395,7 @@ void PicoSamplerAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
 
     // 2. PicoFilter (CleanSVF, Vowel, Comb) 適用 (FLT BYPASSがオフのスロット音声に適用)
     PicoFilter::Params fltParams;
-    fltParams.enable  = true; // フィルター自体は常に有効化（スロット個別のFLT BYPASSでルーティング制御）
+    fltParams.enable  = getParamFloat("fltEnable", 0.0f) > 0.5f;
     fltParams.model   = (int)getParamFloat("fltModel", 0.0f);
 
     const float baseCutoff = getParamFloat("fltCutoff", 2000.0f);
@@ -418,8 +418,11 @@ void PicoSamplerAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
     fltParams.formant = juce::jlimit(0.0f, 1.0f, getParamFloat("fltFormant", 0.0f) + modMatrix.get(ModMatrix::DstFltFormant));
     fltParams.combMix = juce::jlimit(0.0f, 1.0f, getParamFloat("fltCombMix", 0.5f) + modMatrix.get(ModMatrix::DstFltCombMix));
 
-    mainFilter.process(buffer, fltParams);
-    mainFilter.process(fxBypassBuffer, fltParams);
+    if (fltParams.enable)
+    {
+        mainFilter.process(buffer, fltParams);
+        mainFilter.process(fxBypassBuffer, fltParams);
+    }
 
     // 3. Filter Bypass音 (fltBypassBuffer) を FX前バッファ (buffer) に合流
     for (int ch = 0; ch < numChannels; ++ch)
@@ -432,6 +435,7 @@ void PicoSamplerAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
     for (int i = 0; i < 5; ++i)
     {
         const juce::String s = juce::String(i + 1);
+        fxP.type[(size_t)i]   = (int)getParamFloat("fx" + s + "Type", 0.0f);
         fxP.amount[(size_t)i] = juce::jlimit(0.0f, 1.0f, getParamFloat("fx" + s + "Amount", 0.0f) + modMatrix.get(ModMatrix::DstFx1Amount + i));
     }
     fxP.bpm        = arpParams.bpm;
