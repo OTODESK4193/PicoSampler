@@ -78,16 +78,20 @@ void WaveformDisplay::paint(juce::Graphics& g)
 
     bool isReverse = getParamFloat("isReverse_" + s, 0.0f) > 0.5f;
 
+    const int viewLenSamples = std::max(2, (int)((float)numSamples / zoomLevel));
+    const int viewStartSample = (int)(viewStartRatio * (float)numSamples);
+
     const float stepX = 4.0f;
     const int numCols = (int)(w / stepX);
-    const int samplesPerCol = juce::jmax(1, numSamples / numCols);
+    const int samplesPerCol = juce::jmax(1, viewLenSamples / numCols);
 
     // 波形描画 (Reverse ON 時は画面上の見た目を反転)
     for (int col = 0; col < numCols; ++col)
     {
         const int actualCol = isReverse ? (numCols - 1 - col) : col;
-        const int startIdx = actualCol * samplesPerCol;
+        const int startIdx = viewStartSample + actualCol * samplesPerCol;
         float minVal = 0.0f, maxVal = 0.0f, energy = 0.0f;
+        int count = 0;
 
         for (int i = 0; i < samplesPerCol && (startIdx + i) < numSamples; ++i)
         {
@@ -95,9 +99,10 @@ void WaveformDisplay::paint(juce::Graphics& g)
             minVal = std::min(minVal, v);
             maxVal = std::max(maxVal, v);
             energy += v * v;
+            count++;
         }
 
-        const float rms = std::sqrt(energy / (float)samplesPerCol);
+        const float rms = (count > 0) ? std::sqrt(energy / (float)count) : 0.0f;
         const float x = (float)col * stepX + stepX * 0.5f;
         const float yMin = (h * 0.5f) - (minVal * h * 0.45f);
         const float yMax = (h * 0.5f) - (maxVal * h * 0.45f);
@@ -130,10 +135,16 @@ void WaveformDisplay::paint(juce::Graphics& g)
     const float liveLEnd       = juce::jlimit(0.01f, 1.0f, loopEnd + modLEnd);
     const float liveXFade      = juce::jlimit(0.0f, 0.5f, crossfade + modXFade);
 
-    const float sX = startRatio * w;
-    const float eX = endRatio * w;
-    const float liveSX = liveStartRatio * w;
-    const float liveEX = liveEndRatio * w;
+    auto ratioToX = [&](float ratio) {
+        return (ratio - viewStartRatio) * zoomLevel * w;
+    };
+
+    const float sX = ratioToX(startRatio);
+    const float eX = ratioToX(endRatio);
+    const float liveSX = ratioToX(liveStartRatio);
+    const float liveEX = ratioToX(liveEndRatio);
+    const float liveLSX = ratioToX(liveLStart);
+    const float liveLEX = ratioToX(liveLEnd);
 
     // 静的ベース Start マーカー
     g.setColour(juce::Colours::yellow.withAlpha(0.6f));
@@ -172,10 +183,10 @@ void WaveformDisplay::paint(juce::Graphics& g)
         const float lpMarginY = h * 0.175f;
         const float lpH       = h * 0.65f;
 
-        const float lsX = liveLStart * w;
-        const float leX = liveLEnd * w;
+        const float lsX = liveLSX;
+        const float leX = liveLEX;
         const float lpLenR = liveLEnd - liveLStart;
-        const float xfW = (liveXFade * lpLenR) * w;
+        const float xfW = (liveXFade * lpLenR) * zoomLevel * w;
         const float xfX = leX - xfW;
 
         // X-Fade フェードオーバーラップ領域をグラデーション描画
@@ -189,6 +200,20 @@ void WaveformDisplay::paint(juce::Graphics& g)
 
         g.fillEllipse(lsX - 3.5f, lpMarginY - 3.0f, 7.0f, 7.0f);
         g.fillEllipse(leX - 3.5f, lpMarginY - 3.0f, 7.0f, 7.0f);
+    }
+
+    // 5. ズーム時のスクロールバー描画
+    if (zoomLevel > 1.001f)
+    {
+        const float sbHeight = 12.0f;
+        const float sbY = h - sbHeight;
+        g.setColour(juce::Colours::black.withAlpha(0.3f));
+        g.fillRect(0.0f, sbY, w, sbHeight);
+        
+        const float thumbW = std::max(20.0f, w / zoomLevel);
+        const float thumbX = viewStartRatio * w; 
+        g.setColour(juce::Colours::white.withAlpha(0.5f));
+        g.fillRoundedRectangle(thumbX, sbY + 2.0f, thumbW, sbHeight - 4.0f, 4.0f);
     }
 }
 
@@ -204,7 +229,9 @@ float WaveformDisplay::findZeroCrossingRatio(float targetRatio) const noexcept
     if (!samples) return targetRatio;
 
     const int targetIdx = juce::jlimit(0, numSamples - 1, (int)(targetRatio * (float)numSamples));
-    const int searchRange = std::min(2048, numSamples / 10);
+    
+    // Zoom in = smaller search range (disables snapping visually when zoomed heavily for sample-accurate edits)
+    const int searchRange = std::min(2048, (int)(numSamples / (10.0f * zoomLevel)));
 
     int bestIdx = targetIdx;
 
@@ -258,6 +285,14 @@ void WaveformDisplay::mouseDown(const juce::MouseEvent& e)
 {
     if (e.mods.isPopupMenu() || e.mods.isRightButtonDown())
     {
+        if (zoomLevel > 1.001f)
+        {
+            zoomLevel = 1.0f;
+            viewStartRatio = 0.0f;
+            repaint();
+            return;
+        }
+
         if (currentSlot && currentSlot->isReady())
         {
             const int slotNum = activeSlot + 1;
@@ -296,10 +331,21 @@ void WaveformDisplay::mouseDown(const juce::MouseEvent& e)
     const float loopEnd    = getParamFloat("loopEnd_" + s, 0.7f);
     const bool isLooping   = getParamFloat("isLooping_" + s, 0.0f) > 0.5f;
 
-    const float sX  = startRatio * w;
-    const float eX  = endRatio * w;
-    const float lsX = loopStart * w;
-    const float leX = loopEnd * w;
+    auto ratioToX = [&](float ratio) { return (ratio - viewStartRatio) * zoomLevel * w; };
+
+    const float sX  = ratioToX(startRatio);
+    const float eX  = ratioToX(endRatio);
+    const float lsX = ratioToX(loopStart);
+    const float leX = ratioToX(loopEnd);
+
+    if (zoomLevel > 1.001f && e.y >= getHeight() - 12)
+    {
+        activeDrag = DragTarget::Scrollbar;
+        viewStartRatio = (e.x - (w / zoomLevel) * 0.5f) / w;
+        viewStartRatio = juce::jlimit(0.0f, std::max(0.0f, 1.0f - 1.0f / zoomLevel), viewStartRatio);
+        repaint();
+        return;
+    }
 
     if (isLooping && std::abs(mouseX - lsX) < 8.0f) activeDrag = DragTarget::LoopStart;
     else if (isLooping && std::abs(mouseX - leX) < 8.0f) activeDrag = DragTarget::LoopEnd;
@@ -313,7 +359,18 @@ void WaveformDisplay::mouseDrag(const juce::MouseEvent& e)
     if (activeDrag == DragTarget::None || !currentSlot || !vts) return;
 
     const float w = (float)getWidth();
-    float normX = juce::jlimit(0.0f, 1.0f, (float)e.x / w);
+    
+    if (activeDrag == DragTarget::Scrollbar)
+    {
+        viewStartRatio = (e.x - (w / zoomLevel) * 0.5f) / w;
+        viewStartRatio = juce::jlimit(0.0f, std::max(0.0f, 1.0f - 1.0f / zoomLevel), viewStartRatio);
+        repaint();
+        return;
+    }
+
+    float normX = (e.x / w) / zoomLevel + viewStartRatio;
+    normX = juce::jlimit(0.0f, 1.0f, normX);
+    
     const juce::String s = juce::String(activeSlot);
 
     auto getParamFloat = [this](const juce::String& name, float def) {
@@ -356,6 +413,30 @@ void WaveformDisplay::mouseDrag(const juce::MouseEvent& e)
 void WaveformDisplay::mouseUp(const juce::MouseEvent&)
 {
     activeDrag = DragTarget::None;
+}
+
+void WaveformDisplay::mouseWheelMove(const juce::MouseEvent& e, const juce::MouseWheelDetails& wheel)
+{
+    if (!currentSlot || !currentSlot->isReady()) return;
+
+    if (wheel.deltaY != 0.0f)
+    {
+        float preZoomRatio = viewStartRatio + (e.x / (float)getWidth()) / zoomLevel;
+        
+        zoomLevel *= (1.0f + wheel.deltaY * 2.5f);
+        zoomLevel = juce::jlimit(1.0f, 100000.0f, zoomLevel); // allow extreme zoom for sample-accuracy
+        
+        viewStartRatio = preZoomRatio - (e.x / (float)getWidth()) / zoomLevel;
+        viewStartRatio = juce::jlimit(0.0f, std::max(0.0f, 1.0f - 1.0f / zoomLevel), viewStartRatio);
+        
+        repaint();
+    }
+    else if (wheel.deltaX != 0.0f)
+    {
+        viewStartRatio -= wheel.deltaX * 0.5f / zoomLevel;
+        viewStartRatio = juce::jlimit(0.0f, std::max(0.0f, 1.0f - 1.0f / zoomLevel), viewStartRatio);
+        repaint();
+    }
 }
 
 void WaveformDisplay::timerCallback()

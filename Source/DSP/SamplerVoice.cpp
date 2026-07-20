@@ -7,6 +7,8 @@
 void PicoVoice::startNote(int midiNoteNumber, float noteVelocity, int slotIdx,
                           const SampleSlot& slot, const SamplerVoiceParams& p) noexcept
 {
+    bool isLegato = p.portaEnable && active && !releasing && (slotIndex == slotIdx);
+
     midiNote = midiNoteNumber;
     velocity = noteVelocity;
     slotIndex = slotIdx;
@@ -32,56 +34,57 @@ void PicoVoice::startNote(int midiNoteNumber, float noteVelocity, int slotIdx,
         return;
     }
 
-    if (p.portaEnable && p.portaStartMidiNote >= 0.0f)
+    if (!isLegato)
     {
-        float startSemis = 0.0f;
-        if (p.isStretchMode)
+        if (p.portaEnable && p.portaStartMidiNote >= 0.0f)
         {
-            const int anchorSemis = juce::jlimit(-24, 24, stOffset);
-            startSemis = p.portaStartMidiNote - (float)effectiveRoot + (p.octave * 12) + p.semitone - anchorSemis + (p.fineTune / 100.0f);
+            float startSemis = 0.0f;
+            if (p.isStretchMode)
+            {
+                const int anchorSemis = juce::jlimit(-24, 24, stOffset);
+                startSemis = p.portaStartMidiNote - (float)effectiveRoot + (p.octave * 12) + p.semitone - anchorSemis + (p.fineTune / 100.0f);
+            }
+            else
+            {
+                startSemis = p.portaStartMidiNote - (float)effectiveRoot + (p.octave * 12) + p.semitone + (p.fineTune / 100.0f);
+            }
+            currentPitchRatio = std::pow(2.0, (double)startSemis / 12.0);
         }
         else
         {
-            startSemis = p.portaStartMidiNote - (float)effectiveRoot + (p.octave * 12) + p.semitone + (p.fineTune / 100.0f);
+            if (p.isStretchMode)
+            {
+                const int anchorSemis = juce::jlimit(-24, 24, stOffset);
+                currentPitchRatio = std::pow(2.0, (double)(stOffset - anchorSemis + (p.fineTune / 100.0f)) / 12.0);
+            }
+            else
+            {
+                currentPitchRatio = std::pow(2.0, (double)(stOffset + (p.fineTune / 100.0f)) / 12.0);
+            }
         }
-        currentPitchRatio = std::pow(2.0, (double)startSemis / 12.0);
-    }
-    else
-    {
-        if (p.isStretchMode)
+
+        const int bufLen = buffer->getNumSamples();
+        const float startR = juce::jlimit(0.0f, 1.0f, p.sampleStartRatio);
+
+        if (p.isReverse)
         {
-            const int anchorSemis = juce::jlimit(-24, 24, stOffset);
-            currentPitchRatio = std::pow(2.0, (double)(stOffset - anchorSemis + (p.fineTune / 100.0f)) / 12.0);
+            readPosition = (double)juce::jlimit(0.0f, (float)(bufLen - 1), (float)bufLen * (1.0f - startR));
         }
         else
         {
-            currentPitchRatio = std::pow(2.0, (double)(stOffset + (p.fineTune / 100.0f)) / 12.0);
+            readPosition = (double)juce::jlimit(0.0f, (float)(bufLen - 1), (float)bufLen * startR);
         }
-    }
 
-    const int bufLen = buffer->getNumSamples();
-    const float startR = juce::jlimit(0.0f, 1.0f, p.sampleStartRatio);
-    const float endR   = juce::jlimit(0.01f, 1.0f, p.sampleEndRatio);
-
-    if (p.isReverse)
-    {
-        // Reverse ON: 画面上の左端 (sampleStartRatio) はファイル末尾側の 1.0 - startR
-        readPosition = (double)juce::jlimit(0.0f, (float)(bufLen - 1), (float)bufLen * (1.0f - startR));
-    }
-    else
-    {
-        readPosition = (double)juce::jlimit(0.0f, (float)(bufLen - 1), (float)bufLen * startR);
-    }
-
-    if (p.attack <= 0.005f)
-    {
-        envStage = EnvStage::Decay;
-        envValue = 1.0f;
-    }
-    else
-    {
-        envStage = EnvStage::Attack;
-        envValue = 0.0f;
+        if (p.attack <= 0.005f)
+        {
+            envStage = EnvStage::Decay;
+            envValue = 1.0f;
+        }
+        else
+        {
+            envStage = EnvStage::Attack;
+            envValue = 0.0f;
+        }
     }
 }
 

@@ -36,6 +36,7 @@ public:
     void mouseDown(const juce::MouseEvent& e) override;
     void mouseDrag(const juce::MouseEvent& e) override;
     void mouseUp(const juce::MouseEvent& e) override;
+    void mouseWheelMove(const juce::MouseEvent& e, const juce::MouseWheelDetails& wheel) override;
 
     float findZeroCrossingRatio(float targetRatio) const noexcept;
 
@@ -49,8 +50,12 @@ private:
     const ModMatrix* modMatrix = nullptr;
     int activeSlot = 0;
 
-    enum class DragTarget { None, SampleStart, SampleEnd, LoopStart, LoopEnd };
+    enum class DragTarget { None, SampleStart, SampleEnd, LoopStart, LoopEnd, Scrollbar };
     DragTarget activeDrag = DragTarget::None;
+
+    float zoomLevel = 1.0f;
+    float viewStartRatio = 0.0f;
+    float scrollDragStartRatio = 0.0f;
 
     float animPhase = 0.0f;
 
