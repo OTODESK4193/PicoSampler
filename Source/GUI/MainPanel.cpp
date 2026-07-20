@@ -170,21 +170,6 @@ MainPanel::MainPanel(juce::AudioProcessorValueTreeState& apvts) : vts(apvts)
     knobSlotVolume.knob.setDoubleClickReturnValue(true, 0.0);   // 0 dB = ユニティ
     knobSlotPan.knob.setDoubleClickReturnValue(true, 0.0);      // センター
 
-    // Pan は L/C/R が一目で分かる表記にする (-1.00 では向きが直感的でない)
-    knobSlotPan.knob.textFromValueFunction = [](double v)
-    {
-        if (std::abs(v) < 0.005) return juce::String("C");
-        const int amount = (int)std::round(std::abs(v) * 100.0);
-        return (v < 0.0 ? juce::String("L") : juce::String("R")) + juce::String(amount);
-    };
-
-    // スロット音量は dB 表示 (0.00 のような生値では単位が伝わらない)
-    knobSlotVolume.knob.textFromValueFunction = [](double v)
-    {
-        if (v <= -35.99) return juce::String("-inf");
-        return juce::String(v, 1) + " dB";
-    };
-
     addAndMakeVisible(knobSampleStart);
     addAndMakeVisible(knobSampleEnd);
     addAndMakeVisible(knobLoopStart);
@@ -268,6 +253,28 @@ void MainPanel::bindSlotParameters(int slotIdx)
         lk->knob.setCoarseSensitivity(200);   // Ctrl: 端から端まで一気に
         lk->knob.setFineSensitivity(16000);   // Shift: サンプル単位の微調整
     }
+
+    // ------------------------------------------------------------------
+    // 表示関数はここ (bind の後) で設定すること。
+    // SliderParameterAttachment はコンストラクタ内で
+    // slider.textFromValueFunction を自前のものへ上書きするため、
+    // MainPanel のコンストラクタで設定しても bind 時に潰される。
+    // ------------------------------------------------------------------
+
+    // Pan は L/C/R 表記 (-1.00 では向きが直感的でない)
+    knobSlotPan.knob.textFromValueFunction = [](double v)
+    {
+        if (std::abs(v) < 0.005) return juce::String("C");
+        const int amount = (int)std::round(std::abs(v) * 100.0);
+        return (v < 0.0 ? juce::String("L") : juce::String("R")) + juce::String(amount);
+    };
+
+    // スロット音量は dB 表記 (生値では単位が伝わらない)
+    knobSlotVolume.knob.textFromValueFunction = [](double v)
+    {
+        if (v <= -35.99) return juce::String("-inf");
+        return juce::String(v, 1) + " dB";
+    };
 
     knobSlotPan.knob.updateText();
     knobSlotVolume.knob.updateText();
