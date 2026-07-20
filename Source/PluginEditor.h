@@ -31,6 +31,10 @@ private:
     void setActiveTab(int tabIndex);
     void styleTabButton(juce::TextButton& b, bool active);
 
+    // プリセット読込 / INIT のようにパラメータが総入れ替えされた後、
+    // GUI の状態表示をまとめて作り直す
+    void rebindActiveSlot();
+
     PicoSamplerAudioProcessor& audioProcessor;
     ArcDialLookAndFeel lookAndFeel;
 

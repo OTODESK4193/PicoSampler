@@ -63,9 +63,14 @@ void WaveformDisplay::paint(juce::Graphics& g)
         return;
     }
 
+    // ローダースレッドがバッファを差し替えても解放済みメモリを読まないよう保持する。
+    // (isReady() を見た直後に clear()/loadFromFile() が走るとポインタが無効になる)
+    const SampleSlot::ReadGuard slotGuard(*currentSlot);
+    if (!slotGuard.isValid()) return;
+
     const auto& buffer = currentSlot->getOriginalBuffer();
     const int numSamples = buffer.getNumSamples();
-    if (numSamples == 0) return;
+    if (numSamples == 0 || buffer.getNumChannels() < 1) return;
 
     const float* samples = buffer.getReadPointer(0);
     if (!samples) return;
@@ -261,11 +266,14 @@ void WaveformDisplay::syncUiFromParams() noexcept
 
 float WaveformDisplay::findZeroCrossingRatio(float targetRatio) const noexcept
 {
-    if (!currentSlot || !currentSlot->isReady()) return targetRatio;
+    if (!currentSlot) return targetRatio;
+
+    const SampleSlot::ReadGuard slotGuard(*currentSlot);
+    if (!slotGuard.isValid()) return targetRatio;
 
     const auto& buffer = currentSlot->getOriginalBuffer();
     const int numSamples = buffer.getNumSamples();
-    if (numSamples < 2) return targetRatio;
+    if (numSamples < 2 || buffer.getNumChannels() < 1) return targetRatio;
 
     const float* samples = buffer.getReadPointer(0);
     if (!samples) return targetRatio;

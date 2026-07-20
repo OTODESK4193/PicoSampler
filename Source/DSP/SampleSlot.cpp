@@ -3,13 +3,34 @@
 // スロット管理実装 (SignalsmithStretch高音質化 & 49アンカー配置)
 // ==========================================
 #include "SampleSlot.h"
+#include <thread>
 #include "PitchAnalyzer.h"
+
+void SampleSlot::beginBufferWrite() noexcept
+{
+    // まず新規の読み手を締め出す
+    ready.store(false, std::memory_order_release);
+
+    // 既に読み始めている手が抜けるのを待つ。
+    // 実際には 1 オーディオブロック分 (数ミリ秒) で必ず抜けるため、
+    // ここでの待機は一瞬。念のため上限を設けて無限ループは避ける。
+    for (int spin = 0; spin < 2000; ++spin)
+    {
+        if (readerCount.load(std::memory_order_acquire) == 0)
+            return;
+
+        if (spin < 64) std::this_thread::yield();
+        else           juce::Thread::sleep(1);
+    }
+
+    jassertfalse; // 読み手が抜けない = どこかでガードを持ち逃げしている
+}
 
 bool SampleSlot::loadFromFile(const juce::File& file, int stretchAlgo)
 {
     if (!file.existsAsFile()) return false;
 
-    ready.store(false, std::memory_order_release);
+    beginBufferWrite();
     analyzing.store(true, std::memory_order_release);
 
     juce::AudioFormatManager formatManager;
@@ -52,7 +73,7 @@ void SampleSlot::reanalyze(int materialMode, int rootKeyOverride, int stretchAlg
 {
     if (originalBuffer.getNumSamples() < 4) return;
 
-    ready.store(false, std::memory_order_release);
+    beginBufferWrite();
     analyzing.store(true, std::memory_order_release);
 
     if (rootKeyOverride >= 0)
@@ -139,7 +160,7 @@ const juce::AudioBuffer<float>* SampleSlot::getAnchorBuffer(int stOffset) const 
 
 void SampleSlot::clear()
 {
-    ready.store(false, std::memory_order_release);
+    beginBufferWrite();
     analyzing.store(false, std::memory_order_release);
     originalBuffer.setSize(0, 0);
     for (auto& b : anchorBuffers) b.setSize(0, 0);
@@ -147,7 +168,9 @@ void SampleSlot::clear()
 
 void SampleSlot::copyFrom(const SampleSlot& other)
 {
-    ready.store(false, std::memory_order_release);
+    if (this == &other) return;   // 自己代入は何もしない
+
+    beginBufferWrite();
     analyzing.store(true, std::memory_order_release);
 
     metadata = other.metadata;

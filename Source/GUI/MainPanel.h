@@ -26,10 +26,25 @@ public:
     ValueKnob& getLoopStartKnob()   { return knobLoopStart.knob; }
     ValueKnob& getLoopEndKnob()     { return knobLoopEnd.knob; }
     ValueKnob& getCrossfadeKnob()   { return knobCrossfade.knob; }
+    ValueKnob& getSlotPanKnob()     { return knobSlotPan.knob; }
+    ValueKnob& getSlotVolumeKnob()  { return knobSlotVolume.knob; }
     ValueKnob& getMasterPitchKnob() { return knobMasterPitch.knob; }
     int getCurrentBoundSlot() const noexcept { return currentBoundSlot; }
 
+    // 束縛済みフラグだけを落とす。次の updateStates() で貼り直される。
+    // bindSlotParameters(-1) を呼ぶと存在しないパラメータID ("sampleStart_-1")
+    // にアタッチしにいってしまうため、必ずこちらを使うこと。
+    void invalidateBinding() noexcept { currentBoundSlot = -1; }
+
 private:
+    // ---- 1段目のレイアウト定数 (paint と resized で共有) ----
+    static constexpr int kNumSampleKnobs = 7;  // Start,End,L-Start,L-End,X-Fade,Pan,Volume
+    static constexpr int kSampleX    = 20;
+    static constexpr int kSampleStep = 62;
+    static constexpr int kToggleX    = 462;   // Loop/Stretch/Reverse/Snap の列
+    static constexpr int kEnvX       = 630;   // ENVELOPE ブロック開始X
+    static constexpr int kEnvStep    = 78;
+
     struct LabeledKnob : public juce::Component
     {
         ValueKnob knob;
@@ -85,6 +100,8 @@ private:
     LabeledKnob knobLoopStart   { "L-Start", PicoColors::peach };
     LabeledKnob knobLoopEnd     { "L-End",   PicoColors::peach };
     LabeledKnob knobCrossfade   { "X-Fade",  PicoColors::peach };
+    LabeledKnob knobSlotPan     { "Pan",     PicoColors::peach };  // スロット毎の定位 (pan_)
+    LabeledKnob knobSlotVolume  { "Volume",  PicoColors::peach };  // スロット毎の音量 (slotGain_)
 
     // PITCH エリア (Root, Octave, Semi, Fine)
     LabeledKnob knobRootKey   { "Root",   PicoColors::lavender };

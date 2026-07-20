@@ -167,12 +167,31 @@ MainPanel::MainPanel(juce::AudioProcessorValueTreeState& apvts) : vts(apvts)
     knobMasterLpf.knob.setDoubleClickReturnValue(true, 20000.0);
     knobOutGain.knob.setDoubleClickReturnValue(true, 0.0);
     knobCeiling.knob.setDoubleClickReturnValue(true, 0.0);
+    knobSlotVolume.knob.setDoubleClickReturnValue(true, 0.0);   // 0 dB = ユニティ
+    knobSlotPan.knob.setDoubleClickReturnValue(true, 0.0);      // センター
+
+    // Pan は L/C/R が一目で分かる表記にする (-1.00 では向きが直感的でない)
+    knobSlotPan.knob.textFromValueFunction = [](double v)
+    {
+        if (std::abs(v) < 0.005) return juce::String("C");
+        const int amount = (int)std::round(std::abs(v) * 100.0);
+        return (v < 0.0 ? juce::String("L") : juce::String("R")) + juce::String(amount);
+    };
+
+    // スロット音量は dB 表示 (0.00 のような生値では単位が伝わらない)
+    knobSlotVolume.knob.textFromValueFunction = [](double v)
+    {
+        if (v <= -35.99) return juce::String("-inf");
+        return juce::String(v, 1) + " dB";
+    };
 
     addAndMakeVisible(knobSampleStart);
     addAndMakeVisible(knobSampleEnd);
     addAndMakeVisible(knobLoopStart);
     addAndMakeVisible(knobLoopEnd);
     addAndMakeVisible(knobCrossfade);
+    addAndMakeVisible(knobSlotPan);
+    addAndMakeVisible(knobSlotVolume);
 
     addAndMakeVisible(knobRootKey);
     addAndMakeVisible(knobOctave);
@@ -230,16 +249,28 @@ void MainPanel::bindSlotParameters(int slotIdx)
     bind(knobLoopStart,   "loopStart");
     bind(knobLoopEnd,     "loopEnd");
     bind(knobCrossfade,   "crossfade");
+    bind(knobSlotPan,     "pan");
+    bind(knobSlotVolume,  "slotGain");
 
-    // Start/End/Loop は連続値パラメータ (interval=0) のため、
-    // JUCE の既定桁数だと表示が暴れる。表示桁とドラッグ解像度を明示指定する。
+    // Start/End/Loop は連続値パラメータ (interval = 0)。
+    // JUCE は interval が 0 だと表示桁を 7 桁に決め打ちするため、
+    // "0.1872500" のように テキスト表示からあふれて "0.18725..." と切れてしまう。
+    //
+    // setNumDecimalPlacesToDisplay() は setNormalisableRange() 側の再計算に
+    // 上書きされる可能性があるので、表示関数そのものを明示指定して確実に固定する。
     for (auto* lk : { &knobSampleStart, &knobSampleEnd, &knobLoopStart, &knobLoopEnd, &knobCrossfade })
     {
         lk->knob.setNumDecimalPlacesToDisplay(4);
+        lk->knob.textFromValueFunction = [](double v) { return juce::String(v, 4); };
+        lk->knob.updateText();
+
         lk->knob.setBaseSensitivity(4000);    // 通常: 高解像度で追い込む
         lk->knob.setCoarseSensitivity(200);   // Ctrl: 端から端まで一気に
         lk->knob.setFineSensitivity(16000);   // Shift: サンプル単位の微調整
     }
+
+    knobSlotPan.knob.updateText();
+    knobSlotVolume.knob.updateText();
 
     bind(knobRootKey,  "rootKey");
     bind(knobOctave,   "octave");
@@ -306,8 +337,8 @@ void MainPanel::paint(juce::Graphics& g)
     drawSectionHeader("ROUTING",       600, 10, 220, PicoColors::rose);
 
     // 1段目: SAMPLE / LOOP, ENVELOPE (Y=80)
-    drawSectionHeader("SAMPLE / LOOP", 20,  80, 480, PicoColors::peach);
-    drawSectionHeader("ENVELOPE",      550, 80, 500, PicoColors::pink);
+    drawSectionHeader("SAMPLE / LOOP", kSampleX, 80, kEnvX - kSampleX - 20, PicoColors::peach);
+    drawSectionHeader("ENVELOPE",      kEnvX,    80, 1060 - kEnvX,          PicoColors::pink);
 
     // 2段目: PITCH, MASTER (Y=206)
     drawSectionHeader("PITCH",         20,  206, 300, PicoColors::lavender);
@@ -335,25 +366,28 @@ void MainPanel::resized()
     const int knobH = 78;
 
     // --- 1段目 ---
-    // SAMPLE / LOOP (5ノブ + 2行2列ボタン)
-    knobSampleStart.setBounds(20 + 0 * 64, knobY1, knobW, knobH);
-    knobSampleEnd.setBounds(20 + 1 * 64,   knobY1, knobW, knobH);
-    knobLoopStart.setBounds(20 + 2 * 64,   knobY1, knobW, knobH);
-    knobLoopEnd.setBounds(20 + 3 * 64,     knobY1, knobW, knobH);
-    knobCrossfade.setBounds(20 + 4 * 64,   knobY1, knobW, knobH);
+    // SAMPLE / LOOP (7ノブ + 2行2列ボタン)
+    // ノブが増えるたびにボタン列と ENVELOPE ブロックを右へずらす。
+    // 座標は MainPanel.h の kSampleX / kToggleX / kEnvX で一元管理。
+    LabeledKnob* const sampleRow[] = { &knobSampleStart, &knobSampleEnd, &knobLoopStart,
+                                       &knobLoopEnd, &knobCrossfade, &knobSlotPan, &knobSlotVolume };
+    static_assert(sizeof(sampleRow) / sizeof(sampleRow[0]) == kNumSampleKnobs, "sampleRow と kNumSampleKnobs が不一致");
 
-    btnLoop.setBounds(345, knobY1 + 4, 66, 24);
-    btnStretch.setBounds(416, knobY1 + 4, 76, 24);
-    btnReverse.setBounds(345, knobY1 + 36, 66, 24);
-    btnSnap.setBounds(416, knobY1 + 36, 66, 24);
+    for (int i = 0; i < kNumSampleKnobs; ++i)
+        sampleRow[i]->setBounds(kSampleX + i * kSampleStep, knobY1, knobW, knobH);
+
+    btnLoop.setBounds   (kToggleX,      knobY1 + 4,  66, 24);
+    btnStretch.setBounds(kToggleX + 72, knobY1 + 4,  72, 24);
+    btnReverse.setBounds(kToggleX,      knobY1 + 36, 66, 24);
+    btnSnap.setBounds   (kToggleX + 72, knobY1 + 36, 66, 24);
 
     // ENVELOPE (4ノブ + LINK ボタン)
-    knobAttack.setBounds(550 + 0 * 82,  knobY1, knobW, knobH);
-    knobDecay.setBounds(550 + 1 * 82,   knobY1, knobW, knobH);
-    knobSustain.setBounds(550 + 2 * 82, knobY1, knobW, knobH);
-    knobRelease.setBounds(550 + 3 * 82, knobY1, knobW, knobH);
+    knobAttack.setBounds (kEnvX + 0 * kEnvStep, knobY1, knobW, knobH);
+    knobDecay.setBounds  (kEnvX + 1 * kEnvStep, knobY1, knobW, knobH);
+    knobSustain.setBounds(kEnvX + 2 * kEnvStep, knobY1, knobW, knobH);
+    knobRelease.setBounds(kEnvX + 3 * kEnvStep, knobY1, knobW, knobH);
 
-    btnLinkEnv.setBounds(885, knobY1 + 24, 56, 24);
+    btnLinkEnv.setBounds(kEnvX + 4 * kEnvStep + 6, knobY1 + 24, 56, 24);
 
     // --- 2段目 ---
     const int knobY2 = 232;

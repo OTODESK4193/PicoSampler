@@ -370,7 +370,11 @@ void PicoSamplerAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
         sp.octave   = (int)slotParamsCache[(size_t)i].octave->load();
         sp.semitone = (int)slotParamsCache[(size_t)i].pitchSt->load() + (int)std::round(effectiveMasterPitch);
         sp.fineTune = slotParamsCache[(size_t)i].fineTune->load() + (effectiveMasterPitch - std::round(effectiveMasterPitch)) * 100.0f;
-        sp.pan      = slotParamsCache[(size_t)i].pan->load();
+        // Pan もモジュレーション対象 (Dst = S1/Pan .. S8/Pan)。
+        // パラメータは -1..+1 なので、変調量もそのままのスケールで加算する。
+        sp.pan      = juce::jlimit(-1.0f, 1.0f,
+                          slotParamsCache[(size_t)i].pan->load()
+                        + modMatrix.get(ModMatrix::DstS1Pan + i));
         sp.slotGainDb = slotParamsCache[(size_t)i].slotGain->load();
 
         const int dstBase = ModMatrix::DstS1Start + i * 5;
@@ -505,17 +509,21 @@ void PicoSamplerAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
 
 void PicoSamplerAudioProcessor::requestLoadFile(int slotIdx, const juce::File& file, bool autoSlice)
 {
-    if (!autoSlice) samplerEngine.getSlot(slotIdx).setAnalyzing(true);
-    else samplerEngine.getSlot(0).setAnalyzing(true);
+    if (slotIdx < 0 || slotIdx >= 8) return;
+    if (!file.existsAsFile()) return;
 
-    const juce::ScopedLock lock(jobLock);
+    // AutoSlice は必ずスロット0を起点に解析する
+    samplerEngine.getSlot(autoSlice ? 0 : slotIdx).setAnalyzing(true);
+
     AsyncLoadJob job;
+    job.type = autoSlice ? JobType::AutoSlice : JobType::Load;
     job.slotIndex = slotIdx;
     job.file = file;
-    job.isAutoSlice = autoSlice;
-    if (autoSlice) {
+    if (autoSlice && pSliceSensitivity != nullptr) {
         job.sensitivity = pSliceSensitivity->load();
     }
+
+    const juce::ScopedLock lock(jobLock);
     pendingJobs.add(job);
 }
 
@@ -525,7 +533,14 @@ void PicoSamplerAudioProcessor::autoSliceFile(const juce::File& file, int stretc
     samplerEngine.getSlot(0).loadFromFile(file, stretchAlgo);
     const auto& slot0 = samplerEngine.getSlot(0);
     const int numSamples = slot0.getOriginalBuffer().getNumSamples();
-    if (numSamples < 100) return;
+    const int numChIn    = slot0.getOriginalBuffer().getNumChannels();
+
+    // チャンネルが無い状態で getReadPointer(0) を呼ぶと未定義動作になる
+    if (numSamples < 100 || numChIn < 1) return;
+
+    // 解析用のサンプルレート。ファイル情報が壊れていても破綻しない値に丸める。
+    const double analysisSR = (slot0.getFileSampleRate() > 1000.0)
+                                ? slot0.getFileSampleRate() : 44100.0;
 
     // 2. 最大エネルギーの計算とトランジェント検出
     std::vector<int> onsetSamples;
@@ -562,7 +577,10 @@ void PicoSamplerAudioProcessor::autoSliceFile(const juce::File& file, int stretc
         
         if (currentEnergy > prevEnergy + threshold && currentEnergy > maxEnergy * 0.05f)
         {
-            const int minSliceDist = (int)juce::jmap(sensitivity, 0.0f, 1.0f, 8820.0f, 441.0f); // 200ms to 10ms based on Sens
+            // 200ms〜10ms を Sens で補間。旧実装は 44.1kHz 決め打ちの
+            // サンプル数だったため、48k/96k のファイルで間隔が狂っていた。
+            const double minSliceMs  = (double)juce::jmap(sensitivity, 0.0f, 1.0f, 200.0f, 10.0f);
+            const int    minSliceDist = juce::jmax(1, (int)(minSliceMs * 0.001 * analysisSR));
             if (onsetSamples.empty() || i - onsetSamples.back() > minSliceDist)
             {
                 int zeroOnset = i;
@@ -612,7 +630,7 @@ void PicoSamplerAudioProcessor::autoSliceFile(const juce::File& file, int stretc
     // 次のトランジェントに食い込まないためのガード。
     // アタックの立ち上がりは検出点より僅かに前から始まっているため、
     // 1ms 手前に退避してからゼロ交差へスナップする。
-    const int guardSamples = juce::jlimit(8, 2048, (int)(slot0.getFileSampleRate() * 0.001));
+    const int guardSamples = juce::jlimit(8, 2048, (int)(analysisSR * 0.001));
 
     const int numSlices = (int)std::min((size_t)8, onsetSamples.size());
 
@@ -672,11 +690,21 @@ void PicoSamplerAudioProcessor::autoSliceFile(const juce::File& file, int stretc
 void PicoSamplerAudioProcessor::reanalyzeSlot(int slotIdx)
 {
     if (slotIdx < 0 || slotIdx >= 8) return;
-    const int rootOverride = (int)slotParamsCache[(size_t)slotIdx].rootKeyOverride->load();
-    const int matMode = (int)apvts.getRawParameterValue("analysisEngine")->load();
-    const int stretchAlgo = (int)pStretchMode->load();
 
-    samplerEngine.getSlot(slotIdx).reanalyze(matMode, rootOverride, stretchAlgo);
+    auto* pRoot = slotParamsCache[(size_t)slotIdx].rootKeyOverride;
+    auto* pMat  = apvts.getRawParameterValue("analysisEngine");
+
+    AsyncLoadJob job;
+    job.type         = JobType::Reanalyze;
+    job.slotIndex    = slotIdx;
+    job.rootOverride = (pRoot != nullptr) ? (int)pRoot->load() : -1;
+    job.materialMode = (pMat  != nullptr) ? (int)pMat->load()  : 0;
+
+    // 解析中インジケータを先に立てておく (GUI が即座に反応する)
+    samplerEngine.getSlot(slotIdx).setAnalyzing(true);
+
+    const juce::ScopedLock lock(jobLock);
+    pendingJobs.add(job);
 }
 
 void PicoSamplerAudioProcessor::clearSlot(int slotIdx)
@@ -688,6 +716,193 @@ void PicoSamplerAudioProcessor::clearSlot(int slotIdx)
 juce::AudioProcessorEditor* PicoSamplerAudioProcessor::createEditor()
 {
     return new PicoSamplerAudioProcessorEditor(*this);
+}
+
+// ======================================================================
+// プリセット
+// ======================================================================
+
+juce::File PicoSamplerAudioProcessor::getPresetRootDirectory()
+{
+    auto dir = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
+                   .getChildFile("PicoSampler")
+                   .getChildFile("Presets");
+
+    if (!dir.exists())
+        dir.createDirectory();
+
+    return dir;
+}
+
+juce::StringArray PicoSamplerAudioProcessor::getPresetCategories()
+{
+    juce::StringArray cats;
+
+    const auto root = getPresetRootDirectory();
+    if (!root.isDirectory()) return cats;
+
+    for (const auto& entry : juce::RangedDirectoryIterator(root, false, "*", juce::File::findDirectories))
+        cats.add(entry.getFile().getFileName());
+
+    cats.sort(true);
+    return cats;
+}
+
+juce::File PicoSamplerAudioProcessor::makePresetFile(const juce::String& category,
+                                                    const juce::String& name) const
+{
+    // ユーザー入力をそのままパスにすると "../" などで任意の場所へ書けてしまう。
+    // ファイル名として安全な文字だけに落としてから結合する。
+    const auto safeCat  = juce::File::createLegalFileName(category.trim());
+    const auto safeName = juce::File::createLegalFileName(name.trim());
+
+    auto dir = getPresetRootDirectory();
+    if (safeCat.isNotEmpty())
+        dir = dir.getChildFile(safeCat);
+
+    return dir.getChildFile(safeName + ".picopreset");
+}
+
+bool PicoSamplerAudioProcessor::savePreset(const juce::String& category,
+                                           const juce::String& name,
+                                           juce::String& errorOut)
+{
+    if (name.trim().isEmpty())
+    {
+        errorOut = "Preset name cannot be empty.";
+        return false;
+    }
+
+    const auto target = makePresetFile(category, name);
+
+    if (juce::File::createLegalFileName(name.trim()).isEmpty())
+    {
+        errorOut = "Preset name contains no usable characters.";
+        return false;
+    }
+
+    if (!target.getParentDirectory().createDirectory())
+    {
+        errorOut = "Could not create the preset folder.";
+        return false;
+    }
+
+    juce::XmlElement xml("PicoSamplerPreset");
+    xml.setAttribute("version", 1);
+    xml.setAttribute("name", name.trim());
+    xml.setAttribute("category", category.trim());
+
+    if (auto apvtsXml = apvts.copyState().createXml())
+        xml.addChildElement(apvtsXml.release());
+
+    auto* slotsXml = new juce::XmlElement("LoadedSlots");
+    for (int i = 0; i < 8; ++i)
+    {
+        auto* sXml = new juce::XmlElement("Slot");
+        sXml->setAttribute("index", i);
+        sXml->setAttribute("path", samplerEngine.getSlot(i).getMetadata().filePath);
+        sXml->setAttribute("fileName", samplerEngine.getSlot(i).getMetadata().fileName);
+        slotsXml->addChildElement(sXml);
+    }
+    xml.addChildElement(slotsXml);
+
+    if (!xml.writeTo(target))
+    {
+        errorOut = "Could not write the preset file. Check folder permissions.";
+        return false;
+    }
+
+    return true;
+}
+
+bool PicoSamplerAudioProcessor::loadPreset(const juce::File& presetFile,
+                                           juce::StringArray& missingFilesOut,
+                                           juce::String& errorOut)
+{
+    missingFilesOut.clear();
+
+    if (!presetFile.existsAsFile())
+    {
+        errorOut = "Preset file not found.";
+        return false;
+    }
+
+    auto xml = juce::parseXML(presetFile);
+    if (xml == nullptr || !xml->hasTagName("PicoSamplerPreset"))
+    {
+        errorOut = "This file is not a valid PicoSampler preset.";
+        return false;
+    }
+
+    if (auto* paramXml = xml->getChildByName(apvts.state.getType().toString()))
+        apvts.replaceState(juce::ValueTree::fromXml(*paramXml));
+
+    // 先に全スロットを空にしてから、存在するファイルだけロード要求を積む。
+    // (プリセットで未使用のスロットに前の音が残らないようにする)
+    {
+        const juce::ScopedLock lock(jobLock);
+        pendingJobs.clear();
+    }
+
+    for (int i = 0; i < 8; ++i)
+        samplerEngine.getSlot(i).clear();
+
+    if (auto* slotsXml = xml->getChildByName("LoadedSlots"))
+    {
+        for (auto* sXml : slotsXml->getChildIterator())
+        {
+            if (!sXml->hasTagName("Slot")) continue;
+
+            const int idx = sXml->getIntAttribute("index", -1);
+            const juce::String path = sXml->getStringAttribute("path");
+            if (idx < 0 || idx >= 8 || path.isEmpty()) continue;
+
+            const juce::File file(path);
+            if (file.existsAsFile())
+            {
+                samplerEngine.getSlot(idx).setAnalyzing(true);
+                const juce::ScopedLock lock(jobLock);
+                AsyncLoadJob job;
+                job.slotIndex = idx;
+                job.file = file;
+                pendingJobs.add(job);
+            }
+            else
+            {
+                // ファイルが移動/削除されている。スロットは空のまま続行する。
+                const auto shown = sXml->getStringAttribute("fileName", file.getFileName());
+                missingFilesOut.add(shown.isNotEmpty() ? shown : path);
+            }
+        }
+    }
+
+    return true;
+}
+
+void PicoSamplerAudioProcessor::resetToInitState()
+{
+    // 1. 保留中のロードを破棄 (INIT 後に古いサンプルが読み込まれるのを防ぐ)
+    {
+        const juce::ScopedLock lock(jobLock);
+        pendingJobs.clear();
+    }
+
+    // 2. 全スロットのサンプルを消去
+    for (int i = 0; i < 8; ++i)
+        samplerEngine.getSlot(i).clear();
+
+    // 3. 全パラメータを既定値へ
+    //    ホストのオートメーション記録と整合させるため、必ず
+    //    beginChangeGesture / endChangeGesture で挟む。
+    for (auto* param : getParameters())
+    {
+        if (auto* ranged = dynamic_cast<juce::RangedAudioParameter*>(param))
+        {
+            ranged->beginChangeGesture();
+            ranged->setValueNotifyingHost(ranged->getDefaultValue());
+            ranged->endChangeGesture();
+        }
+    }
 }
 
 void PicoSamplerAudioProcessor::getStateInformation(juce::MemoryBlock& destData)
@@ -742,7 +957,16 @@ void PicoSamplerAudioProcessor::setStateInformation(const void* data, int sizeIn
                         juce::File file(path);
                         if (file.existsAsFile())
                         {
-                            pendingJobs.add({ idx, file });
+                            // NOTE: 集約初期化 { idx, file } は AsyncLoadJob の
+                            // 先頭メンバが JobType になったため使えない。
+                            // (idx が type に入ってしまう) 必ず明示代入すること。
+                            AsyncLoadJob job;
+                            job.type = JobType::Load;
+                            job.slotIndex = idx;
+                            job.file = file;
+                            pendingJobs.add(job);
+
+                            samplerEngine.getSlot(idx).setAnalyzing(true);
                         }
                     }
                 }
@@ -774,11 +998,28 @@ void PicoSamplerAudioProcessor::run()
 
         if (hasJob)
         {
-            const int stretchAlgo = (int)pStretchMode->load();
-            if (job.isAutoSlice) {
+            const int stretchAlgo = (pStretchMode != nullptr) ? (int)pStretchMode->load() : 3;
+
+            switch (job.type)
+            {
+            case JobType::AutoSlice:
                 autoSliceFile(job.file, stretchAlgo, job.sensitivity);
-            } else {
-                samplerEngine.getSlot(job.slotIndex).loadFromFile(job.file, stretchAlgo);
+                break;
+
+            case JobType::Reanalyze:
+                samplerEngine.getSlot(job.slotIndex)
+                             .reanalyze(job.materialMode, job.rootOverride, stretchAlgo);
+                samplerEngine.getSlot(job.slotIndex).setAnalyzing(false);
+                break;
+
+            case JobType::Load:
+            default:
+                if (!samplerEngine.getSlot(job.slotIndex).loadFromFile(job.file, stretchAlgo))
+                {
+                    // 読み込み失敗時に「解析中...」が residual で残らないようにする
+                    samplerEngine.getSlot(job.slotIndex).setAnalyzing(false);
+                }
+                break;
             }
         }
         else

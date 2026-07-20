@@ -73,6 +73,81 @@ PicoSamplerAudioProcessorEditor::PicoSamplerAudioProcessorEditor(PicoSamplerAudi
     presetBrowser.setVisible(false);
     addAndMakeVisible(presetBrowser);
 
+    // ---------------- プリセットブラウザ配線 ----------------
+    presetBrowser.getCategories = []
+    {
+        return PicoSamplerAudioProcessor::getPresetCategories();
+    };
+
+    presetBrowser.getPresetsForCategory = [](juce::String category)
+    {
+        juce::Array<juce::File> out;
+
+        const auto root = PicoSamplerAudioProcessor::getPresetRootDirectory();
+        if (!root.isDirectory()) return out;
+
+        // category が空 = "All" 選択時。サブフォルダも含めて再帰的に集める。
+        const auto searchDir = category.isEmpty() ? root : root.getChildFile(category);
+        if (!searchDir.isDirectory()) return out;
+
+        for (const auto& e : juce::RangedDirectoryIterator(searchDir,
+                                                           category.isEmpty(),
+                                                           "*.picopreset",
+                                                           juce::File::findFiles))
+            out.add(e.getFile());
+
+        // 表示順を安定させる (OS のファイル列挙順に依存させない)
+        struct ByName {
+            static int compareElements(const juce::File& a, const juce::File& b) {
+                return a.getFileNameWithoutExtension()
+                        .compareIgnoreCase(b.getFileNameWithoutExtension());
+            }
+        };
+        ByName sorter;
+        out.sort(sorter);
+        return out;
+    };
+
+    presetBrowser.onSaveRequested = [this](juce::String category, juce::String name)
+    {
+        juce::String error;
+        if (!audioProcessor.savePreset(category, name, error))
+            presetBrowser.showMessage("Save Failed", error);
+    };
+
+    presetBrowser.onPresetChosen = [this](juce::File file)
+    {
+        juce::StringArray missing;
+        juce::String error;
+
+        if (!audioProcessor.loadPreset(file, missing, error))
+        {
+            presetBrowser.showMessage("Load Failed", error);
+            return;
+        }
+
+        // パラメータが総入れ替えされるので、GUI の束縛もスロットに合わせ直す
+        rebindActiveSlot();
+
+        if (!missing.isEmpty())
+        {
+            presetBrowser.showMessage(
+                "Missing Samples",
+                "The preset loaded, but these sample files could not be found and "
+                "their slots are empty:\n\n" + missing.joinIntoString("\n"));
+        }
+
+        presetBrowser.setVisible(false);
+    };
+
+    presetBrowser.onInitConfirmed = [this]
+    {
+        audioProcessor.resetToInitState();
+        rebindActiveSlot();
+        presetBrowser.setVisible(false);
+        repaint();
+    };
+
     waveDisplay.setVisualizerData(&p.getVisualizerData());
 
     // 波形エリア D&D & Clear
@@ -226,6 +301,25 @@ void PicoSamplerAudioProcessorEditor::resized()
     presetBrowser.setBounds(0, 356, 1080, 344);
 }
 
+void PicoSamplerAudioProcessorEditor::rebindActiveSlot()
+{
+    // MainPanel は「同じスロットなら何もしない」最適化が入っているため、
+    // 一度別の値に落としてから貼り直させる。
+    mainPanel.invalidateBinding();
+    mainPanel.updateStates();
+    arpPanel.updateFilterUIState();
+
+    auto* pActive = audioProcessor.getAPVTS().getRawParameterValue("activeSlot");
+    const int activeIdx = pActive ? juce::jlimit(0, 7, (int)pActive->load()) : 0;
+
+    waveDisplay.setActiveSlotIndex(activeIdx);
+    waveDisplay.setSampleSlot(&audioProcessor.getSamplerEngine().getSlot(activeIdx));
+    waveDisplay.setZoomLevel(1.0f);
+    waveDisplay.repaint();
+
+    repaint();
+}
+
 void PicoSamplerAudioProcessorEditor::timerCallback()
 {
     auto* pActive = audioProcessor.getAPVTS().getRawParameterValue("activeSlot");
@@ -319,6 +413,11 @@ void PicoSamplerAudioProcessorEditor::timerCallback()
     updateKnobProps(mainPanel.getLoopStartKnob(),   ModMatrix::DstS1LStart + boundSlot * 5);
     updateKnobProps(mainPanel.getLoopEndKnob(),     ModMatrix::DstS1LEnd + boundSlot * 5);
     updateKnobProps(mainPanel.getCrossfadeKnob(),   ModMatrix::DstS1XFade + boundSlot * 5);
+
+    // Pan は Start..X-Fade の 5個ブロックとは別に、末尾へ 8個まとめて追加してある
+    // (既存プロジェクトのアサイン先番号をずらさないため) ので stride は 1。
+    updateKnobProps(mainPanel.getSlotPanKnob(),     ModMatrix::DstS1Pan + boundSlot);
+
     updateKnobProps(mainPanel.getMasterPitchKnob(), ModMatrix::DstMasterPitch);
 
     // ArpPanel ノブ範囲更新

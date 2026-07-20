@@ -64,6 +64,17 @@ public:
         DstFrzSize, DstFrzFeedback, DstFrzDamp,
         DstRevDecay, DstRevShimmer, DstRevDamp, DstRevMod,
 
+        // ---------------------------------------------------------------
+        // Slot 1..8 Pan (8個)
+        //
+        // 【重要】新しい行き先は必ず NumDsts の直前に追記すること。
+        // Dst の値はプリセットや DAW セッションに「番号」として保存される。
+        // 途中に挿入すると既存プロジェクトのアサイン先が全部ズレる。
+        // (そのため Pan は S1..S8 の他のノブとは離れた位置にある)
+        // ---------------------------------------------------------------
+        DstS1Pan, DstS2Pan, DstS3Pan, DstS4Pan,
+        DstS5Pan, DstS6Pan, DstS7Pan, DstS8Pan,
+
         NumDsts
     };
 
@@ -126,6 +137,10 @@ public:
         list.add("Reverb Shimmer");
         list.add("Reverb Damp");
         list.add("Reverb Mod");
+
+        // Dst enum の並びと 1:1 で対応させること (末尾に追記)
+        for (int i = 1; i <= 8; ++i)
+            list.add("S" + juce::String(i) + "/Pan");
 
         return list;
     }

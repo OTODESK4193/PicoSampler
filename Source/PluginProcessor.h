@@ -52,6 +52,23 @@ public:
     void reanalyzeSlot(int slotIdx); // ★ スロットの再解析・再配置
     void clearSlot(int slotIdx);     // ★ スロットの全消去・初期化
 
+    // ---- プリセット ----
+    // プリセットは APVTS の全パラメータ + 各スロットのサンプルファイルパスを
+    // XML で保存する。音声データ自体は埋め込まないため、元ファイルを移動/削除
+    // すると読み込み時にそのスロットだけ空になる (その旨を呼び出し側へ返す)。
+    static juce::File getPresetRootDirectory();
+    static juce::StringArray getPresetCategories();
+
+    juce::File makePresetFile(const juce::String& category, const juce::String& name) const;
+
+    bool savePreset(const juce::String& category, const juce::String& name, juce::String& errorOut);
+
+    // 戻り値: 読み込み成功可否。missingFilesOut に見つからなかったサンプル名が入る。
+    bool loadPreset(const juce::File& presetFile, juce::StringArray& missingFilesOut, juce::String& errorOut);
+
+    // 全スロットのサンプルを破棄し、全パラメータを既定値へ戻す
+    void resetToInitState();
+
     juce::AudioProcessorValueTreeState& getAPVTS() { return apvts; }
     SamplerEngine& getSamplerEngine() { return samplerEngine; }
     ModMatrix& getModMatrix() { return modMatrix; }
@@ -195,12 +212,19 @@ private:
     juce::LinearSmoothedValue<float> smoothedReso   { 0.707f };
     juce::LinearSmoothedValue<float> smoothedGain   { 1.0f };
 
+    // ローダースレッドへ渡す仕事。
+    // Reanalyze は 49 本のアンカーバッファを作り直すため数秒かかる。
+    // メッセージスレッドで実行すると GUI が固まるので必ずここへ積む。
+    enum class JobType { Load, AutoSlice, Reanalyze };
+
     struct AsyncLoadJob
     {
+        JobType type = JobType::Load;
         int slotIndex = 0;
         juce::File file;
-        bool isAutoSlice = false;
         float sensitivity = 0.5f;
+        int materialMode = 0;
+        int rootOverride = -1;
     };
     juce::Array<AsyncLoadJob> pendingJobs;
     juce::CriticalSection jobLock;

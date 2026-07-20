@@ -54,11 +54,61 @@ public:
 
     double getFileSampleRate() const noexcept { return metadata.fileSampleRate; }
 
+    // ==================================================================
+    // オーディオスレッド用リードガード
+    //
+    // 【背景】
+    // ボイスは isReady() を確認したあと originalBuffer / anchorBuffers の
+    // 生ポインタを掴んだまま 1 ブロック分を読み続ける。
+    // その最中にローダースレッドが clear() / loadFromFile() / copyFrom() を
+    // 呼ぶとバッファが解放・再確保され、解放済みメモリを読んでクラッシュする。
+    //
+    // 【対策】
+    // 読み手はガードで readerCount を増やしてから ready を再確認する。
+    // 書き手は ready=false にした後、readerCount が 0 になるまで待ってから
+    // バッファを触る。オーディオスレッドは待たない (掴めなければ即諦める)
+    // ので、リアルタイム性は壊さない。
+    // ==================================================================
+    class ReadGuard
+    {
+    public:
+        explicit ReadGuard(const SampleSlot& s) noexcept : slot(&s)
+        {
+            slot->readerCount.fetch_add(1, std::memory_order_acquire);
+            valid = slot->ready.load(std::memory_order_acquire);
+            if (!valid)
+            {
+                slot->readerCount.fetch_sub(1, std::memory_order_release);
+                slot = nullptr;
+            }
+        }
+
+        ~ReadGuard() noexcept
+        {
+            if (slot != nullptr)
+                slot->readerCount.fetch_sub(1, std::memory_order_release);
+        }
+
+        bool isValid() const noexcept { return valid; }
+
+        ReadGuard(const ReadGuard&) = delete;
+        ReadGuard& operator=(const ReadGuard&) = delete;
+
+    private:
+        const SampleSlot* slot = nullptr;
+        bool valid = false;
+    };
+
 private:
     void renderAnchors(int stretchAlgo);
 
+    // バッファ書き換え前に呼ぶ。ready を落とし、読み手が抜けるまで待機する。
+    // (メッセージ/ローダースレッド専用。オーディオスレッドから呼んではいけない)
+    void beginBufferWrite() noexcept;
+
     std::atomic<bool> ready { false };
     std::atomic<bool> analyzing { false };
+    mutable std::atomic<int> readerCount { 0 };
 
     double engineSampleRate = 44100.0;
     

@@ -108,7 +108,12 @@ void PicoVoice::stopNote(bool allowTailOff) noexcept
 void PicoVoice::renderNextBlock(juce::AudioBuffer<float>& outputBuffer, int startSample, int numSamples,
                                  const SampleSlot& slot, const SamplerVoiceParams& p) noexcept
 {
-    if (!active || !slot.isReady()) return;
+    if (!active) return;
+
+    // このブロックを描画し終えるまでスロットのバッファが解放されないよう保持する。
+    // 掴めなかった (= ロード中 / クリア中) 場合は何も出さずに戻る。
+    const SampleSlot::ReadGuard slotGuard(slot);
+    if (!slotGuard.isValid()) return;
 
     const auto& meta = slot.getMetadata();
     const int effectiveRoot = (p.rootKeyOverride >= 0) ? p.rootKeyOverride : meta.rootKey;
