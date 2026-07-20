@@ -63,6 +63,22 @@ private:
         }
     };
 
+    // ---- レイアウト定数 (パネル実寸 1080 x 344 に収める) ----
+    static constexpr int kColA = 20;
+    static constexpr int kColB = 390;
+    static constexpr int kColC = 760;
+    static constexpr int kColW = 340;
+
+    static constexpr int kRow1Head = 12;
+    static constexpr int kRow1Y    = 38;
+    static constexpr int kRow2Head = 152;
+    static constexpr int kRow2Y    = 178;
+
+    static constexpr int kItemW = 160;
+    static constexpr int kItemH = 46;
+    static constexpr int kKnobW = 64;
+    static constexpr int kKnobH = 82;
+
     juce::AudioProcessorValueTreeState& vts;
 
     LabeledChoice choiceMaterial { "Material Mode" };
@@ -73,6 +89,8 @@ private:
 
     LabeledKnob knobLimRelease   { "Lim Release", PicoColors::mint };
     LabeledKnob knobSliceSens    { "Slice Sens", PicoColors::lavender };
+    LabeledKnob knobFadeIn       { "Fade In", PicoColors::peach };
+    LabeledKnob knobFadeOut      { "Fade Out", PicoColors::peach };
     
     juce::ToggleButton btnPorta  { "Portamento" };
     LabeledKnob knobPortaTime    { "Glide Time", PicoColors::pink };
@@ -89,6 +107,8 @@ private:
     
     std::unique_ptr<SliderAttach> limReleaseAttach;
     std::unique_ptr<SliderAttach> sliceSensAttach;
+    std::unique_ptr<SliderAttach> fadeInAttach;
+    std::unique_ptr<SliderAttach> fadeOutAttach;
     
     std::unique_ptr<ButtonAttach> portaAttach;
     std::unique_ptr<SliderAttach> portaTimeAttach;

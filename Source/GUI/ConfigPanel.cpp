@@ -38,6 +38,8 @@ ConfigPanel::ConfigPanel(juce::AudioProcessorValueTreeState& apvts) : vts(apvts)
     addAndMakeVisible(knobLimRelease);
     addAndMakeVisible(knobSliceSens);
     addAndMakeVisible(knobPortaTime);
+    addAndMakeVisible(knobFadeIn);
+    addAndMakeVisible(knobFadeOut);
 
     materialAttach   = std::make_unique<ChoiceAttach>(vts, "analysisEngine", choiceMaterial.combo);
     filterAttach     = std::make_unique<ChoiceAttach>(vts, "filterSlope", choiceFilter.combo);
@@ -49,39 +51,86 @@ ConfigPanel::ConfigPanel(juce::AudioProcessorValueTreeState& apvts) : vts(apvts)
     sliceSensAttach  = std::make_unique<SliderAttach>(vts, "sliceSensitivity", knobSliceSens.knob);
     portaAttach      = std::make_unique<ButtonAttach>(vts, "portaEnable", btnPorta);
     portaTimeAttach  = std::make_unique<SliderAttach>(vts, "portaTime", knobPortaTime.knob);
+    fadeInAttach     = std::make_unique<SliderAttach>(vts, "edgeFadeIn", knobFadeIn.knob);
+    fadeOutAttach    = std::make_unique<SliderAttach>(vts, "edgeFadeOut", knobFadeOut.knob);
 
     knobLimRelease.knob.setDoubleClickReturnValue(true, 50.0);
     knobSliceSens.knob.setDoubleClickReturnValue(true, 0.5);
     knobPortaTime.knob.setDoubleClickReturnValue(true, 0.1);
+    knobFadeIn.knob.setDoubleClickReturnValue(true, 2.0);
+    knobFadeOut.knob.setDoubleClickReturnValue(true, 3.0);
+
+    // ms 表記。0 は「フェード無し = ハードカット」であることが一目で分かるようにする。
+    auto msText = [](double v) -> juce::String
+    {
+        if (v < 0.005) return "Off";
+        return juce::String(v, v < 10.0 ? 2 : 1) + " ms";
+    };
+    knobFadeIn.knob.textFromValueFunction  = msText;
+    knobFadeOut.knob.textFromValueFunction = msText;
+    knobFadeIn.knob.updateText();
+    knobFadeOut.knob.updateText();
 }
 
 void ConfigPanel::paint(juce::Graphics& g)
 {
     g.fillAll(PicoColors::bgDk);
 
-    g.setColour(PicoColors::mint);
-    g.setFont(juce::FontOptions(14.0f, juce::Font::bold));
-    g.drawText("GLOBAL SETTINGS", 20, 15, 300, 20, juce::Justification::left);
-    g.setColour(PicoColors::knobTrack);
-    g.drawHorizontalLine(40, 20.0f, (float)getWidth() - 20.0f);
+    // MainPanel と同じ見出しスタイル (色付き下線) で領域を区切る
+    auto drawSectionHeader = [&g](const juce::String& name, int x, int y, int w, juce::Colour accent)
+    {
+        g.setColour(accent);
+        g.setFont(juce::FontOptions(12.0f, juce::Font::bold));
+        g.drawText(name, x, y, w, 14, juce::Justification::left);
+        g.setColour(accent.withAlpha(0.35f));
+        g.fillRect(x, y + 16, w, 1);
+    };
+
+    auto drawCaption = [&g](const juce::String& text, int x, int y, int w)
+    {
+        g.setColour(PicoColors::textDim.withAlpha(0.7f));
+        g.setFont(juce::FontOptions(10.0f));
+        g.drawText(text, x, y, w, 12, juce::Justification::left);
+    };
+
+    // 上段
+    drawSectionHeader("ANALYSIS",   kColA, kRow1Head, kColW, PicoColors::mint);
+    drawSectionHeader("SLICING",    kColB, kRow1Head, kColW, PicoColors::lavender);
+    drawSectionHeader("APPEARANCE", kColC, kRow1Head, kColW, PicoColors::babyBlue);
+
+    // 下段
+    drawSectionHeader("SAMPLE EDGE", kColA, kRow2Head, kColW, PicoColors::peach);
+    drawSectionHeader("PERFORMANCE", kColB, kRow2Head, kColW, PicoColors::pink);
+    drawSectionHeader("OUTPUT",      kColC, kRow2Head, kColW, PicoColors::mint);
+
+    drawCaption("Start / End marker de-click", kColA, kRow2Y + kKnobH + 4, kColW);
+    drawCaption("Limiter recovery time",       kColC, kRow2Y + kKnobH + 4, kColW);
 }
 
 void ConfigPanel::resized()
 {
-    const int startX = 40;
-    const int startY = 60;
-    const int itemW  = 160;
-    const int itemH  = 46;
+    // --- 上段 ---
+    // ANALYSIS
+    choiceMaterial.setBounds(kColA, kRow1Y, kItemW, kItemH);
+    choiceStretch.setBounds (kColA + kItemW + 16, kRow1Y, kItemW, kItemH);
 
-    choiceMaterial.setBounds(startX, startY + 0 * 60, itemW, itemH);
-    choiceFilter.setBounds(startX,   startY + 1 * 60, itemW, itemH);
-    choiceTheme.setBounds(startX,    startY + 2 * 60, itemW, itemH);
-    choicePoly.setBounds(startX,     startY + 3 * 60, itemW, itemH);
+    // SLICING
+    knobSliceSens.setBounds(kColB, kRow1Y, kKnobW, kKnobH);
+    choiceFilter.setBounds (kColB + kKnobW + 24, kRow1Y, kItemW, kItemH);
 
-    choiceStretch.setBounds(startX + 180, startY + 0 * 60, itemW, itemH);
-    btnPorta.setBounds(startX + 180, startY + 1 * 60 + 16, itemW, 24);
+    // APPEARANCE
+    choiceTheme.setBounds(kColC, kRow1Y, kItemW, kItemH);
 
-    knobLimRelease.setBounds(startX + 360, startY + 10, 64, 82);
-    knobSliceSens.setBounds(startX + 440, startY + 10, 64, 82);
-    knobPortaTime.setBounds(startX + 520, startY + 10, 64, 82);
+    // --- 下段 ---
+    // SAMPLE EDGE
+    knobFadeIn.setBounds (kColA, kRow2Y, kKnobW, kKnobH);
+    knobFadeOut.setBounds(kColA + kKnobW + 16, kRow2Y, kKnobW, kKnobH);
+
+    // PERFORMANCE (Polyphony はここが自然なのでこの区画に置く)
+    choicePoly.setBounds   (kColB, kRow2Y, kItemW, kItemH);
+    btnPorta.setBounds     (kColB, kRow2Y + kItemH + 8, kItemW, 24);
+    knobPortaTime.setBounds(kColB + kItemW + 24, kRow2Y, kKnobW, kKnobH);
+
+    // OUTPUT
+    knobLimRelease.setBounds(kColC, kRow2Y, kKnobW, kKnobH);
 }

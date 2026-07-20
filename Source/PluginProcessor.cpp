@@ -61,6 +61,18 @@ juce::AudioProcessorValueTreeState::ParameterLayout PicoSamplerAudioProcessor::c
     params.push_back(std::make_unique<juce::AudioParameterFloat>("portaTime", "Glide Time", 0.0f, 1.0f, 0.1f));
     params.push_back(std::make_unique<juce::AudioParameterChoice>("stretchMode", "Stretch Mode", juce::StringArray{ "Beat", "Tone", "Texture", "Complex" }, 3));
 
+    // ---------------------------------------------------------------
+    // Edge Fade: Start/End マーカーが波形の途中に来た時のプチノイズ(ブチ切れ)対策。
+    // 単位は ms。既定 2.0ms は「聴感上は無音のまま、クリックだけ消える」自然な値。
+    // 0.0 にすれば従来通りの完全なハードカット。
+    // ---------------------------------------------------------------
+    params.push_back(std::make_unique<juce::AudioParameterFloat>(
+        "edgeFadeIn", "Fade In",
+        juce::NormalisableRange<float>(0.0f, 200.0f, 0.0f, 0.35f), 2.0f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>(
+        "edgeFadeOut", "Fade Out",
+        juce::NormalisableRange<float>(0.0f, 200.0f, 0.0f, 0.35f), 3.0f));
+
     // Slots 1-8 Parameters
     for (int i = 0; i < 8; ++i)
     {
@@ -368,6 +380,9 @@ void PicoSamplerAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
         sp.loopEndRatio     = juce::jlimit(0.01f, 1.0f, slotParamsCache[(size_t)i].loopEnd->load() + modMatrix.get(dstBase + 3));
         sp.crossfadeRatio   = juce::jlimit(0.0f, 0.5f, slotParamsCache[(size_t)i].crossfade->load() + modMatrix.get(dstBase + 4));
 
+        sp.edgeFadeInMs  = pEdgeFadeIn  != nullptr ? pEdgeFadeIn->load()  : 2.0f;
+        sp.edgeFadeOutMs = pEdgeFadeOut != nullptr ? pEdgeFadeOut->load() : 3.0f;
+
         sp.isLooping = slotParamsCache[(size_t)i].isLooping->load() > 0.5f;
         sp.isStretchMode = slotParamsCache[(size_t)i].isStretchMode->load() > 0.5f;
         sp.isReverse = slotParamsCache[(size_t)i].isReverse->load() > 0.5f;
@@ -570,26 +585,85 @@ void PicoSamplerAudioProcessor::autoSliceFile(const juce::File& file, int stretc
     }
 
     // 3. 各スロットに展開
-    int numSlices = (int)std::min((size_t)8, onsetSamples.size());
+    //
+    // ratio の分母は WaveformDisplay / findZeroCrossingRatio と揃えて (numSamples - 1) を使う。
+    // ここがズレると GUI 上のマーカー位置と実際の再生位置が 1 サンプル分食い違う。
+    const int lastIdx = numSamples - 1;
+    const double dLast = (double)lastIdx;
+
+    const float* sliceCh0 = slot0.getOriginalBuffer().getReadPointer(0);
+
+    // 指定位置から左方向へ最も近いゼロ交差を探す (End マーカー用)
+    auto zeroCrossBefore = [sliceCh0, lastIdx](int idx) noexcept
+    {
+        idx = juce::jlimit(0, lastIdx, idx);
+        if (sliceCh0 == nullptr) return idx;
+        for (int d = 0; d < 2000 && (idx - d) > 0; ++d)
+        {
+            const int i = idx - d;
+            const float a = sliceCh0[i - 1];
+            const float b = sliceCh0[i];
+            if (a == 0.0f || ((a < 0.0f) != (b < 0.0f)))
+                return (std::abs(a) <= std::abs(b)) ? (i - 1) : i;
+        }
+        return idx;
+    };
+
+    // 次のトランジェントに食い込まないためのガード。
+    // アタックの立ち上がりは検出点より僅かに前から始まっているため、
+    // 1ms 手前に退避してからゼロ交差へスナップする。
+    const int guardSamples = juce::jlimit(8, 2048, (int)(slot0.getFileSampleRate() * 0.001));
+
+    const int numSlices = (int)std::min((size_t)8, onsetSamples.size());
+
+    // 検出スライス数が 8 未満でも、前回の解析や手動設定が残らないよう
+    // 全 8 スロットの RootKey を先に Auto へ戻しておく。
+    for (int i = 0; i < 8; ++i)
+    {
+        if (auto* p = apvts.getParameter("rootKey_" + juce::String(i)))
+            p->setValueNotifyingHost(0.0f);
+    }
+
     for (int i = 0; i < numSlices; ++i)
     {
         if (i > 0)
         {
             samplerEngine.getSlot(i).copyFrom(slot0);
         }
-        
-        float startRatio = (float)onsetSamples[i] / (float)numSamples;
+
+        const float startRatio = (float)((double)onsetSamples[i] / dLast);
+
         float endRatio = 1.0f;
-        if (i < onsetSamples.size() - 1) {
-            endRatio = (float)onsetSamples[i+1] / (float)numSamples;
+        // 検出数がスロット数を超えていても、最後のスロットの End は
+        // 「次に検出されたトランジェント」を基準にする。
+        if ((size_t)i + 1 < onsetSamples.size())
+        {
+            const int nextOnset = onsetSamples[(size_t)i + 1];
+            int endIdx = nextOnset - guardSamples;
+
+            // ガードを引いた結果スライスが潰れる場合はガードを縮める
+            if (endIdx <= onsetSamples[i] + 64)
+                endIdx = std::max(onsetSamples[i] + 64, nextOnset - 1);
+
+            endIdx = zeroCrossBefore(endIdx);
+            endIdx = juce::jlimit(onsetSamples[i] + 1, lastIdx, endIdx);
+
+            endRatio = (float)((double)endIdx / dLast);
         }
         
         const juce::String s = juce::String(i);
         if (auto* p = apvts.getParameter("sampleStart_" + s)) p->setValueNotifyingHost(startRatio);
         if (auto* p = apvts.getParameter("sampleEnd_" + s)) p->setValueNotifyingHost(endRatio);
         
-        // MPCスタイルにノートをマッピング (Slot 1 = C1 = 36, Slot 2 = C#1 = 37, ...)
-        if (auto* p = apvts.getParameter("rootKey_" + s)) p->setValueNotifyingHost((36.0f + i) / 127.0f);
+        // RootKey は必ず Auto (-1) に戻す。
+        // AutoSlice はサンプルを時間で切り分けるだけで、各スライスのピッチは
+        // 解析結果に任せるのが正しい。ここで手動 RootKey を焼き込むと
+        // スライスが意図しないピッチにトランスポーズされてしまう。
+        //
+        // 注意: rootKey_ は AudioParameterInt(-1 .. 127) なので、
+        // 正規化値は (value - min) / (max - min) = (value + 1) / 128。
+        // Auto(-1) は 0.0f になる。
+        if (auto* p = apvts.getParameter("rootKey_" + s)) p->setValueNotifyingHost(0.0f);
         if (auto* p = apvts.getParameter("slotLowNote_" + s)) p->setValueNotifyingHost(0.0f);
         if (auto* p = apvts.getParameter("slotHighNote_" + s)) p->setValueNotifyingHost(1.0f);
     }
@@ -733,6 +807,8 @@ void PicoSamplerAudioProcessor::initializeParameterCache()
     pAutoSliceEnable = apvts.getRawParameterValue("autoSliceEnable");
     pSliceSensitivity = apvts.getRawParameterValue("sliceSensitivity");
     pStretchMode = apvts.getRawParameterValue("stretchMode");
+    pEdgeFadeIn  = apvts.getRawParameterValue("edgeFadeIn");
+    pEdgeFadeOut = apvts.getRawParameterValue("edgeFadeOut");
 
     for (int i = 0; i < 8; ++i) {
         auto s = juce::String(i);

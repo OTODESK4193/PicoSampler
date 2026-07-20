@@ -11,6 +11,7 @@
 #include "ValueKnob.h"
 #include "GlowToggle.h"
 #include "FilterCurveComponent.h"
+#include "../DSP/ModMatrix.h"
 
 class ArpPanel : public juce::Component
 {
@@ -22,6 +23,9 @@ public:
     void resized() override;
     void updateFilterCurveDisplay() noexcept;
     void updateFilterUIState() noexcept;
+
+    // カーブ表示にモジュレーション量を反映させるため ModMatrix を参照する
+    void setModMatrix(const ModMatrix* mod) noexcept { modMatrix = mod; }
 
     juce::Slider& getOctavesKnob() { return knobOctaves.knob; }
     juce::Slider& getRateKnob()    { return knobRateFree.knob; }
@@ -101,6 +105,7 @@ private:
     LabeledKnob knobFltEnvAmt { "Amt",     PicoColors::pink };
 
     FilterCurveComponent filterCurveComp;
+    const ModMatrix* modMatrix = nullptr;
 
     using Attachment = juce::AudioProcessorValueTreeState::SliderAttachment;
     using ComboAttach = juce::AudioProcessorValueTreeState::ComboBoxAttachment;

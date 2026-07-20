@@ -187,6 +187,34 @@ void PicoVoice::renderNextBlock(juce::AudioBuffer<float>& outputBuffer, int star
     const int lpLen = std::max(kMinSpan, std::abs(lpEndFile - lpStartFile));
     const int xfadeLen = juce::jlimit(8, lpLen / 2, (int)(lpLen * juce::jlimit(0.0f, 0.5f, p.crossfadeRatio)));
 
+    // ------------------------------------------------------------------
+    // Edge Fade
+    // Start/End マーカーが波形の途中 (振幅が 0 でない位置) に置かれると
+    // 再生開始/終了の瞬間に段差が生じてプチッと鳴る。
+    // その端だけを短時間フェードして段差を殺す。
+    //
+    // ・長さは Config の Fade In / Fade Out (ms) から算出。
+    // ・区間長の 1/3 を超えないようにクランプ (極短スライスで音が消えるのを防ぐ)。
+    // ・カーブは raised cosine。直線フェードより可聴なカドが出にくい。
+    // ------------------------------------------------------------------
+    const int spanLen = std::max(kMinSpan, std::abs(smpEndFile - smpStartFile));
+    const int maxFade = std::max(1, spanLen / 3);
+
+    const int fadeInLen  = juce::jlimit(0, maxFade,
+                              (int)(juce::jmax(0.0f, p.edgeFadeInMs)  * 0.001f * (float)sampleRate));
+    const int fadeOutLen = juce::jlimit(0, maxFade,
+                              (int)(juce::jmax(0.0f, p.edgeFadeOutMs) * 0.001f * (float)sampleRate));
+
+    // ループ中は End 側をループ Crossfade が担当するので Fade Out は掛けない
+    const bool applyFadeOut = (fadeOutLen > 0) && !p.isLooping;
+    const bool applyFadeIn  = (fadeInLen > 0);
+
+    auto raisedCos = [](float t) noexcept
+    {
+        t = juce::jlimit(0.0f, 1.0f, t);
+        return 0.5f - 0.5f * std::cos(t * juce::MathConstants<float>::pi);
+    };
+
     const float pan = juce::jlimit(-1.0f, 1.0f, p.pan);
     const float gainL = std::sqrt(0.5f * (1.0f - pan)) * velocity * juce::Decibels::decibelsToGain(p.slotGainDb);
     const float gainR = std::sqrt(0.5f * (1.0f + pan)) * velocity * juce::Decibels::decibelsToGain(p.slotGainDb);
@@ -321,6 +349,27 @@ void PicoVoice::renderNextBlock(juce::AudioBuffer<float>& outputBuffer, int star
                 sL = sL * fadeOut + inL * fadeIn;
                 sR = sR * fadeOut + inR * fadeIn;
             }
+        }
+
+        // --- Edge Fade 適用 ---
+        // Reverse 時はファイル上を逆走するので、距離の測り方も反転させる。
+        if (applyFadeIn || applyFadeOut)
+        {
+            float edgeGain = 1.0f;
+
+            const double distFromStart = p.isReverse ? ((double)smpStartFile - readPosition)
+                                                     : (readPosition - (double)smpStartFile);
+            const double distToEnd     = p.isReverse ? (readPosition - (double)smpEndFile)
+                                                     : ((double)smpEndFile - readPosition);
+
+            if (applyFadeIn && distFromStart >= 0.0 && distFromStart < (double)fadeInLen)
+                edgeGain *= raisedCos((float)(distFromStart / (double)fadeInLen));
+
+            if (applyFadeOut && distToEnd >= 0.0 && distToEnd < (double)fadeOutLen)
+                edgeGain *= raisedCos((float)(distToEnd / (double)fadeOutLen));
+
+            sL *= edgeGain;
+            sR *= edgeGain;
         }
 
         outL[s] += sL * gainL * envValue;

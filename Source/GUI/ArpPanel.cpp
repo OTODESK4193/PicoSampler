@@ -147,12 +147,39 @@ void ArpPanel::updateFilterCurveDisplay() noexcept
 
     fp.enable  = fetchBool("fltEnable");
     fp.model   = (int)fetchFloat("fltModel", 0.0f);
-    fp.cutoff  = fetchFloat("fltCutoff", 2000.0f);
-    fp.res     = fetchFloat("fltRes", 0.707f);
     fp.type    = (int)fetchFloat("fltType", 0.0f);
     fp.slope   = (int)fetchFloat("fltSlope", 0.0f);
-    fp.formant = fetchFloat("fltFormant", 0.0f);
-    fp.combMix = fetchFloat("fltCombMix", 0.5f);
+
+    const float baseCutoff  = fetchFloat("fltCutoff", 2000.0f);
+    const float baseRes     = fetchFloat("fltRes", 0.707f);
+    const float baseFormant = fetchFloat("fltFormant", 0.0f);
+    const float baseCombMix = fetchFloat("fltCombMix", 0.5f);
+
+    // ------------------------------------------------------------------
+    // モジュレーション反映
+    // 計算式は PluginProcessor 側の DSP と必ず一致させること
+    // (Cutoff は ±4 オクターブの指数変調、Reso は ±5 の線形加算)。
+    // ズレるとカーブ表示と実際の音が食い違う。
+    // ------------------------------------------------------------------
+    if (modMatrix != nullptr)
+    {
+        const float modCutoff  = modMatrix->get(ModMatrix::DstFltCutoff);
+        const float modReso    = modMatrix->get(ModMatrix::DstFltReso);
+        const float modFormant = modMatrix->get(ModMatrix::DstFltFormant);
+        const float modComb    = modMatrix->get(ModMatrix::DstFltCombMix);
+
+        fp.cutoff  = juce::jlimit(20.0f, 20000.0f, baseCutoff * std::pow(2.0f, modCutoff * 4.0f));
+        fp.res     = juce::jlimit(0.1f, 10.0f, baseRes + modReso * 5.0f);
+        fp.formant = juce::jlimit(0.0f, 1.0f, baseFormant + modFormant);
+        fp.combMix = juce::jlimit(0.0f, 1.0f, baseCombMix + modComb);
+    }
+    else
+    {
+        fp.cutoff  = baseCutoff;
+        fp.res     = baseRes;
+        fp.formant = baseFormant;
+        fp.combMix = baseCombMix;
+    }
 
     filterCurveComp.updateFilterState(fp);
 }

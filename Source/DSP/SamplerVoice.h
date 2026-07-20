@@ -27,6 +27,10 @@ struct SamplerVoiceParams
     float loopStartRatio = 0.2f;
     float loopEndRatio = 0.7f;
     float crossfadeRatio = 0.05f;
+
+    // Start/End マーカー端のプチノイズ対策フェード (ミリ秒)
+    float edgeFadeInMs  = 2.0f;
+    float edgeFadeOutMs = 3.0f;
     bool isLooping = false;
     bool isStretchMode = false;
     bool isReverse = false;

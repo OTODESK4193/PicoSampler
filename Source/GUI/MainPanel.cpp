@@ -236,7 +236,9 @@ void MainPanel::bindSlotParameters(int slotIdx)
     for (auto* lk : { &knobSampleStart, &knobSampleEnd, &knobLoopStart, &knobLoopEnd, &knobCrossfade })
     {
         lk->knob.setNumDecimalPlacesToDisplay(4);
-        lk->knob.setMouseDragSensitivity(4000);  // 高解像度追い込み用
+        lk->knob.setBaseSensitivity(4000);    // 通常: 高解像度で追い込む
+        lk->knob.setCoarseSensitivity(200);   // Ctrl: 端から端まで一気に
+        lk->knob.setFineSensitivity(16000);   // Shift: サンプル単位の微調整
     }
 
     bind(knobRootKey,  "rootKey");

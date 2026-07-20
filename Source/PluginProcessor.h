@@ -186,6 +186,8 @@ private:
     std::atomic<float>* pAutoSliceEnable;
     std::atomic<float>* pSliceSensitivity;
     std::atomic<float>* pStretchMode;
+    std::atomic<float>* pEdgeFadeIn  = nullptr;
+    std::atomic<float>* pEdgeFadeOut = nullptr;
 
     void initializeParameterCache();
 
