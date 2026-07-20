@@ -44,8 +44,11 @@ private:
     juce::TextButton btnTabFx     { "FX" };
     juce::TextButton btnTabConfig { "CONFIG" };
 
-    juce::TextButton btnReAnalyze { "REANALYZE" }; // ★ 追加
+    juce::TextButton btnAutoSlice { "AUTOSLICE" }; // ★ 追加
+    juce::TextButton btnReAnalyze { "REANALYZE" };
     juce::TextButton btnPresets   { "PRESETS" };
+    
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> autoSliceAttachment;
 
     // Panels
     MainPanel mainPanel;

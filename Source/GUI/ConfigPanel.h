@@ -69,17 +69,29 @@ private:
     LabeledChoice choiceFilter   { "Filter Slope" };
     LabeledChoice choiceTheme    { "Color Theme" };
     LabeledChoice choicePoly     { "Polyphony" };
+    LabeledChoice choiceStretch  { "Stretch Mode" };
 
     LabeledKnob knobLimRelease   { "Lim Release", PicoColors::mint };
+    LabeledKnob knobSliceSens    { "Slice Sens", PicoColors::lavender };
+    
+    juce::ToggleButton btnPorta  { "Portamento" };
+    LabeledKnob knobPortaTime    { "Glide Time", PicoColors::pink };
 
     using ChoiceAttach = juce::AudioProcessorValueTreeState::ComboBoxAttachment;
     using SliderAttach = juce::AudioProcessorValueTreeState::SliderAttachment;
+    using ButtonAttach = juce::AudioProcessorValueTreeState::ButtonAttachment;
 
     std::unique_ptr<ChoiceAttach> materialAttach;
     std::unique_ptr<ChoiceAttach> filterAttach;
     std::unique_ptr<ChoiceAttach> themeAttach;
     std::unique_ptr<ChoiceAttach> polyAttach;
+    std::unique_ptr<ChoiceAttach> stretchAttach;
+    
     std::unique_ptr<SliderAttach> limReleaseAttach;
+    std::unique_ptr<SliderAttach> sliceSensAttach;
+    
+    std::unique_ptr<ButtonAttach> portaAttach;
+    std::unique_ptr<SliderAttach> portaTimeAttach;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ConfigPanel)
 };

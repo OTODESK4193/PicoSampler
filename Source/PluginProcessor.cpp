@@ -10,6 +10,8 @@ PicoSamplerAudioProcessor::PicoSamplerAudioProcessor()
       Thread("PicoSampleLoaderThread"),
       apvts(*this, nullptr, "Parameters", createParameterLayout())
 {
+    initializeParameterCache();
+    
     samplerEngine.prepare(44100.0);
 
     samplerEngine.onActiveSlotTriggered = [this](int newActiveSlot) {
@@ -51,6 +53,13 @@ juce::AudioProcessorValueTreeState::ParameterLayout PicoSamplerAudioProcessor::c
     params.push_back(std::make_unique<juce::AudioParameterChoice>("filterSlope", "Filter Slope", juce::StringArray{ "12dB/oct", "24dB/oct" }, 0));
     params.push_back(std::make_unique<juce::AudioParameterChoice>("colorTheme", "Color Theme", juce::StringArray{ "Midnight", "Sakura", "Ocean", "Forest", "Sunset", "Mono" }, 0));
     params.push_back(std::make_unique<juce::AudioParameterChoice>("polyphony", "Polyphony", juce::StringArray{ "1 Voice", "2 Voices", "4 Voices", "8 Voices", "16 Voices", "32 Voices" }, 4));
+
+    // ★ NEW PARAMS
+    params.push_back(std::make_unique<juce::AudioParameterBool>("autoSliceEnable", "Auto Slice", false));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("sliceSensitivity", "Slice Sensitivity", 0.0f, 1.0f, 0.5f));
+    params.push_back(std::make_unique<juce::AudioParameterBool>("portaEnable", "Portamento", false));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("portaTime", "Glide Time", 0.0f, 1.0f, 0.1f));
+    params.push_back(std::make_unique<juce::AudioParameterChoice>("stretchMode", "Stretch Mode", juce::StringArray{ "Beat", "Tone", "Texture", "Complex" }, 3));
 
     // Slots 1-8 Parameters
     for (int i = 0; i < 8; ++i)
@@ -226,35 +235,37 @@ void PicoSamplerAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
     buffer.clear();
 
     const int numSamples = buffer.getNumSamples();
-    const int modeVal = (int)getParamFloat("samplerMode", 0.0f);
-    const int activeSlotIdx = (int)getParamFloat("activeSlot", 0.0f);
+    const int modeVal = (int)pSamplerMode->load();
+    const int activeSlotIdx = (int)pActiveSlot->load();
 
     SamplerEngine::Params engineParams;
     engineParams.mode = static_cast<SamplerEngine::PlaybackMode>(modeVal);
     engineParams.activeSlot = activeSlotIdx;
-    engineParams.outGainDb = getParamFloat("outGain", 0.0f);
-    engineParams.masterHpfHz = getParamFloat("masterHPF", 20.0f);
-    engineParams.masterLpfHz = getParamFloat("masterLPF", 20000.0f);
-    engineParams.ceilingDb = getParamFloat("ceiling", 0.0f);
-    engineParams.limReleaseMs = getParamFloat("limRelease", 50.0f);
-    engineParams.is24dBFilter = (getParamFloat("filterSlope", 0.0f) > 0.5f);
+    engineParams.outGainDb = pOutGain->load();
+    engineParams.masterHpfHz = pMasterHPF->load();
+    engineParams.masterLpfHz = pMasterLPF->load();
+    engineParams.ceilingDb = pCeiling->load();
+    engineParams.limReleaseMs = pLimRelease->load();
+    engineParams.is24dBFilter = (pFilterSlope->load() > 0.5f);
+    engineParams.portaEnable = pPortaEnable->load() > 0.5f;
+    engineParams.portaTime = pPortaTime->load();
 
     // 1. アルペジエーター パラメータ & MIDI処理
     Arpeggiator::Params arpParams;
-    arpParams.enable     = getParamFloat("arpEnable", 0.0f) > 0.5f;
-    arpParams.latch      = getParamFloat("arpLatch", 0.0f) > 0.5f;
-    arpParams.sync       = getParamFloat("arpSync", 1.0f) > 0.5f;
-    arpParams.pattern    = (int)getParamFloat("arpPattern", 0.0f);
-    arpParams.rateSync   = (int)getParamFloat("arpRateSync", 6.0f);
-    arpParams.rateFreeHz = getParamFloat("arpRateFree", 4.0f);
-    arpParams.octaves    = (int)getParamFloat("arpOctaves", 1.0f);
-    arpParams.offset     = (int)getParamFloat("arpOffset", 0.0f);
-    arpParams.repeat     = (int)getParamFloat("arpRepeat", 1.0f);
-    arpParams.accent     = getParamFloat("arpAccent", 0.0f);
-    arpParams.swing      = getParamFloat("arpSwing", 0.0f);
-    arpParams.gatePct    = getParamFloat("arpGate", 0.8f);
-    arpParams.key        = (int)getParamFloat("key", 0.0f);
-    arpParams.scale      = (int)getParamFloat("scale", 0.0f);
+    arpParams.enable     = arpParamsCache.enable->load() > 0.5f;
+    arpParams.latch      = arpParamsCache.latch->load() > 0.5f;
+    arpParams.sync       = arpParamsCache.sync->load() > 0.5f;
+    arpParams.pattern    = (int)arpParamsCache.pattern->load();
+    arpParams.rateSync   = (int)arpParamsCache.rateSync->load();
+    arpParams.rateFreeHz = arpParamsCache.rateFree->load();
+    arpParams.octaves    = (int)arpParamsCache.octaves->load();
+    arpParams.offset     = (int)arpParamsCache.offset->load();
+    arpParams.repeat     = (int)arpParamsCache.repeat->load();
+    arpParams.accent     = arpParamsCache.accent->load();
+    arpParams.swing      = arpParamsCache.swing->load();
+    arpParams.gatePct    = arpParamsCache.gate->load();
+    arpParams.key        = (int)arpParamsCache.key->load();
+    arpParams.scale      = (int)arpParamsCache.scale->load();
 
     if (auto* ph = getPlayHead())
     {
@@ -276,28 +287,25 @@ void PicoSamplerAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
     modParams.bpm = arpParams.bpm;
     for (int i = 0; i < ModMatrix::kNumLfos; ++i)
     {
-        const juce::String s = juce::String(i + 1);
-        modParams.lfo[(size_t)i].wave = (int)getParamFloat("lfo" + s + "Wave", 0.0f);
-        modParams.lfo[(size_t)i].rateHz = getParamFloat("lfo" + s + "Rate", 1.0f);
-        modParams.lfo[(size_t)i].sync = getParamFloat("lfo" + s + "Sync", 0.0f) > 0.5f;
-        modParams.lfo[(size_t)i].rateSync = (int)getParamFloat("lfo" + s + "SyncRate", 6.0f);
+        modParams.lfo[(size_t)i].wave = (int)modParamsCache.lfoWave[(size_t)i]->load();
+        modParams.lfo[(size_t)i].rateHz = modParamsCache.lfoRate[(size_t)i]->load();
+        modParams.lfo[(size_t)i].sync = modParamsCache.lfoSync[(size_t)i]->load() > 0.5f;
+        modParams.lfo[(size_t)i].rateSync = (int)modParamsCache.lfoSyncRate[(size_t)i]->load();
     }
     for (int i = 0; i < ModMatrix::kNumEnvs; ++i)
     {
-        const juce::String s = juce::String(i + 1);
-        modParams.env[(size_t)i].attack = getParamFloat("env" + s + "Attack", 0.05f);
-        modParams.env[(size_t)i].decay = getParamFloat("env" + s + "Decay", 0.5f);
-        modParams.env[(size_t)i].sustain = getParamFloat("env" + s + "Sustain", 1.0f);
-        modParams.env[(size_t)i].release = getParamFloat("env" + s + "Release", 0.3f);
-        modParams.env[(size_t)i].loop = getParamFloat("env" + s + "Loop", 0.0f) > 0.5f;
+        modParams.env[(size_t)i].attack = modParamsCache.envAttack[(size_t)i]->load();
+        modParams.env[(size_t)i].decay = modParamsCache.envDecay[(size_t)i]->load();
+        modParams.env[(size_t)i].sustain = modParamsCache.envSustain[(size_t)i]->load();
+        modParams.env[(size_t)i].release = modParamsCache.envRelease[(size_t)i]->load();
+        modParams.env[(size_t)i].loop = modParamsCache.envLoop[(size_t)i]->load() > 0.5f;
     }
     for (int i = 0; i < ModMatrix::kNumSlots; ++i)
     {
-        const juce::String s = juce::String(i + 1);
-        modParams.slot[(size_t)i].src = (int)getParamFloat("mod" + s + "Src", 0.0f);
-        modParams.slot[(size_t)i].dst = (int)getParamFloat("mod" + s + "Dst", 0.0f);
-        modParams.slot[(size_t)i].amt = getParamFloat("mod" + s + "Amt", 0.0f);
-        modParams.slot[(size_t)i].uni = getParamFloat("mod" + s + "Uni", 0.0f) > 0.5f;
+        modParams.slot[(size_t)i].src = (int)modParamsCache.modSrc[(size_t)i]->load();
+        modParams.slot[(size_t)i].dst = (int)modParamsCache.modDst[(size_t)i]->load();
+        modParams.slot[(size_t)i].amt = modParamsCache.modAmt[(size_t)i]->load();
+        modParams.slot[(size_t)i].uni = modParamsCache.modUni[(size_t)i]->load() > 0.5f;
     }
 
     const auto& activeMidiForMod = arpParams.enable ? processedMidi : midiMessages;
@@ -314,9 +322,9 @@ void PicoSamplerAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
     arpParams.gatePct    = juce::jlimit(0.1f, 1.0f, arpParams.gatePct + modMatrix.get(ModMatrix::DstArpGate));
 
     // 3. サンプラーエンジンパラメータ構築 (Mod変調含む)
-    const float rawMasterPitch = getParamFloat("masterPitch", 0.0f) + modMatrix.get(ModMatrix::DstMasterPitch) * 24.0f;
-    const int keyVal = (int)getParamFloat("key", 0.0f);
-    const int scaleVal = (int)getParamFloat("scale", 0.0f);
+    const float rawMasterPitch = pMasterPitch->load() + modMatrix.get(ModMatrix::DstMasterPitch) * 24.0f;
+    const int keyVal = (int)arpParamsCache.key->load();
+    const int scaleVal = (int)arpParamsCache.scale->load();
 
     float effectiveMasterPitch = rawMasterPitch;
     if (scaleVal > 0)
@@ -330,32 +338,32 @@ void PicoSamplerAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
     {
         const juce::String s = juce::String(i);
         auto& sp = engineParams.slotParams[(size_t)i];
-        sp.attack  = getParamFloat("attack_" + s, 0.01f);
-        sp.decay   = getParamFloat("decay_" + s, 0.3f);
-        sp.sustain = getParamFloat("sustain_" + s, 1.0f);
-        sp.release = getParamFloat("release_" + s, 0.3f);
+        sp.attack  = slotParamsCache[(size_t)i].attack->load();
+        sp.decay   = slotParamsCache[(size_t)i].decay->load();
+        sp.sustain = slotParamsCache[(size_t)i].sustain->load();
+        sp.release = slotParamsCache[(size_t)i].release->load();
 
-        sp.octave   = (int)getParamFloat("octave_" + s, 0.0f);
-        sp.semitone = (int)getParamFloat("pitchSt_" + s, 0.0f) + (int)std::round(effectiveMasterPitch);
-        sp.fineTune = getParamFloat("fineTune_" + s, 0.0f) + (effectiveMasterPitch - std::round(effectiveMasterPitch)) * 100.0f;
-        sp.pan      = getParamFloat("pan_" + s, 0.0f);
-        sp.slotGainDb = getParamFloat("slotGain_" + s, 0.0f);
+        sp.octave   = (int)slotParamsCache[(size_t)i].octave->load();
+        sp.semitone = (int)slotParamsCache[(size_t)i].pitchSt->load() + (int)std::round(effectiveMasterPitch);
+        sp.fineTune = slotParamsCache[(size_t)i].fineTune->load() + (effectiveMasterPitch - std::round(effectiveMasterPitch)) * 100.0f;
+        sp.pan      = slotParamsCache[(size_t)i].pan->load();
+        sp.slotGainDb = slotParamsCache[(size_t)i].slotGain->load();
 
         const int dstBase = ModMatrix::DstS1Start + i * 5;
-        sp.sampleStartRatio = juce::jlimit(0.0f, 1.0f, getParamFloat("sampleStart_" + s, 0.0f) + modMatrix.get(dstBase + 0));
-        sp.sampleEndRatio   = juce::jlimit(0.01f, 1.0f, getParamFloat("sampleEnd_" + s, 1.0f) + modMatrix.get(dstBase + 1));
-        sp.loopStartRatio   = juce::jlimit(0.0f, 1.0f, getParamFloat("loopStart_" + s, 0.2f) + modMatrix.get(dstBase + 2));
-        sp.loopEndRatio     = juce::jlimit(0.01f, 1.0f, getParamFloat("loopEnd_" + s, 0.7f) + modMatrix.get(dstBase + 3));
-        sp.crossfadeRatio   = juce::jlimit(0.0f, 0.5f, getParamFloat("crossfade_" + s, 0.05f) + modMatrix.get(dstBase + 4));
+        sp.sampleStartRatio = juce::jlimit(0.0f, 1.0f, slotParamsCache[(size_t)i].sampleStart->load() + modMatrix.get(dstBase + 0));
+        sp.sampleEndRatio   = juce::jlimit(0.01f, 1.0f, slotParamsCache[(size_t)i].sampleEnd->load() + modMatrix.get(dstBase + 1));
+        sp.loopStartRatio   = juce::jlimit(0.0f, 1.0f, slotParamsCache[(size_t)i].loopStart->load() + modMatrix.get(dstBase + 2));
+        sp.loopEndRatio     = juce::jlimit(0.01f, 1.0f, slotParamsCache[(size_t)i].loopEnd->load() + modMatrix.get(dstBase + 3));
+        sp.crossfadeRatio   = juce::jlimit(0.0f, 0.5f, slotParamsCache[(size_t)i].crossfade->load() + modMatrix.get(dstBase + 4));
 
-        sp.isLooping = getParamFloat("isLooping_" + s, 0.0f) > 0.5f;
-        sp.isStretchMode = getParamFloat("isStretchMode_" + s, 0.0f) > 0.5f;
-        sp.isReverse = getParamFloat("isReverse_" + s, 0.0f) > 0.5f;
-        sp.isFilterBypass = getParamFloat("filterBypass_" + s, 0.0f) > 0.5f;
-        sp.isFxBypass = getParamFloat("fxBypass_" + s, 0.0f) > 0.5f;
-        sp.rootKeyOverride = (int)getParamFloat("rootKey_" + s, -1.0f);
-        sp.lowNote = (int)getParamFloat("slotLowNote_" + s, 0.0f);
-        sp.highNote = (int)getParamFloat("slotHighNote_" + s, 127.0f);
+        sp.isLooping = slotParamsCache[(size_t)i].isLooping->load() > 0.5f;
+        sp.isStretchMode = slotParamsCache[(size_t)i].isStretchMode->load() > 0.5f;
+        sp.isReverse = slotParamsCache[(size_t)i].isReverse->load() > 0.5f;
+        sp.isFilterBypass = slotParamsCache[(size_t)i].filterBypass->load() > 0.5f;
+        sp.isFxBypass = slotParamsCache[(size_t)i].fxBypass->load() > 0.5f;
+        sp.rootKeyOverride = (int)slotParamsCache[(size_t)i].rootKeyOverride->load();
+        sp.lowNote = (int)slotParamsCache[(size_t)i].slotLowNote->load();
+        sp.highNote = (int)slotParamsCache[(size_t)i].slotHighNote->load();
     }
 
     if (arpParams.enable)
@@ -373,14 +381,14 @@ void PicoSamplerAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
     }
 
     juce::ADSR::Parameters adsrP;
-    adsrP.attack  = getParamFloat("fltEnvAttack", 0.01f);
-    adsrP.decay   = getParamFloat("fltEnvDecay", 0.3f);
-    adsrP.sustain = getParamFloat("fltEnvSustain", 1.0f);
-    adsrP.release = getParamFloat("fltEnvRelease", 0.3f);
+    adsrP.attack  = filterParamsCache.envAttack->load();
+    adsrP.decay   = filterParamsCache.envDecay->load();
+    adsrP.sustain = filterParamsCache.envSustain->load();
+    adsrP.release = filterParamsCache.envRelease->load();
     filterAdsr.setParameters(adsrP);
 
     const float envVal = filterAdsr.getNextSample();
-    const float envAmt = getParamFloat("fltEnvAmt", 0.0f);
+    const float envAmt = filterParamsCache.envAmt->load();
 
     const int numChannels = buffer.getNumChannels();
     juce::AudioBuffer<float> fltBypassBuffer(numChannels, numSamples);
@@ -396,10 +404,10 @@ void PicoSamplerAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
 
     // 2. PicoFilter (CleanSVF, Vowel, Comb) 適用 (FLT BYPASSがオフのスロット音声に適用)
     PicoFilter::Params fltParams;
-    fltParams.enable  = getParamFloat("fltEnable", 0.0f) > 0.5f;
-    fltParams.model   = (int)getParamFloat("fltModel", 0.0f);
+    fltParams.enable  = filterParamsCache.enable->load() > 0.5f;
+    fltParams.model   = (int)filterParamsCache.model->load();
 
-    const float baseCutoff = getParamFloat("fltCutoff", 2000.0f);
+    const float baseCutoff = filterParamsCache.cutoff->load();
     float targetCutoff = baseCutoff;
     if (std::abs(envAmt) > 0.001f || std::abs(modMatrix.get(ModMatrix::DstFltCutoff)) > 0.001f)
     {
@@ -409,15 +417,15 @@ void PicoSamplerAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
     targetCutoff = juce::jlimit(20.0f, 20000.0f, targetCutoff);
     smoothedCutoff.setTargetValue(targetCutoff);
 
-    const float targetReso = juce::jlimit(0.1f, 10.0f, getParamFloat("fltRes", 0.707f) + modMatrix.get(ModMatrix::DstFltReso) * 5.0f);
+    const float targetReso = juce::jlimit(0.1f, 10.0f, filterParamsCache.res->load() + modMatrix.get(ModMatrix::DstFltReso) * 5.0f);
     smoothedReso.setTargetValue(targetReso);
 
     fltParams.cutoff  = smoothedCutoff.getNextValue();
     fltParams.res     = smoothedReso.getNextValue();
-    fltParams.type    = (int)getParamFloat("fltType", 0.0f);
-    fltParams.slope   = (int)getParamFloat("fltSlope", 0.0f);
-    fltParams.formant = juce::jlimit(0.0f, 1.0f, getParamFloat("fltFormant", 0.0f) + modMatrix.get(ModMatrix::DstFltFormant));
-    fltParams.combMix = juce::jlimit(0.0f, 1.0f, getParamFloat("fltCombMix", 0.5f) + modMatrix.get(ModMatrix::DstFltCombMix));
+    fltParams.type    = (int)filterParamsCache.type->load();
+    fltParams.slope   = (int)filterParamsCache.slope->load();
+    fltParams.formant = juce::jlimit(0.0f, 1.0f, filterParamsCache.formant->load() + modMatrix.get(ModMatrix::DstFltFormant));
+    fltParams.combMix = juce::jlimit(0.0f, 1.0f, filterParamsCache.combMix->load() + modMatrix.get(ModMatrix::DstFltCombMix));
 
     if (fltParams.enable)
     {
@@ -435,29 +443,28 @@ void PicoSamplerAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
     FxChain::Params fxP;
     for (int i = 0; i < 5; ++i)
     {
-        const juce::String s = juce::String(i + 1);
-        fxP.type[(size_t)i]   = (int)getParamFloat("fx" + s + "Type", 0.0f);
-        fxP.amount[(size_t)i] = juce::jlimit(0.0f, 1.0f, getParamFloat("fx" + s + "Amount", 0.0f) + modMatrix.get(ModMatrix::DstFx1Amount + i));
+        fxP.type[(size_t)i]   = (int)fxParamsCache.type[(size_t)i]->load();
+        fxP.amount[(size_t)i] = juce::jlimit(0.0f, 1.0f, fxParamsCache.amount[(size_t)i]->load() + modMatrix.get(ModMatrix::DstFx1Amount + i));
     }
     fxP.bpm        = arpParams.bpm;
-    fxP.satAlgo    = (int)getParamFloat("satAlgo", 0.0f);
-    fxP.satDrive   = juce::jlimit(1.0f, 12.0f, getParamFloat("satDrive", 2.0f) + modMatrix.get(ModMatrix::DstSatDrive) * 6.0f);
-    fxP.satPreHz   = juce::jlimit(20.0f, 2000.0f, getParamFloat("satPreHz", 20.0f) + modMatrix.get(ModMatrix::DstSatPreHz) * 1000.0f);
-    fxP.satTrimDb  = juce::jlimit(-12.0f, 12.0f, getParamFloat("satTrim", 0.0f) + modMatrix.get(ModMatrix::DstSatTrim) * 12.0f);
-    fxP.choRate    = juce::jlimit(0.05f, 4.0f, getParamFloat("choRate", 0.8f) + modMatrix.get(ModMatrix::DstChoRate) * 2.0f);
-    fxP.choDepth   = juce::jlimit(0.0f, 1.0f, getParamFloat("choDepth", 0.5f) + modMatrix.get(ModMatrix::DstChoDepth));
-    fxP.choWidth   = juce::jlimit(0.0f, 1.0f, getParamFloat("choWidth", 1.0f) + modMatrix.get(ModMatrix::DstChoWidth));
-    fxP.dlyTime    = (int)getParamFloat("dlyTime", 4.0f);
-    fxP.dlyFeedback= juce::jlimit(0.0f, 0.95f, getParamFloat("dlyFeedback", 0.45f) + modMatrix.get(ModMatrix::DstDlyFeedback));
-    fxP.dlyDuck    = juce::jlimit(0.0f, 1.0f, getParamFloat("dlyDuck", 0.5f) + modMatrix.get(ModMatrix::DstDlyDuck));
-    fxP.dlyDamp    = juce::jlimit(0.0f, 1.0f, getParamFloat("dlyDamp", 0.3f) + modMatrix.get(ModMatrix::DstDlyDamp));
-    fxP.frzSize    = juce::jlimit(20.0f, 1000.0f, getParamFloat("frzSize", 100.0f) + modMatrix.get(ModMatrix::DstFrzSize) * 500.0f);
-    fxP.frzFeedback= juce::jlimit(0.0f, 0.99f, getParamFloat("frzFeedback", 0.9f) + modMatrix.get(ModMatrix::DstFrzFeedback));
-    fxP.frzDamp    = juce::jlimit(0.0f, 1.0f, getParamFloat("frzDamp", 0.2f) + modMatrix.get(ModMatrix::DstFrzDamp));
-    fxP.revDecay   = juce::jlimit(0.0f, 1.0f, getParamFloat("revDecay", 0.7f) + modMatrix.get(ModMatrix::DstRevDecay));
-    fxP.revShimmer = juce::jlimit(0.0f, 1.0f, getParamFloat("revShimmer", 0.4f) + modMatrix.get(ModMatrix::DstRevShimmer));
-    fxP.revDamp    = juce::jlimit(0.0f, 1.0f, getParamFloat("revDamp", 0.3f) + modMatrix.get(ModMatrix::DstRevDamp));
-    fxP.revMod     = juce::jlimit(0.0f, 1.0f, getParamFloat("revMod", 0.4f) + modMatrix.get(ModMatrix::DstRevMod));
+    fxP.satAlgo    = (int)fxParamsCache.satAlgo->load();
+    fxP.satDrive   = juce::jlimit(1.0f, 12.0f, fxParamsCache.satDrive->load() + modMatrix.get(ModMatrix::DstSatDrive) * 6.0f);
+    fxP.satPreHz   = juce::jlimit(20.0f, 2000.0f, fxParamsCache.satPreHz->load() + modMatrix.get(ModMatrix::DstSatPreHz) * 1000.0f);
+    fxP.satTrimDb  = juce::jlimit(-12.0f, 12.0f, fxParamsCache.satTrim->load() + modMatrix.get(ModMatrix::DstSatTrim) * 12.0f);
+    fxP.choRate    = juce::jlimit(0.05f, 4.0f, fxParamsCache.choRate->load() + modMatrix.get(ModMatrix::DstChoRate) * 2.0f);
+    fxP.choDepth   = juce::jlimit(0.0f, 1.0f, fxParamsCache.choDepth->load() + modMatrix.get(ModMatrix::DstChoDepth));
+    fxP.choWidth   = juce::jlimit(0.0f, 1.0f, fxParamsCache.choWidth->load() + modMatrix.get(ModMatrix::DstChoWidth));
+    fxP.dlyTime    = (int)fxParamsCache.dlyTime->load();
+    fxP.dlyFeedback= juce::jlimit(0.0f, 0.95f, fxParamsCache.dlyFeedback->load() + modMatrix.get(ModMatrix::DstDlyFeedback));
+    fxP.dlyDuck    = juce::jlimit(0.0f, 1.0f, fxParamsCache.dlyDuck->load() + modMatrix.get(ModMatrix::DstDlyDuck));
+    fxP.dlyDamp    = juce::jlimit(0.0f, 1.0f, fxParamsCache.dlyDamp->load() + modMatrix.get(ModMatrix::DstDlyDamp));
+    fxP.frzSize    = juce::jlimit(20.0f, 1000.0f, fxParamsCache.frzSize->load() + modMatrix.get(ModMatrix::DstFrzSize) * 500.0f);
+    fxP.frzFeedback= juce::jlimit(0.0f, 0.99f, fxParamsCache.frzFeedback->load() + modMatrix.get(ModMatrix::DstFrzFeedback));
+    fxP.frzDamp    = juce::jlimit(0.0f, 1.0f, fxParamsCache.frzDamp->load() + modMatrix.get(ModMatrix::DstFrzDamp));
+    fxP.revDecay   = juce::jlimit(0.0f, 1.0f, fxParamsCache.revDecay->load() + modMatrix.get(ModMatrix::DstRevDecay));
+    fxP.revShimmer = juce::jlimit(0.0f, 1.0f, fxParamsCache.revShimmer->load() + modMatrix.get(ModMatrix::DstRevShimmer));
+    fxP.revDamp    = juce::jlimit(0.0f, 1.0f, fxParamsCache.revDamp->load() + modMatrix.get(ModMatrix::DstRevDamp));
+    fxP.revMod     = juce::jlimit(0.0f, 1.0f, fxParamsCache.revMod->load() + modMatrix.get(ModMatrix::DstRevMod));
 
     fxChain.process(buffer, fxP);
 
@@ -469,14 +476,82 @@ void PicoSamplerAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
     }
 }
 
+void PicoSamplerAudioProcessor::autoSliceFile(const juce::File& file, int stretchAlgo, float sensitivity)
+{
+    // 1. スロット0にロードして解析 (ストレッチアルゴリズム適用)
+    samplerEngine.getSlot(0).loadFromFile(file, stretchAlgo);
+    const auto& slot0 = samplerEngine.getSlot(0);
+    const int numSamples = slot0.getOriginalBuffer().getNumSamples();
+    if (numSamples < 100) return;
+
+    // 2. 簡易トランジェント検出 (エネルギーベース)
+    std::vector<int> onsetSamples;
+    onsetSamples.push_back(0); // 最初のスライスは常に開始位置
+
+    const int windowSize = 512;
+    float currentEnergy = 0.0f;
+    float prevEnergy = 0.0f;
+    
+    // Sensitivityを閾値にマッピング (高感度 = 低閾値)
+    const float threshold = juce::jmap(sensitivity, 0.0f, 1.0f, 0.05f, 0.001f);
+    const int numCh = slot0.getOriginalBuffer().getNumChannels();
+    
+    for (int i = 0; i < numSamples - windowSize; i += windowSize / 2)
+    {
+        float sum = 0.0f;
+        for (int ch = 0; ch < numCh; ++ch)
+        {
+            const float* data = slot0.getOriginalBuffer().getReadPointer(ch, i);
+            for (int s = 0; s < windowSize; ++s)
+            {
+                sum += data[s] * data[s];
+            }
+        }
+        currentEnergy = sum / (windowSize * numCh);
+        
+        // エネルギーの急上昇を検出
+        if (currentEnergy > prevEnergy + threshold && currentEnergy > 0.001f)
+        {
+            // 直前のオンセットから十分離れているか確認 (~100ms)
+            if (onsetSamples.empty() || i - onsetSamples.back() > 4410)
+            {
+                onsetSamples.push_back(i);
+                if (onsetSamples.size() >= 8) break;
+            }
+        }
+        prevEnergy = currentEnergy;
+    }
+
+    // 3. 各スロットに展開とパラメータ設定
+    int numSlices = (int)std::min((size_t)8, onsetSamples.size());
+    for (int i = 0; i < numSlices; ++i)
+    {
+        if (i > 0)
+        {
+            // 高速なバッファコピー (再解析不要)
+            samplerEngine.getSlot(i).copyFrom(slot0);
+        }
+        
+        float startRatio = (float)onsetSamples[i] / (float)numSamples;
+        float endRatio = 1.0f;
+        if (i < numSlices - 1) {
+            endRatio = (float)onsetSamples[i+1] / (float)numSamples;
+        }
+        
+        const juce::String s = juce::String(i);
+        if (auto* p = apvts.getParameter("sampleStart_" + s)) p->setValueNotifyingHost(startRatio);
+        if (auto* p = apvts.getParameter("sampleEnd_" + s)) p->setValueNotifyingHost(endRatio);
+    }
+}
+
 void PicoSamplerAudioProcessor::reanalyzeSlot(int slotIdx)
 {
     if (slotIdx < 0 || slotIdx >= 8) return;
-    const juce::String s = juce::String(slotIdx);
-    const int rootOverride = (int)getParamFloat("rootKey_" + s, -1.0f);
-    const int matMode = (int)getParamFloat("analysisEngine", 0.0f);
+    const int rootOverride = (int)slotParamsCache[(size_t)slotIdx].rootKeyOverride->load();
+    const int matMode = (int)apvts.getRawParameterValue("analysisEngine")->load();
+    const int stretchAlgo = (int)pStretchMode->load();
 
-    samplerEngine.getSlot(slotIdx).reanalyze(matMode, rootOverride);
+    samplerEngine.getSlot(slotIdx).reanalyze(matMode, rootOverride, stretchAlgo);
 }
 
 void PicoSamplerAudioProcessor::clearSlot(int slotIdx)
@@ -574,7 +649,8 @@ void PicoSamplerAudioProcessor::run()
 
         if (hasJob)
         {
-            samplerEngine.getSlot(job.slotIndex).loadFromFile(job.file);
+            const int stretchAlgo = (int)pStretchMode->load();
+            samplerEngine.getSlot(job.slotIndex).loadFromFile(job.file, stretchAlgo);
         }
         else
         {
@@ -582,6 +658,130 @@ void PicoSamplerAudioProcessor::run()
         }
     }
 }
+
+
+void PicoSamplerAudioProcessor::initializeParameterCache()
+{
+    pSamplerMode = apvts.getRawParameterValue("samplerMode");
+    pActiveSlot = apvts.getRawParameterValue("activeSlot");
+    pOutGain = apvts.getRawParameterValue("outGain");
+    pMasterPitch = apvts.getRawParameterValue("masterPitch");
+    pMasterHPF = apvts.getRawParameterValue("masterHPF");
+    pMasterLPF = apvts.getRawParameterValue("masterLPF");
+    pCeiling = apvts.getRawParameterValue("ceiling");
+    pLimRelease = apvts.getRawParameterValue("limRelease");
+    pFilterSlope = apvts.getRawParameterValue("filterSlope");
+    
+    pPortaEnable = apvts.getRawParameterValue("portaEnable");
+    pPortaTime = apvts.getRawParameterValue("portaTime");
+    pAutoSliceEnable = apvts.getRawParameterValue("autoSliceEnable");
+    pSliceSensitivity = apvts.getRawParameterValue("sliceSensitivity");
+    pStretchMode = apvts.getRawParameterValue("stretchMode");
+
+    for (int i = 0; i < 8; ++i) {
+        auto s = juce::String(i);
+        slotParamsCache[i].attack = apvts.getRawParameterValue("attack_" + s);
+        slotParamsCache[i].decay = apvts.getRawParameterValue("decay_" + s);
+        slotParamsCache[i].sustain = apvts.getRawParameterValue("sustain_" + s);
+        slotParamsCache[i].release = apvts.getRawParameterValue("release_" + s);
+        slotParamsCache[i].octave = apvts.getRawParameterValue("octave_" + s);
+        slotParamsCache[i].pitchSt = apvts.getRawParameterValue("pitchSt_" + s);
+        slotParamsCache[i].fineTune = apvts.getRawParameterValue("fineTune_" + s);
+        slotParamsCache[i].pan = apvts.getRawParameterValue("pan_" + s);
+        slotParamsCache[i].slotGain = apvts.getRawParameterValue("slotGain_" + s);
+        slotParamsCache[i].sampleStart = apvts.getRawParameterValue("sampleStart_" + s);
+        slotParamsCache[i].sampleEnd = apvts.getRawParameterValue("sampleEnd_" + s);
+        slotParamsCache[i].loopStart = apvts.getRawParameterValue("loopStart_" + s);
+        slotParamsCache[i].loopEnd = apvts.getRawParameterValue("loopEnd_" + s);
+        slotParamsCache[i].crossfade = apvts.getRawParameterValue("crossfade_" + s);
+        slotParamsCache[i].isLooping = apvts.getRawParameterValue("isLooping_" + s);
+        slotParamsCache[i].isStretchMode = apvts.getRawParameterValue("isStretchMode_" + s);
+        slotParamsCache[i].isReverse = apvts.getRawParameterValue("isReverse_" + s);
+        slotParamsCache[i].isSnap = apvts.getRawParameterValue("isSnap_" + s);
+        slotParamsCache[i].filterBypass = apvts.getRawParameterValue("filterBypass_" + s);
+        slotParamsCache[i].fxBypass = apvts.getRawParameterValue("fxBypass_" + s);
+        slotParamsCache[i].rootKeyOverride = apvts.getRawParameterValue("rootKey_" + s);
+        slotParamsCache[i].slotLowNote = apvts.getRawParameterValue("slotLowNote_" + s);
+        slotParamsCache[i].slotHighNote = apvts.getRawParameterValue("slotHighNote_" + s);
+    }
+
+    arpParamsCache.enable = apvts.getRawParameterValue("arpEnable");
+    arpParamsCache.latch = apvts.getRawParameterValue("arpLatch");
+    arpParamsCache.sync = apvts.getRawParameterValue("arpSync");
+    arpParamsCache.pattern = apvts.getRawParameterValue("arpPattern");
+    arpParamsCache.rateSync = apvts.getRawParameterValue("arpRateSync");
+    arpParamsCache.rateFree = apvts.getRawParameterValue("arpRateFree");
+    arpParamsCache.octaves = apvts.getRawParameterValue("arpOctaves");
+    arpParamsCache.offset = apvts.getRawParameterValue("arpOffset");
+    arpParamsCache.repeat = apvts.getRawParameterValue("arpRepeat");
+    arpParamsCache.accent = apvts.getRawParameterValue("arpAccent");
+    arpParamsCache.swing = apvts.getRawParameterValue("arpSwing");
+    arpParamsCache.gate = apvts.getRawParameterValue("arpGate");
+    arpParamsCache.key = apvts.getRawParameterValue("key");
+    arpParamsCache.scale = apvts.getRawParameterValue("scale");
+
+    filterParamsCache.enable = apvts.getRawParameterValue("fltEnable");
+    filterParamsCache.model = apvts.getRawParameterValue("fltModel");
+    filterParamsCache.cutoff = apvts.getRawParameterValue("fltCutoff");
+    filterParamsCache.res = apvts.getRawParameterValue("fltRes");
+    filterParamsCache.type = apvts.getRawParameterValue("fltType");
+    filterParamsCache.slope = apvts.getRawParameterValue("fltSlope");
+    filterParamsCache.formant = apvts.getRawParameterValue("fltFormant");
+    filterParamsCache.combMix = apvts.getRawParameterValue("fltCombMix");
+    filterParamsCache.envAttack = apvts.getRawParameterValue("fltEnvAttack");
+    filterParamsCache.envDecay = apvts.getRawParameterValue("fltEnvDecay");
+    filterParamsCache.envSustain = apvts.getRawParameterValue("fltEnvSustain");
+    filterParamsCache.envRelease = apvts.getRawParameterValue("fltEnvRelease");
+    filterParamsCache.envAmt = apvts.getRawParameterValue("fltEnvAmt");
+
+    for (int i = 0; i < 5; ++i) {
+        auto s = juce::String(i + 1);
+        fxParamsCache.type[i] = apvts.getRawParameterValue("fx" + s + "Type");
+        fxParamsCache.amount[i] = apvts.getRawParameterValue("fx" + s + "Amount");
+    }
+    fxParamsCache.satAlgo = apvts.getRawParameterValue("satAlgo");
+    fxParamsCache.satDrive = apvts.getRawParameterValue("satDrive");
+    fxParamsCache.satPreHz = apvts.getRawParameterValue("satPreHz");
+    fxParamsCache.satTrim = apvts.getRawParameterValue("satTrim");
+    fxParamsCache.choRate = apvts.getRawParameterValue("choRate");
+    fxParamsCache.choDepth = apvts.getRawParameterValue("choDepth");
+    fxParamsCache.choWidth = apvts.getRawParameterValue("choWidth");
+    fxParamsCache.dlyTime = apvts.getRawParameterValue("dlyTime");
+    fxParamsCache.dlyFeedback = apvts.getRawParameterValue("dlyFeedback");
+    fxParamsCache.dlyDuck = apvts.getRawParameterValue("dlyDuck");
+    fxParamsCache.dlyDamp = apvts.getRawParameterValue("dlyDamp");
+    fxParamsCache.frzSize = apvts.getRawParameterValue("frzSize");
+    fxParamsCache.frzFeedback = apvts.getRawParameterValue("frzFeedback");
+    fxParamsCache.frzDamp = apvts.getRawParameterValue("frzDamp");
+    fxParamsCache.revDecay = apvts.getRawParameterValue("revDecay");
+    fxParamsCache.revShimmer = apvts.getRawParameterValue("revShimmer");
+    fxParamsCache.revDamp = apvts.getRawParameterValue("revDamp");
+    fxParamsCache.revMod = apvts.getRawParameterValue("revMod");
+
+    for (int i = 0; i < 4; ++i) {
+        auto s = juce::String(i + 1);
+        modParamsCache.lfoWave[i] = apvts.getRawParameterValue("lfo" + s + "Wave");
+        modParamsCache.lfoRate[i] = apvts.getRawParameterValue("lfo" + s + "Rate");
+        modParamsCache.lfoSync[i] = apvts.getRawParameterValue("lfo" + s + "Sync");
+        modParamsCache.lfoSyncRate[i] = apvts.getRawParameterValue("lfo" + s + "SyncRate");
+    }
+    for (int i = 0; i < 3; ++i) {
+        auto s = juce::String(i + 1);
+        modParamsCache.envAttack[i] = apvts.getRawParameterValue("env" + s + "Attack");
+        modParamsCache.envDecay[i] = apvts.getRawParameterValue("env" + s + "Decay");
+        modParamsCache.envSustain[i] = apvts.getRawParameterValue("env" + s + "Sustain");
+        modParamsCache.envRelease[i] = apvts.getRawParameterValue("env" + s + "Release");
+        modParamsCache.envLoop[i] = apvts.getRawParameterValue("env" + s + "Loop");
+    }
+    for (int i = 0; i < 16; ++i) {
+        auto s = juce::String(i + 1);
+        modParamsCache.modSrc[i] = apvts.getRawParameterValue("mod" + s + "Src");
+        modParamsCache.modDst[i] = apvts.getRawParameterValue("mod" + s + "Dst");
+        modParamsCache.modAmt[i] = apvts.getRawParameterValue("mod" + s + "Amt");
+        modParamsCache.modUni[i] = apvts.getRawParameterValue("mod" + s + "Uni");
+    }
+}
+
 
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
 {

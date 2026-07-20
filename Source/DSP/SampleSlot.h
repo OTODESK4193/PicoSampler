@@ -35,8 +35,9 @@ public:
     ~SampleSlot() = default;
 
     void prepare(double sr) noexcept { engineSampleRate = sr > 1000.0 ? sr : 44100.0; }
-    bool loadFromFile(const juce::File& file);
-    void reanalyze(int materialMode = 0, int rootKeyOverride = -1);
+    bool loadFromFile(const juce::File& file, int stretchAlgo = 3);
+    void reanalyze(int materialMode = 0, int rootKeyOverride = -1, int stretchAlgo = 3);
+    void copyFrom(const SampleSlot& other);
     void clear();
 
     bool isReady() const noexcept { return ready.load(std::memory_order_relaxed); }
@@ -50,7 +51,7 @@ public:
     double getFileSampleRate() const noexcept { return metadata.fileSampleRate; }
 
 private:
-    void renderAnchors();
+    void renderAnchors(int stretchAlgo);
 
     std::atomic<bool> ready { false };
     std::atomic<bool> analyzing { false };

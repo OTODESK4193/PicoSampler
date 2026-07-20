@@ -29,6 +29,15 @@ PicoSamplerAudioProcessorEditor::PicoSamplerAudioProcessorEditor(PicoSamplerAudi
     btnReAnalyze.setColour(juce::TextButton::textColourOffId, PicoColors::mint);
     addAndMakeVisible(btnReAnalyze);
 
+    btnAutoSlice.setClickingTogglesState(true);
+    btnAutoSlice.setColour(juce::TextButton::buttonColourId, PicoColors::knobTrack);
+    btnAutoSlice.setColour(juce::TextButton::buttonOnColourId, PicoColors::pink);
+    btnAutoSlice.setColour(juce::TextButton::textColourOffId, PicoColors::textDim);
+    btnAutoSlice.setColour(juce::TextButton::textColourOnId, juce::Colours::white);
+    addAndMakeVisible(btnAutoSlice);
+    autoSliceAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(
+        p.getAPVTS(), "autoSliceEnable", btnAutoSlice);
+
     btnPresets.setColour(juce::TextButton::buttonColourId, PicoColors::knobTrack);
     btnPresets.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
     addAndMakeVisible(btnPresets);
@@ -61,7 +70,8 @@ PicoSamplerAudioProcessorEditor::PicoSamplerAudioProcessorEditor(PicoSamplerAudi
     // 波形エリア D&D & Clear
     waveDisplay.onFileDropped = [this](const juce::File& file) {
         const int activeIdx = (int)audioProcessor.getAPVTS().getRawParameterValue("activeSlot")->load();
-        audioProcessor.getSamplerEngine().getSlot(activeIdx).loadFromFile(file);
+        const int stretchAlgo = (int)audioProcessor.getAPVTS().getRawParameterValue("stretchMode")->load();
+        audioProcessor.getSamplerEngine().getSlot(activeIdx).loadFromFile(file, stretchAlgo);
         repaint();
     };
 
@@ -181,6 +191,7 @@ void PicoSamplerAudioProcessorEditor::resized()
     btnTabFx.setBounds(299,   tabY, 70,  tabH);
     btnTabConfig.setBounds(377, tabY, 80,  tabH);
 
+    btnAutoSlice.setBounds(1080 - 305, 10, 85, 26);
     btnReAnalyze.setBounds(1080 - 215, 10, 95, 26);
     btnPresets.setBounds(1080 - 110, 10, 90, 26);
 

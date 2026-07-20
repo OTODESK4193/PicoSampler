@@ -37,6 +37,10 @@ struct SamplerVoiceParams
     int highNote = 127;
 
     int rootKeyOverride = -1;  // -1 = 自動解析値を使用, 0-127 = 手動設定
+    
+    bool portaEnable = false;
+    float portaTime = 0.1f;
+    float portaStartMidiNote = -1.0f;
 };
 
 class PicoVoice
@@ -65,6 +69,7 @@ public:
         readPosition = 0.0;
         envValue = 0.0f;
         pitchInc = 1.0;
+        currentPitchRatio = 1.0;
     }
 
     bool isActive() const noexcept { return active; }
@@ -92,6 +97,7 @@ private:
 
     double readPosition = 0.0;
     double pitchInc = 1.0;     // ★ メンバーに昇格 (SR補正を含む)
+    double currentPitchRatio = 1.0;
     EnvStage envStage = EnvStage::Idle;
     float envValue = 0.0f;
 };

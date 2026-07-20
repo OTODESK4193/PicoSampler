@@ -71,6 +71,9 @@ public:
         float limReleaseMs = 50.0f;
         int polyphonyLimit = 32;
 
+        bool portaEnable = false;
+        float portaTime = 0.1f;
+
         std::array<SamplerVoiceParams, NUM_SLOTS> slotParams {};
     };
 
@@ -132,6 +135,7 @@ private:
 
     double sr = 44100.0;
     int lastRandomSlot = -1;
+    float lastPlayedNote = -1.0f;
     std::array<SampleSlot, NUM_SLOTS> slots;
     std::array<PicoVoice, NUM_VOICES> voices;
 

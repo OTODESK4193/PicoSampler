@@ -5,7 +5,7 @@
 #include "SampleSlot.h"
 #include "PitchAnalyzer.h"
 
-bool SampleSlot::loadFromFile(const juce::File& file)
+bool SampleSlot::loadFromFile(const juce::File& file, int stretchAlgo)
 {
     if (!file.existsAsFile()) return false;
 
@@ -38,14 +38,14 @@ bool SampleSlot::loadFromFile(const juce::File& file)
     metadata.centsOffset = analysis.centsOffset;
 
     // SignalsmithStretch 高音質49音階アンカー事前生成 (ファイルSR使用)
-    renderAnchors();
+    renderAnchors(stretchAlgo);
 
     analyzing.store(false, std::memory_order_release);
     ready.store(true, std::memory_order_release);
     return true;
 }
 
-void SampleSlot::reanalyze(int materialMode, int rootKeyOverride)
+void SampleSlot::reanalyze(int materialMode, int rootKeyOverride, int stretchAlgo)
 {
     if (originalBuffer.getNumSamples() < 4) return;
 
@@ -64,13 +64,13 @@ void SampleSlot::reanalyze(int materialMode, int rootKeyOverride)
         metadata.centsOffset = analysis.centsOffset;
     }
 
-    renderAnchors();
+    renderAnchors(stretchAlgo);
 
     analyzing.store(false, std::memory_order_release);
     ready.store(true, std::memory_order_release);
 }
 
-void SampleSlot::renderAnchors()
+void SampleSlot::renderAnchors(int stretchAlgo)
 {
     const int numSamples = originalBuffer.getNumSamples();
     const int numCh = originalBuffer.getNumChannels();
@@ -81,9 +81,26 @@ void SampleSlot::renderAnchors()
         const int stOffset = i - 24; // -24 ~ +24 半音 (全4オクターブ)
 
         signalsmith::stretch::SignalsmithStretch<float> stretch;
-        // トランジェント保護とアタックキープに最適化された高速・高品位ウィンドウ配置
-        const int blockSamples = static_cast<int>(sr * 0.06);   // 約60ms
-        const int intervalSamples = static_cast<int>(sr * 0.015); // 約15ms
+        
+        int blockSamples = static_cast<int>(sr * 0.06);   // 約60ms
+        int intervalSamples = static_cast<int>(sr * 0.015); // 約15ms
+
+        if (stretchAlgo == 0) // Beat
+        {
+            blockSamples = static_cast<int>(sr * 0.03);
+            intervalSamples = static_cast<int>(sr * 0.01);
+        }
+        else if (stretchAlgo == 1) // Tone
+        {
+            blockSamples = static_cast<int>(sr * 0.08);
+            intervalSamples = static_cast<int>(sr * 0.02);
+        }
+        else if (stretchAlgo == 2) // Texture
+        {
+            blockSamples = static_cast<int>(sr * 0.12);
+            intervalSamples = static_cast<int>(sr * 0.03);
+        }
+
         stretch.configure(numCh, blockSamples, intervalSamples, false);
         stretch.setTransposeSemitones((float)stOffset, 0.35f);
 
@@ -123,4 +140,22 @@ void SampleSlot::clear()
     analyzing.store(false, std::memory_order_release);
     originalBuffer.setSize(0, 0);
     for (auto& b : anchorBuffers) b.setSize(0, 0);
+}
+
+void SampleSlot::copyFrom(const SampleSlot& other)
+{
+    ready.store(false, std::memory_order_release);
+    analyzing.store(true, std::memory_order_release);
+
+    metadata = other.metadata;
+    engineSampleRate = other.engineSampleRate;
+    
+    originalBuffer.makeCopyOf(other.originalBuffer);
+    for (int i = 0; i < kNumAnchors; ++i)
+    {
+        anchorBuffers[(size_t)i].makeCopyOf(other.anchorBuffers[(size_t)i]);
+    }
+
+    analyzing.store(false, std::memory_order_release);
+    ready.store(true, std::memory_order_release);
 }

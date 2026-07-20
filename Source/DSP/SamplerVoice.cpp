@@ -32,6 +32,33 @@ void PicoVoice::startNote(int midiNoteNumber, float noteVelocity, int slotIdx,
         return;
     }
 
+    if (p.portaEnable && p.portaStartMidiNote >= 0.0f)
+    {
+        float startSemis = 0.0f;
+        if (p.isStretchMode)
+        {
+            const int anchorSemis = juce::jlimit(-24, 24, stOffset);
+            startSemis = p.portaStartMidiNote - (float)effectiveRoot + (p.octave * 12) + p.semitone - anchorSemis + (p.fineTune / 100.0f);
+        }
+        else
+        {
+            startSemis = p.portaStartMidiNote - (float)effectiveRoot + (p.octave * 12) + p.semitone + (p.fineTune / 100.0f);
+        }
+        currentPitchRatio = std::pow(2.0, (double)startSemis / 12.0);
+    }
+    else
+    {
+        if (p.isStretchMode)
+        {
+            const int anchorSemis = juce::jlimit(-24, 24, stOffset);
+            currentPitchRatio = std::pow(2.0, (double)(stOffset - anchorSemis + (p.fineTune / 100.0f)) / 12.0);
+        }
+        else
+        {
+            currentPitchRatio = std::pow(2.0, (double)(stOffset + (p.fineTune / 100.0f)) / 12.0);
+        }
+    }
+
     const int bufLen = buffer->getNumSamples();
     const float startR = juce::jlimit(0.0f, 1.0f, p.sampleStartRatio);
     const float endR   = juce::jlimit(0.01f, 1.0f, p.sampleEndRatio);
@@ -94,18 +121,28 @@ void PicoVoice::renderNextBlock(juce::AudioBuffer<float>& outputBuffer, int star
     const double fileSR = meta.fileSampleRate > 1000.0 ? meta.fileSampleRate : 44100.0;
     const double srRatio = fileSR / sampleRate;
 
+    double targetPitchRatio = 1.0;
     if (p.isStretchMode)
     {
         const int anchorSemis = juce::jlimit(-24, 24, stOffset);
         const float residualSemis = (float)(stOffset - anchorSemis) + (p.fineTune / 100.0f);
-        const double pitchRatio = std::pow(2.0, (double)residualSemis / 12.0);
-        pitchInc = srRatio * pitchRatio;
+        targetPitchRatio = std::pow(2.0, (double)residualSemis / 12.0);
     }
     else
     {
         const float totalSemis = (float)stOffset + (p.fineTune / 100.0f);
-        const double pitchRatio = std::pow(2.0, (double)totalSemis / 12.0);
-        pitchInc = srRatio * pitchRatio;
+        targetPitchRatio = std::pow(2.0, (double)totalSemis / 12.0);
+    }
+
+    double portaMultiplier = 1.0;
+    if (p.portaEnable && currentPitchRatio != targetPitchRatio)
+    {
+        const double timeMs = juce::jmap(p.portaTime, 0.0f, 1.0f, 5.0f, 1000.0f);
+        portaMultiplier = std::exp(-1.0 / ((timeMs * 0.001) * sampleRate));
+    }
+    else
+    {
+        currentPitchRatio = targetPitchRatio;
     }
 
     // マーカー・再生制御
@@ -138,8 +175,6 @@ void PicoVoice::renderNextBlock(juce::AudioBuffer<float>& outputBuffer, int star
         lpEndFile    = (int)(bufLen * (1.0f - juce::jlimit(0.02f, 1.0f, p.loopEndRatio)));
         lpStartFile  = juce::jlimit(smpEndFile + kMinSpan, smpStartFile, lpStartFile);
         lpEndFile    = juce::jlimit(smpEndFile, lpStartFile - kMinSpan, lpEndFile);
-
-        pitchInc = -pitchInc; // 逆再生方向へ進行
     }
 
     const int lpLen = std::max(kMinSpan, std::abs(lpEndFile - lpStartFile));
@@ -155,6 +190,14 @@ void PicoVoice::renderNextBlock(juce::AudioBuffer<float>& outputBuffer, int star
 
     for (int s = 0; s < numSamples; ++s)
     {
+        if (p.portaEnable && currentPitchRatio != targetPitchRatio)
+        {
+            currentPitchRatio = targetPitchRatio + (currentPitchRatio - targetPitchRatio) * portaMultiplier;
+            if (std::abs(currentPitchRatio - targetPitchRatio) < 0.0001) currentPitchRatio = targetPitchRatio;
+        }
+        pitchInc = srRatio * currentPitchRatio;
+        if (p.isReverse) pitchInc = -pitchInc;
+
         switch (envStage)
         {
         case EnvStage::Attack:

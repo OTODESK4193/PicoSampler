@@ -99,8 +99,14 @@ void SamplerEngine::triggerSlotNote(int slotIdx, int midiNote, float velocity, c
     if (voiceIdx < 0) voiceIdx = findOldestVoice();
     if (voiceIdx < 0) return;
 
-    const auto& voiceP = p.slotParams[(size_t)slotIdx];
+    auto voiceP = p.slotParams[(size_t)slotIdx];
+    voiceP.portaEnable = p.portaEnable;
+    voiceP.portaTime = p.portaTime;
+    voiceP.portaStartMidiNote = lastPlayedNote;
+
     voices[(size_t)voiceIdx].startNote(midiNote, velocity, slotIdx, slot, voiceP);
+    
+    lastPlayedNote = (float)midiNote;
 }
 
 int SamplerEngine::findFreeVoice() const noexcept

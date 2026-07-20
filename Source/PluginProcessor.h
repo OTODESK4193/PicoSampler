@@ -44,6 +44,8 @@ public:
     void setStateInformation(const void* data, int sizeInBytes) override;
 
     void run() override; // スレッド処理 (ファイルロード)
+    
+    void autoSliceFile(const juce::File& file, int stretchAlgo, float sensitivity);
 
     void reanalyzeSlot(int slotIdx); // ★ スロットの再解析・再配置
     void clearSlot(int slotIdx);     // ★ スロットの全消去・初期化
@@ -67,6 +69,122 @@ private:
     ModMatrix modMatrix;
     FxChain fxChain;
     SampleVisualizerData visualizerData;
+
+    struct CachedSlotParams {
+        std::atomic<float>* attack;
+        std::atomic<float>* decay;
+        std::atomic<float>* sustain;
+        std::atomic<float>* release;
+        std::atomic<float>* octave;
+        std::atomic<float>* pitchSt;
+        std::atomic<float>* fineTune;
+        std::atomic<float>* pan;
+        std::atomic<float>* slotGain;
+        std::atomic<float>* sampleStart;
+        std::atomic<float>* sampleEnd;
+        std::atomic<float>* loopStart;
+        std::atomic<float>* loopEnd;
+        std::atomic<float>* crossfade;
+        std::atomic<float>* isLooping;
+        std::atomic<float>* isStretchMode;
+        std::atomic<float>* isReverse;
+        std::atomic<float>* isSnap;
+        std::atomic<float>* filterBypass;
+        std::atomic<float>* fxBypass;
+        std::atomic<float>* rootKeyOverride;
+        std::atomic<float>* slotLowNote;
+        std::atomic<float>* slotHighNote;
+    } slotParamsCache[8];
+
+    struct CachedArpParams {
+        std::atomic<float>* enable;
+        std::atomic<float>* latch;
+        std::atomic<float>* sync;
+        std::atomic<float>* pattern;
+        std::atomic<float>* rateSync;
+        std::atomic<float>* rateFree;
+        std::atomic<float>* octaves;
+        std::atomic<float>* offset;
+        std::atomic<float>* repeat;
+        std::atomic<float>* accent;
+        std::atomic<float>* swing;
+        std::atomic<float>* gate;
+        std::atomic<float>* key;
+        std::atomic<float>* scale;
+    } arpParamsCache;
+
+    struct CachedFilterParams {
+        std::atomic<float>* enable;
+        std::atomic<float>* model;
+        std::atomic<float>* cutoff;
+        std::atomic<float>* res;
+        std::atomic<float>* type;
+        std::atomic<float>* slope;
+        std::atomic<float>* formant;
+        std::atomic<float>* combMix;
+        std::atomic<float>* envAttack;
+        std::atomic<float>* envDecay;
+        std::atomic<float>* envSustain;
+        std::atomic<float>* envRelease;
+        std::atomic<float>* envAmt;
+    } filterParamsCache;
+
+    struct CachedFxParams {
+        std::atomic<float>* type[5];
+        std::atomic<float>* amount[5];
+        std::atomic<float>* satAlgo;
+        std::atomic<float>* satDrive;
+        std::atomic<float>* satPreHz;
+        std::atomic<float>* satTrim;
+        std::atomic<float>* choRate;
+        std::atomic<float>* choDepth;
+        std::atomic<float>* choWidth;
+        std::atomic<float>* dlyTime;
+        std::atomic<float>* dlyFeedback;
+        std::atomic<float>* dlyDuck;
+        std::atomic<float>* dlyDamp;
+        std::atomic<float>* frzSize;
+        std::atomic<float>* frzFeedback;
+        std::atomic<float>* frzDamp;
+        std::atomic<float>* revDecay;
+        std::atomic<float>* revShimmer;
+        std::atomic<float>* revDamp;
+        std::atomic<float>* revMod;
+    } fxParamsCache;
+
+    struct CachedModParams {
+        std::atomic<float>* lfoWave[4];
+        std::atomic<float>* lfoRate[4];
+        std::atomic<float>* lfoSync[4];
+        std::atomic<float>* lfoSyncRate[4];
+        std::atomic<float>* envAttack[3];
+        std::atomic<float>* envDecay[3];
+        std::atomic<float>* envSustain[3];
+        std::atomic<float>* envRelease[3];
+        std::atomic<float>* envLoop[3];
+        std::atomic<float>* modSrc[16];
+        std::atomic<float>* modDst[16];
+        std::atomic<float>* modAmt[16];
+        std::atomic<float>* modUni[16];
+    } modParamsCache;
+
+    std::atomic<float>* pSamplerMode;
+    std::atomic<float>* pActiveSlot;
+    std::atomic<float>* pOutGain;
+    std::atomic<float>* pMasterPitch;
+    std::atomic<float>* pMasterHPF;
+    std::atomic<float>* pMasterLPF;
+    std::atomic<float>* pCeiling;
+    std::atomic<float>* pLimRelease;
+    std::atomic<float>* pFilterSlope;
+    
+    std::atomic<float>* pPortaEnable;
+    std::atomic<float>* pPortaTime;
+    std::atomic<float>* pAutoSliceEnable;
+    std::atomic<float>* pSliceSensitivity;
+    std::atomic<float>* pStretchMode;
+
+    void initializeParameterCache();
 
     juce::LinearSmoothedValue<float> smoothedCutoff { 2000.0f };
     juce::LinearSmoothedValue<float> smoothedReso   { 0.707f };
