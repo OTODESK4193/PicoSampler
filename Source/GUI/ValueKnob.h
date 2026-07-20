@@ -18,6 +18,19 @@ public:
         setColour(juce::Slider::textBoxTextColourId, PicoColors::textDim);
         setColour(juce::Slider::textBoxBackgroundColourId, juce::Colours::transparentBlack);
         setColour(juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
+        setMouseDragSensitivity(2000); // Higher default resolution for precision
+    }
+
+    std::function<double(double)> customSnapFunction;
+
+    double snapValue(double v, juce::Slider::DragMode mode) override
+    {
+        double snapped = juce::Slider::snapValue(v, mode);
+        if (customSnapFunction != nullptr)
+        {
+            snapped = customSnapFunction(snapped);
+        }
+        return snapped;
     }
 
     juce::String getTextFromValue(double val) override

@@ -21,12 +21,12 @@ public:
     void updateStates();
     void bindSlotParameters(int slotIdx);
 
-    juce::Slider& getSampleStartKnob() { return knobSampleStart.knob; }
-    juce::Slider& getSampleEndKnob()   { return knobSampleEnd.knob; }
-    juce::Slider& getLoopStartKnob()   { return knobLoopStart.knob; }
-    juce::Slider& getLoopEndKnob()     { return knobLoopEnd.knob; }
-    juce::Slider& getCrossfadeKnob()   { return knobCrossfade.knob; }
-    juce::Slider& getMasterPitchKnob() { return knobMasterPitch.knob; }
+    ValueKnob& getSampleStartKnob() { return knobSampleStart.knob; }
+    ValueKnob& getSampleEndKnob()   { return knobSampleEnd.knob; }
+    ValueKnob& getLoopStartKnob()   { return knobLoopStart.knob; }
+    ValueKnob& getLoopEndKnob()     { return knobLoopEnd.knob; }
+    ValueKnob& getCrossfadeKnob()   { return knobCrossfade.knob; }
+    ValueKnob& getMasterPitchKnob() { return knobMasterPitch.knob; }
     int getCurrentBoundSlot() const noexcept { return currentBoundSlot; }
 
 private:

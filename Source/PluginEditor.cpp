@@ -87,8 +87,20 @@ PicoSamplerAudioProcessorEditor::PicoSamplerAudioProcessorEditor(PicoSamplerAudi
         audioProcessor.clearSlot(slotIdx);
         repaint();
     };
-
     // KeyRangeMap 操作ハンドラ
+    auto snapFunc = [this](double v) -> double {
+        const int activeIdx = (int)audioProcessor.getAPVTS().getRawParameterValue("activeSlot")->load();
+        const bool isSnap = audioProcessor.getAPVTS().getRawParameterValue("isSnap_" + juce::String(activeIdx))->load() > 0.5f;
+        if (isSnap) {
+            return waveDisplay.findZeroCrossingRatio((float)v);
+        }
+        return v;
+    };
+    mainPanel.getSampleStartKnob().customSnapFunction = snapFunc;
+    mainPanel.getSampleEndKnob().customSnapFunction = snapFunc;
+    mainPanel.getLoopStartKnob().customSnapFunction = snapFunc;
+    mainPanel.getLoopEndKnob().customSnapFunction = snapFunc;
+
     keyRangeMap.onKeyRangeChanged = [this](int slotIdx, int low, int high) {
         if (auto* pLow = audioProcessor.getAPVTS().getParameter("slotLowNote_" + juce::String(slotIdx)))
             pLow->setValueNotifyingHost((float)low / 127.0f);

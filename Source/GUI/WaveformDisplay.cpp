@@ -139,12 +139,17 @@ void WaveformDisplay::paint(juce::Graphics& g)
         return (ratio - viewStartRatio) * zoomLevel * w;
     };
 
-    const float sX = ratioToX(startRatio);
-    const float eX = ratioToX(endRatio);
+    float sX = ratioToX(startRatio);
+    float eX = ratioToX(endRatio);
     const float liveSX = ratioToX(liveStartRatio);
     const float liveEX = ratioToX(liveEndRatio);
-    const float liveLSX = ratioToX(liveLStart);
-    const float liveLEX = ratioToX(liveLEnd);
+    float liveLSX = ratioToX(liveLStart);
+    float liveLEX = ratioToX(liveLEnd);
+
+    if (activeDrag == DragTarget::SampleStart) sX = ratioToX(dragStartParamValue) + (currentMouseX - dragStartX);
+    else if (activeDrag == DragTarget::SampleEnd) eX = ratioToX(dragStartParamValue) + (currentMouseX - dragStartX);
+    else if (activeDrag == DragTarget::LoopStart) liveLSX = ratioToX(dragStartParamValue) + (currentMouseX - dragStartX);
+    else if (activeDrag == DragTarget::LoopEnd) liveLEX = ratioToX(dragStartParamValue) + (currentMouseX - dragStartX);
 
     // 静的ベース Start マーカー
     g.setColour(juce::Colours::yellow.withAlpha(0.6f));
@@ -374,12 +379,19 @@ void WaveformDisplay::mouseDown(const juce::MouseEvent& e)
     else if (std::abs(mouseX - eX) < 10.0f) activeDrag = DragTarget::SampleEnd;
     else activeDrag = DragTarget::None;
 
-    if (activeDrag == DragTarget::SampleStart) {} // We no longer need to store dragStartValue
+    if (activeDrag == DragTarget::SampleStart) dragStartParamValue = startRatio;
+    else if (activeDrag == DragTarget::SampleEnd) dragStartParamValue = endRatio;
+    else if (activeDrag == DragTarget::LoopStart) dragStartParamValue = loopStart;
+    else if (activeDrag == DragTarget::LoopEnd) dragStartParamValue = loopEnd;
+
+    dragStartX = e.x;
 }
 
 void WaveformDisplay::mouseDrag(const juce::MouseEvent& e)
 {
     if (activeDrag == DragTarget::None || !currentSlot || !vts) return;
+
+    currentMouseX = e.x;
 
     const float w = (float)getWidth();
     
@@ -391,7 +403,7 @@ void WaveformDisplay::mouseDrag(const juce::MouseEvent& e)
         return;
     }
 
-    float normX = (e.x / w) / zoomLevel + viewStartRatio;
+    float normX = dragStartParamValue + (float)(e.x - dragStartX) / w / zoomLevel;
     normX = juce::jlimit(0.0f, 1.0f, normX);
     
     const juce::String s = juce::String(activeSlot);
