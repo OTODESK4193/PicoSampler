@@ -231,6 +231,14 @@ void MainPanel::bindSlotParameters(int slotIdx)
     bind(knobLoopEnd,     "loopEnd");
     bind(knobCrossfade,   "crossfade");
 
+    // Start/End/Loop は連続値パラメータ (interval=0) のため、
+    // JUCE の既定桁数だと表示が暴れる。表示桁とドラッグ解像度を明示指定する。
+    for (auto* lk : { &knobSampleStart, &knobSampleEnd, &knobLoopStart, &knobLoopEnd, &knobCrossfade })
+    {
+        lk->knob.setNumDecimalPlacesToDisplay(4);
+        lk->knob.setMouseDragSensitivity(4000);  // 高解像度追い込み用
+    }
+
     bind(knobRootKey,  "rootKey");
     bind(knobOctave,   "octave");
     bind(knobSemitone, "pitchSt");

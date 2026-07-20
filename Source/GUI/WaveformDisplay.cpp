@@ -3,6 +3,7 @@
 // WaveformDisplay 実装 (Reverseオン時の波形反転描画 & 直感的一貫マーカー操作)
 // ==========================================
 #include "WaveformDisplay.h"
+#include <cmath>
 
 WaveformDisplay::WaveformDisplay()
 {
@@ -113,13 +114,15 @@ void WaveformDisplay::paint(juce::Graphics& g)
 
     // 4. マーカー位置描画
     // 見た目の波形を正として、画面左=Start, 画面右=End で統一
+    // APVTS 側が外部要因 (ノブ/プリセット/オートメーション) で動いた時のみ UI 値を追従させる。
+    // ドラッグ中は UI 値が真値なので絶対に上書きしない。
+    const bool isDraggingMarker = (activeDrag != DragTarget::None && activeDrag != DragTarget::Scrollbar);
     auto getDouble = [&](const juce::String& name, double& uiVal, float def) {
         if (!vts) return def;
         if (auto* p = vts->getRawParameterValue(name)) {
-            float apvtsVal = p->load();
-            if (std::abs(apvtsVal - (float)uiVal) > 5.0e-6f) {
+            const float apvtsVal = p->load();
+            if (!isDraggingMarker && apvtsVal != (float)uiVal)
                 uiVal = (double)apvtsVal;
-            }
             return (float)uiVal;
         }
         return def;
@@ -234,6 +237,28 @@ void WaveformDisplay::paint(juce::Graphics& g)
     }
 }
 
+void WaveformDisplay::syncUiFromParams() noexcept
+{
+    if (!vts) return;
+    const juce::String s = juce::String(activeSlot);
+
+    auto pull = [this, &s](const juce::String& name, double& uiVal)
+    {
+        if (auto* p = vts->getRawParameterValue(name + "_" + s))
+        {
+            const float v = p->load();
+            // float に丸めて一致していなければ外部変更とみなして取り込む
+            if (v != (float)uiVal)
+                uiVal = (double)v;
+        }
+    };
+
+    pull("sampleStart", uiStartRatio[activeSlot]);
+    pull("sampleEnd",   uiEndRatio[activeSlot]);
+    pull("loopStart",   uiLoopStart[activeSlot]);
+    pull("loopEnd",     uiLoopEnd[activeSlot]);
+}
+
 float WaveformDisplay::findZeroCrossingRatio(float targetRatio) const noexcept
 {
     if (!currentSlot || !currentSlot->isReady()) return targetRatio;
@@ -245,19 +270,46 @@ float WaveformDisplay::findZeroCrossingRatio(float targetRatio) const noexcept
     const float* samples = buffer.getReadPointer(0);
     if (!samples) return targetRatio;
 
-    const int targetIdx = juce::jlimit(0, numSamples - 1, (int)(targetRatio * (float)numSamples));
-    
-    // Zoom in = smaller search range (disables snapping visually when zoomed heavily for sample-accurate edits)
-    const int searchRange = std::min(8192, (int)(numSamples / (5.0f * zoomLevel)));
+    const int lastIdx = numSamples - 1;
+    const double dSamples = (double)lastIdx;
 
-    // 1. まずトランジェント (Onset) へのスナップを試みる
+    const int targetIdx = juce::jlimit(0, lastIdx, (int)std::llround((double)targetRatio * dSamples));
+
+    // 「ゼロ交差」判定: samples[i] と samples[i+1] の符号が変わる点、
+    // または振幅がほぼ 0 の点。JUCE の float は ±1.0 スケールなので閾値は十分小さく。
+    auto isZeroCross = [samples, lastIdx](int i) noexcept
+    {
+        if (i < 0 || i >= lastIdx) return false;
+        const float a = samples[i];
+        const float b = samples[i + 1];
+        if (a == 0.0f) return true;
+        return (a < 0.0f) != (b < 0.0f);
+    };
+
+    // 交差ペア (i, i+1) のうち、絶対値が小さい側を採用する。
+    auto refine = [samples, lastIdx](int i) noexcept
+    {
+        if (i < 0 || i >= lastIdx) return juce::jlimit(0, lastIdx, i);
+        return (std::abs(samples[i]) <= std::abs(samples[i + 1])) ? i : i + 1;
+    };
+
+    // ------------------------------------------------------------------
+    // 1) トランジェント (Onset) への磁力スナップ
+    //    磁力半径は「画面上のピクセル距離」基準にする。
+    //    こうするとズーム率が変わってもマウス感覚上の吸着距離が一定になる。
+    // ------------------------------------------------------------------
+    const double pixelsPerSample = ((double)getWidth() * (double)zoomLevel) / std::max(1.0, dSamples);
+    const int onsetMagnetSamples =
+        juce::jlimit(4, numSamples, (int)std::ceil(12.0 / std::max(1.0e-9, pixelsPerSample)));
+
     const auto& onsets = currentSlot->getOnsetSamples();
     int bestOnset = -1;
-    int minOnsetDist = searchRange;
+    int minOnsetDist = onsetMagnetSamples;
 
     for (int onset : onsets)
     {
-        int dist = std::abs(onset - targetIdx);
+        if (onset < 0 || onset > lastIdx) continue;
+        const int dist = std::abs(onset - targetIdx);
         if (dist < minOnsetDist)
         {
             minOnsetDist = dist;
@@ -265,53 +317,36 @@ float WaveformDisplay::findZeroCrossingRatio(float targetRatio) const noexcept
         }
     }
 
-    if (bestOnset >= 0)
+    // ------------------------------------------------------------------
+    // 2) ゼロ交差検索。
+    //    Onset が見つかった場合はその近傍を、見つからなければマウス位置近傍を探す。
+    //    検索範囲はズーム率に依存させない。見つかるまで最後まで探す
+    //    (= Snap ON なら必ずゼロ交差に着地することを保証する)。
+    // ------------------------------------------------------------------
+    const int anchor = (bestOnset >= 0) ? bestOnset : targetIdx;
+
+    if (isZeroCross(anchor))
+        return (float)((double)refine(anchor) / dSamples);
+
+    const int maxSearch = numSamples;
+    for (int d = 1; d < maxSearch; ++d)
     {
-        // ゼロクロスに厳密に補正 (Onset付近の最も近いゼロクロスを探す)
-        int zeroOnset = bestOnset;
-        for (int d = 0; d < 500; ++d)
-        {
-            int left = bestOnset - d;
-            int right = bestOnset + d;
-            if (left >= 0 && left < numSamples - 1 && (samples[left] * samples[left + 1] <= 0.0f || std::abs(samples[left]) < 1.0e-4f)) {
-                zeroOnset = left;
-                break;
-            }
-            if (right >= 0 && right < numSamples - 1 && (samples[right] * samples[right + 1] <= 0.0f || std::abs(samples[right]) < 1.0e-4f)) {
-                zeroOnset = right;
-                break;
-            }
-        }
-        return (float)zeroOnset / (float)numSamples;
+        const int left  = anchor - d;
+        const int right = anchor + d;
+        const bool leftValid  = (left >= 0);
+        const bool rightValid = (right < lastIdx);
+
+        if (!leftValid && !rightValid) break;
+
+        if (leftValid && isZeroCross(left))
+            return (float)((double)refine(left) / dSamples);
+
+        if (rightValid && isZeroCross(right))
+            return (float)((double)refine(right) / dSamples);
     }
 
-    // 2. 近くにトランジェントが無ければゼロクロス検索にフォールバック
-    int bestIdx = targetIdx;
-
-    for (int d = 0; d < searchRange; ++d)
-    {
-        int left = targetIdx - d;
-        int right = targetIdx + d;
-
-        if (left >= 0 && left < numSamples - 1)
-        {
-            if (samples[left] * samples[left + 1] <= 0.0f || std::abs(samples[left]) < 1.0e-4f)
-            {
-                bestIdx = left;
-                break;
-            }
-        }
-        if (right >= 0 && right < numSamples - 1)
-        {
-            if (samples[right] * samples[right + 1] <= 0.0f || std::abs(samples[right]) < 1.0e-4f)
-            {
-                bestIdx = right;
-                break;
-            }
-        }
-    }
-
-    return (float)bestIdx / (float)numSamples;
+    // ゼロ交差が皆無 (DC オフセット波形など) の場合のみ、元の位置を返す。
+    return (float)((double)targetIdx / dSamples);
 }
 
 bool WaveformDisplay::isInterestedInFileDrag(const juce::StringArray& files)
@@ -378,13 +413,18 @@ void WaveformDisplay::mouseDown(const juce::MouseEvent& e)
         return def;
     };
 
-    const float startRatio = getParamFloat("sampleStart_" + s, 0.0f);
-    const float endRatio   = getParamFloat("sampleEnd_" + s, 1.0f);
-    const float loopStart  = getParamFloat("loopStart_" + s, 0.2f);
-    const float loopEnd    = getParamFloat("loopEnd_" + s, 0.7f);
-    const bool isLooping   = getParamFloat("isLooping_" + s, 0.0f) > 0.5f;
+    // ドラッグ開始前に、高精度 UI 値を APVTS の現在値と同期させる。
+    // (プリセット読込 / AutoSlice / ノブ操作で外部から変更された場合に
+    //  ドラッグ開始直後にマーカーが飛ぶのを防ぐ)
+    syncUiFromParams();
 
-    auto ratioToX = [&](float ratio) { return (ratio - viewStartRatio) * zoomLevel * w; };
+    const double startRatio = uiStartRatio[activeSlot];
+    const double endRatio   = uiEndRatio[activeSlot];
+    const double loopStart  = uiLoopStart[activeSlot];
+    const double loopEnd    = uiLoopEnd[activeSlot];
+    const bool isLooping    = getParamFloat("isLooping_" + s, 0.0f) > 0.5f;
+
+    auto ratioToX = [&](double ratio) { return (float)((ratio - (double)viewStartRatio) * (double)zoomLevel * (double)w); };
 
     const float sX  = ratioToX(startRatio);
     const float eX  = ratioToX(endRatio);
@@ -412,6 +452,7 @@ void WaveformDisplay::mouseDown(const juce::MouseEvent& e)
     else if (activeDrag == DragTarget::LoopEnd) dragStartParamValue = uiLoopEnd[activeSlot];
 
     dragStartX = e.x;
+    dragStartXf = e.position.x;   // サブピクセル精度の開始位置
 }
 
 void WaveformDisplay::mouseDrag(const juce::MouseEvent& e)
@@ -430,7 +471,11 @@ void WaveformDisplay::mouseDrag(const juce::MouseEvent& e)
         return;
     }
 
-    double normX = dragStartParamValue + (double)(e.x - dragStartX) / (double)w / (double)zoomLevel;
+    // サブピクセル精度でドラッグ量を積算する (int の e.x ではなく float の e.position.x)。
+    // ズーム率で割ることで、拡大時は 1px あたりの移動量が細かくなり
+    // サンプル単位の追い込みが可能になる。
+    const double deltaRatio = (double)(e.position.x - dragStartXf) / (double)w / (double)zoomLevel;
+    double normX = dragStartParamValue + deltaRatio;
     normX = juce::jlimit(0.0, 1.0, normX);
     
     const juce::String s = juce::String(activeSlot);

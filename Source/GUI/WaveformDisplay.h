@@ -70,7 +70,11 @@ private:
 
     double dragStartParamValue = 0.0;
     int dragStartX = 0;
+    float dragStartXf = 0.0f;   // サブピクセル精度のドラッグ開始X
     int currentMouseX = 0;
+
+    // APVTS の現在値を高精度UI値へ取り込む (ドラッグ開始時の飛び防止)
+    void syncUiFromParams() noexcept;
 
 
     float animPhase = 0.0f;
