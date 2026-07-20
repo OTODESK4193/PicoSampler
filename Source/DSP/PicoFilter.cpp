@@ -43,20 +43,27 @@ float PicoFilter::processSample(int ch, float x, const Params& p) noexcept
 {
     if (p.model == CleanSVF)
     {
-        // --- 1. Clean SVF (12dB / 24dB) ---
-        const float fc = juce::jlimit(20.0f, (float)(sr * 0.49), p.cutoff);
+        // --- 1. Clean Zavalishin TPT SVF (12dB / 24dB) ---
+        const float normFc = juce::jlimit(0.0001f, 0.46f, p.cutoff / (float)sr);
+        const float g = std::tan(juce::MathConstants<float>::pi * normFc);
         const float res = juce::jlimit(0.1f, 10.0f, p.res);
-        const int stages = (p.slope == 0) ? 1 : 2;
-
-        const float g = std::tan(juce::MathConstants<float>::pi * fc / (float)sr);
         const float R = 1.0f / (2.0f * res);
         const float h = 1.0f / (1.0f + 2.0f * R * g + g * g);
+        const int stages = (p.slope == 0) ? 1 : 2;
 
         float currInput = x;
         for (int st = 0; st < stages; ++st)
         {
+            // デノーム保護
+            svf_s1[st][ch] = snapToZero(svf_s1[st][ch]);
+            svf_s2[st][ch] = snapToZero(svf_s2[st][ch]);
+
             float hp = (currInput - (2.0f * R + g) * svf_s1[st][ch] - svf_s2[st][ch]) * h;
             float bp = g * hp + svf_s1[st][ch];
+
+            // 状態飽和・ノンリニア保護 (過度なレゾナンスによる爆発・歪みをソフト制限)
+            bp = bp / (1.0f + 0.15f * std::abs(bp));
+
             svf_s1[st][ch] = g * hp + bp;
 
             float lp = g * bp + svf_s2[st][ch];
@@ -100,7 +107,11 @@ float PicoFilter::processSample(int ch, float x, const Params& p) noexcept
         const float targetRes = juce::jlimit(0.5f, 8.0f, p.res * 2.0f);
 
         auto processFormantBand = [&](int b, float freq, float inSample) -> float {
-            float g = std::tan(juce::MathConstants<float>::pi * freq / (float)sr);
+            form_s1[b][ch] = snapToZero(form_s1[b][ch]);
+            form_s2[b][ch] = snapToZero(form_s2[b][ch]);
+
+            float normF = juce::jlimit(0.001f, 0.46f, freq / (float)sr);
+            float g = std::tan(juce::MathConstants<float>::pi * normF);
             float R = 1.0f / (2.0f * targetRes);
             float h = 1.0f / (1.0f + 2.0f * R * g + g * g);
 
@@ -129,13 +140,13 @@ float PicoFilter::processSample(int ch, float x, const Params& p) noexcept
         float readPos = (float)wIdx - delaySamples;
         if (readPos < 0.0f) readPos += (float)kCombBufSize;
 
-        int rIdx1 = (int)readPos;
+        int rIdx1 = juce::jlimit(0, kCombBufSize - 1, (int)readPos);
         int rIdx2 = (rIdx1 + 1) % kCombBufSize;
         float frac = readPos - (float)rIdx1;
 
-        float delayedSample = combBuffer[ch][rIdx1] * (1.0f - frac) + combBuffer[ch][rIdx2] * frac;
+        float delayedSample = snapToZero(combBuffer[ch][rIdx1] * (1.0f - frac) + combBuffer[ch][rIdx2] * frac);
 
-        float writeSample = x + delayedSample * fb;
+        float writeSample = snapToZero(x + delayedSample * fb);
         combBuffer[ch][wIdx] = writeSample;
         combWriteIdx[ch] = (wIdx + 1) % kCombBufSize;
 
@@ -168,7 +179,7 @@ float PicoFilter::getMagnitudeForFrequency(float freqHz, const Params& p) const 
         else if (p.type == HighPass) m *= w2;
         else if (p.type == Notch) m *= std::abs(1.0f - w2);
 
-        return std::pow(m, stages);
+        return std::pow(m, (float)stages);
     }
     else if (p.model == VowelFormant)
     {

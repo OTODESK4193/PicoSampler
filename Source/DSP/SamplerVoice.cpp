@@ -109,31 +109,41 @@ void PicoVoice::renderNextBlock(juce::AudioBuffer<float>& outputBuffer, int star
     }
 
     // マーカー・再生制御
+    static constexpr int kMinSpan = 32;
+
     int smpStartFile = 0, smpEndFile = bufLen - 1;
     int lpStartFile = 0, lpEndFile = bufLen - 1;
 
     if (!p.isReverse)
     {
-        smpStartFile = (int)(bufLen * juce::jlimit(0.0f, 0.99f, p.sampleStartRatio));
-        smpEndFile   = (int)(bufLen * juce::jlimit(0.01f, 1.0f, p.sampleEndRatio));
-        lpStartFile  = (int)(bufLen * juce::jlimit(0.0f, 0.99f, p.loopStartRatio));
-        lpEndFile    = std::min(smpEndFile, (int)(bufLen * juce::jlimit(0.01f, 1.0f, p.loopEndRatio)));
+        smpStartFile = (int)(bufLen * juce::jlimit(0.0f, 0.98f, p.sampleStartRatio));
+        smpEndFile   = (int)(bufLen * juce::jlimit(0.02f, 1.0f, p.sampleEndRatio));
+        if (smpEndFile <= smpStartFile + kMinSpan)
+            smpEndFile = std::min(bufLen - 1, smpStartFile + kMinSpan);
+
+        lpStartFile  = (int)(bufLen * juce::jlimit(0.0f, 0.98f, p.loopStartRatio));
+        lpEndFile    = (int)(bufLen * juce::jlimit(0.02f, 1.0f, p.loopEndRatio));
+        lpStartFile  = juce::jlimit(smpStartFile, smpEndFile - kMinSpan, lpStartFile);
+        lpEndFile    = juce::jlimit(lpStartFile + kMinSpan, smpEndFile, lpEndFile);
     }
     else
     {
-        // Reverse ON: 反転波形の見た目を正としてファイル位置へ反転マッピング
-        // 画面左マーカー (Start) ➔ ファイル上の末尾寄り (1.0 - startRatio)
-        // 画面右マーカー (End)   ➔ ファイル上の先頭寄り (1.0 - endRatio)
-        smpStartFile = (int)(bufLen * (1.0f - juce::jlimit(0.0f, 0.99f, p.sampleStartRatio)));
-        smpEndFile   = (int)(bufLen * (1.0f - juce::jlimit(0.01f, 1.0f, p.sampleEndRatio)));
-        lpStartFile  = (int)(bufLen * (1.0f - juce::jlimit(0.0f, 0.99f, p.loopStartRatio)));
-        lpEndFile    = std::max(smpEndFile, (int)(bufLen * (1.0f - juce::jlimit(0.01f, 1.0f, p.loopEndRatio))));
-        
+        // Reverse ON
+        smpStartFile = (int)(bufLen * (1.0f - juce::jlimit(0.0f, 0.98f, p.sampleStartRatio)));
+        smpEndFile   = (int)(bufLen * (1.0f - juce::jlimit(0.02f, 1.0f, p.sampleEndRatio)));
+        if (smpStartFile <= smpEndFile + kMinSpan)
+            smpStartFile = std::min(bufLen - 1, smpEndFile + kMinSpan);
+
+        lpStartFile  = (int)(bufLen * (1.0f - juce::jlimit(0.0f, 0.98f, p.loopStartRatio)));
+        lpEndFile    = (int)(bufLen * (1.0f - juce::jlimit(0.02f, 1.0f, p.loopEndRatio)));
+        lpStartFile  = juce::jlimit(smpEndFile + kMinSpan, smpStartFile, lpStartFile);
+        lpEndFile    = juce::jlimit(smpEndFile, lpStartFile - kMinSpan, lpEndFile);
+
         pitchInc = -pitchInc; // 逆再生方向へ進行
     }
 
-    const int lpLen = std::abs(lpEndFile - lpStartFile);
-    const int xfadeLen = juce::jmax(1, (int)(lpLen * juce::jlimit(0.0f, 0.5f, p.crossfadeRatio)));
+    const int lpLen = std::max(kMinSpan, std::abs(lpEndFile - lpStartFile));
+    const int xfadeLen = juce::jlimit(8, lpLen / 2, (int)(lpLen * juce::jlimit(0.0f, 0.5f, p.crossfadeRatio)));
 
     const float pan = juce::jlimit(-1.0f, 1.0f, p.pan);
     const float gainL = std::sqrt(0.5f * (1.0f - pan)) * velocity * juce::Decibels::decibelsToGain(p.slotGainDb);
@@ -173,7 +183,10 @@ void PicoVoice::renderNextBlock(juce::AudioBuffer<float>& outputBuffer, int star
         {
             if (p.isLooping)
             {
-                if (readPosition >= (double)lpEndFile) readPosition -= (double)(lpEndFile - lpStartFile);
+                while (readPosition >= (double)lpEndFile)
+                    readPosition -= (double)std::max(1, lpEndFile - lpStartFile);
+                if (readPosition < (double)lpStartFile)
+                    readPosition = (double)lpStartFile;
             }
             else
             {
@@ -185,7 +198,10 @@ void PicoVoice::renderNextBlock(juce::AudioBuffer<float>& outputBuffer, int star
             // Reverse ON: ファイル上では減少方向へ進む
             if (p.isLooping)
             {
-                if (readPosition <= (double)lpEndFile) readPosition += (double)(lpStartFile - lpEndFile);
+                while (readPosition <= (double)lpEndFile)
+                    readPosition += (double)std::max(1, lpStartFile - lpEndFile);
+                if (readPosition > (double)lpStartFile)
+                    readPosition = (double)lpStartFile;
             }
             else
             {

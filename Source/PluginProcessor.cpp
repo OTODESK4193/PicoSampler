@@ -202,6 +202,10 @@ void PicoSamplerAudioProcessor::prepareToPlay(double sampleRate, int samplesPerB
     mainFilter.prepare(sampleRate, samplesPerBlock);
     fxChain.prepareToPlay(sampleRate);
     filterAdsr.setSampleRate(sampleRate);
+
+    smoothedCutoff.reset(sampleRate, 0.02); // 20ms スムージングランプ
+    smoothedReso.reset(sampleRate, 0.02);
+    smoothedGain.reset(sampleRate, 0.02);
 }
 
 void PicoSamplerAudioProcessor::releaseResources() {}
@@ -389,21 +393,26 @@ void PicoSamplerAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
     // 1. 各スロットのボイスをルーティングに応じて各バッファにレンダリング
     samplerEngine.renderNextBlock(buffer, fltBypassBuffer, fxBypassBuffer, bothBypassBuffer, engineParams, &visualizerData);
 
-    // 2. PicoFilter (CleanSVF, Vowel, Comb) 適用 (Filter Bypassがオフの音声: normalBuffer, fxBypassBuffer)
+    // 2. PicoFilter (CleanSVF, Vowel, Comb) 適用 (FLT BYPASSがオフのスロット音声に適用)
     PicoFilter::Params fltParams;
-    fltParams.enable  = getParamFloat("fltEnable", 0.0f) > 0.5f;
+    fltParams.enable  = true; // フィルター自体は常に有効化（スロット個別のFLT BYPASSでルーティング制御）
     fltParams.model   = (int)getParamFloat("fltModel", 0.0f);
 
     const float baseCutoff = getParamFloat("fltCutoff", 2000.0f);
-    float modCutoff = baseCutoff;
+    float targetCutoff = baseCutoff;
     if (std::abs(envAmt) > 0.001f || std::abs(modMatrix.get(ModMatrix::DstFltCutoff)) > 0.001f)
     {
         const float octaveShift = envVal * envAmt * 4.0f + modMatrix.get(ModMatrix::DstFltCutoff) * 4.0f;
-        modCutoff = baseCutoff * std::pow(2.0f, octaveShift);
-        modCutoff = juce::jlimit(20.0f, 20000.0f, modCutoff);
+        targetCutoff = baseCutoff * std::pow(2.0f, octaveShift);
     }
-    fltParams.cutoff  = modCutoff;
-    fltParams.res     = juce::jlimit(0.1f, 10.0f, getParamFloat("fltRes", 0.707f) + modMatrix.get(ModMatrix::DstFltReso) * 5.0f);
+    targetCutoff = juce::jlimit(20.0f, 20000.0f, targetCutoff);
+    smoothedCutoff.setTargetValue(targetCutoff);
+
+    const float targetReso = juce::jlimit(0.1f, 10.0f, getParamFloat("fltRes", 0.707f) + modMatrix.get(ModMatrix::DstFltReso) * 5.0f);
+    smoothedReso.setTargetValue(targetReso);
+
+    fltParams.cutoff  = smoothedCutoff.getNextValue();
+    fltParams.res     = smoothedReso.getNextValue();
     fltParams.type    = (int)getParamFloat("fltType", 0.0f);
     fltParams.slope   = (int)getParamFloat("fltSlope", 0.0f);
     fltParams.formant = juce::jlimit(0.0f, 1.0f, getParamFloat("fltFormant", 0.0f) + modMatrix.get(ModMatrix::DstFltFormant));

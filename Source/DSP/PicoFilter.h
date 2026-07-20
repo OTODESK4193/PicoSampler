@@ -8,6 +8,11 @@
 #include <vector>
 #include <cmath>
 
+inline float snapToZero(float val) noexcept
+{
+    return std::abs(val) < 1.0e-15f ? 0.0f : val;
+}
+
 class PicoFilter
 {
 public:

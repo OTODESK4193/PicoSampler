@@ -67,6 +67,10 @@ private:
     FxChain fxChain;
     SampleVisualizerData visualizerData;
 
+    juce::LinearSmoothedValue<float> smoothedCutoff { 2000.0f };
+    juce::LinearSmoothedValue<float> smoothedReso   { 0.707f };
+    juce::LinearSmoothedValue<float> smoothedGain   { 1.0f };
+
     struct AsyncLoadJob
     {
         int slotIndex = 0;
