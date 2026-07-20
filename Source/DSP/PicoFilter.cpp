@@ -26,15 +26,15 @@ void PicoFilter::process(juce::AudioBuffer<float>& buffer, const Params& p) noex
 
     const int numSamples = buffer.getNumSamples();
     const int numCh = buffer.getNumChannels();
+    float* channelL = buffer.getWritePointer(0);
+    float* channelR = numCh > 1 ? buffer.getWritePointer(1) : channelL;
 
-    for (int ch = 0; ch < numCh; ++ch)
+    for (int s = 0; s < numSamples; ++s)
     {
-        float* channelData = buffer.getWritePointer(ch);
-        const int safeCh = std::min(ch, 1);
-
-        for (int s = 0; s < numSamples; ++s)
+        channelL[s] = processSample(0, channelL[s], p);
+        if (numCh > 1)
         {
-            channelData[s] = processSample(safeCh, channelData[s], p);
+            channelR[s] = processSample(1, channelR[s], p);
         }
     }
 }
@@ -47,27 +47,28 @@ float PicoFilter::processSample(int ch, float x, const Params& p) noexcept
         const float normFc = juce::jlimit(0.0001f, 0.46f, p.cutoff / (float)sr);
         const float g = std::tan(juce::MathConstants<float>::pi * normFc);
         const float res = juce::jlimit(0.1f, 10.0f, p.res);
-        const float R = 1.0f / (2.0f * res);
-        const float h = 1.0f / (1.0f + 2.0f * R * g + g * g);
+        const float k = 1.0f / res; // Qダンプ係数
+        const float a1 = 1.0f / (1.0f + g * (g + k));
+        const float a2 = g * a1;
+        const float a3 = g * a2;
         const int stages = (p.slope == 0) ? 1 : 2;
 
         float currInput = x;
         for (int st = 0; st < stages; ++st)
         {
-            // デノーム保護
-            svf_s1[st][ch] = snapToZero(svf_s1[st][ch]);
-            svf_s2[st][ch] = snapToZero(svf_s2[st][ch]);
+            const float s1 = snapToZero(svf_s1[st][ch]);
+            const float s2 = snapToZero(svf_s2[st][ch]);
 
-            float hp = (currInput - (2.0f * R + g) * svf_s1[st][ch] - svf_s2[st][ch]) * h;
-            float bp = g * hp + svf_s1[st][ch];
+            const float v3 = currInput - s2;
+            const float v1 = a1 * s1 + a2 * v3;
+            const float v2 = s2 + a2 * s1 + a3 * v3;
 
-            // 状態飽和・ノンリニア保護 (過度なレゾナンスによる爆発・歪みをソフト制限)
-            bp = bp / (1.0f + 0.15f * std::abs(bp));
+            svf_s1[st][ch] = snapToZero(2.0f * v1 - s1);
+            svf_s2[st][ch] = snapToZero(2.0f * v2 - s2);
 
-            svf_s1[st][ch] = g * hp + bp;
-
-            float lp = g * bp + svf_s2[st][ch];
-            svf_s2[st][ch] = g * bp + lp;
+            const float hp = currInput - k * v1 - v2;
+            const float bp = v1;
+            const float lp = v2;
 
             if (p.type == LowPass) currInput = lp;
             else if (p.type == BandPass) currInput = bp;

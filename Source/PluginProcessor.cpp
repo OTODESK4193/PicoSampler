@@ -200,6 +200,7 @@ void PicoSamplerAudioProcessor::prepareToPlay(double sampleRate, int samplesPerB
     samplerEngine.prepare(sampleRate);
     arpeggiator.prepare(sampleRate);
     mainFilter.prepare(sampleRate, samplesPerBlock);
+    fxBypassFilter.prepare(sampleRate, samplesPerBlock);
     fxChain.prepareToPlay(sampleRate);
     filterAdsr.setSampleRate(sampleRate);
 
@@ -421,7 +422,7 @@ void PicoSamplerAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
     if (fltParams.enable)
     {
         mainFilter.process(buffer, fltParams);
-        mainFilter.process(fxBypassBuffer, fltParams);
+        fxBypassFilter.process(fxBypassBuffer, fltParams);
     }
 
     // 3. Filter Bypass音 (fltBypassBuffer) を FX前バッファ (buffer) に合流

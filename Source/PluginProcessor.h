@@ -61,6 +61,7 @@ private:
     SamplerEngine samplerEngine;
     Arpeggiator arpeggiator;
     PicoFilter mainFilter;
+    PicoFilter fxBypassFilter;
     juce::ADSR filterAdsr;
     double currentSampleRate = 44100.0;
     ModMatrix modMatrix;
