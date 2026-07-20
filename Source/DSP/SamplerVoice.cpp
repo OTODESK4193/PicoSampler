@@ -26,7 +26,13 @@ void PicoVoice::startNote(int midiNoteNumber, float noteVelocity, int slotIdx,
     const int effectiveRoot = (p.rootKeyOverride >= 0) ? p.rootKeyOverride : meta.rootKey;
     const int stOffset = midiNoteNumber - effectiveRoot + (p.octave * 12) + p.semitone;
 
-    const auto* buffer = p.isStretchMode ? slot.getAnchorBuffer(stOffset) : &slot.getOriginalBuffer();
+    if (!isLegato)
+    {
+        if (p.isStretchMode) currentAnchorSemis = juce::jlimit(-24, 24, stOffset);
+        else currentAnchorSemis = 0;
+    }
+
+    const auto* buffer = p.isStretchMode ? slot.getAnchorBuffer(currentAnchorSemis) : &slot.getOriginalBuffer();
 
     if (!buffer || buffer->getNumSamples() < 4 || buffer->getNumChannels() < 1)
     {
@@ -41,8 +47,7 @@ void PicoVoice::startNote(int midiNoteNumber, float noteVelocity, int slotIdx,
             float startSemis = 0.0f;
             if (p.isStretchMode)
             {
-                const int anchorSemis = juce::jlimit(-24, 24, stOffset);
-                startSemis = p.portaStartMidiNote - (float)effectiveRoot + (p.octave * 12) + p.semitone - anchorSemis + (p.fineTune / 100.0f);
+                startSemis = p.portaStartMidiNote - (float)effectiveRoot + (p.octave * 12) + p.semitone - currentAnchorSemis + (p.fineTune / 100.0f);
             }
             else
             {
@@ -54,8 +59,7 @@ void PicoVoice::startNote(int midiNoteNumber, float noteVelocity, int slotIdx,
         {
             if (p.isStretchMode)
             {
-                const int anchorSemis = juce::jlimit(-24, 24, stOffset);
-                currentPitchRatio = std::pow(2.0, (double)(stOffset - anchorSemis + (p.fineTune / 100.0f)) / 12.0);
+                currentPitchRatio = std::pow(2.0, (double)(stOffset - currentAnchorSemis + (p.fineTune / 100.0f)) / 12.0);
             }
             else
             {
@@ -110,7 +114,8 @@ void PicoVoice::renderNextBlock(juce::AudioBuffer<float>& outputBuffer, int star
     const int effectiveRoot = (p.rootKeyOverride >= 0) ? p.rootKeyOverride : meta.rootKey;
     const int stOffset = midiNote - effectiveRoot + (p.octave * 12) + p.semitone;
 
-    const auto* buffer = p.isStretchMode ? slot.getAnchorBuffer(stOffset) : &slot.getOriginalBuffer();
+    const int anchorSemis = p.isStretchMode ? currentAnchorSemis : 0;
+    const auto* buffer = p.isStretchMode ? slot.getAnchorBuffer(anchorSemis) : &slot.getOriginalBuffer();
 
     if (!buffer || buffer->getNumSamples() < 4 || buffer->getNumChannels() < 1)
     {
@@ -127,7 +132,6 @@ void PicoVoice::renderNextBlock(juce::AudioBuffer<float>& outputBuffer, int star
     double targetPitchRatio = 1.0;
     if (p.isStretchMode)
     {
-        const int anchorSemis = juce::jlimit(-24, 24, stOffset);
         const float residualSemis = (float)(stOffset - anchorSemis) + (p.fineTune / 100.0f);
         targetPitchRatio = std::pow(2.0, (double)residualSemis / 12.0);
     }

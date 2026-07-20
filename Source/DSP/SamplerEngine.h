@@ -142,6 +142,10 @@ private:
     TptSvfFilter filterL_HP, filterR_HP;
     TptSvfFilter filterL_LP, filterR_LP;
     BrickLimiter limiter;
-
     juce::Random rng;
+
+    struct HeldNote { int note; float velocity; };
+    juce::Array<HeldNote> heldNotes;
+
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SamplerEngine)
 };

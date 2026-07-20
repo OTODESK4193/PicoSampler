@@ -39,6 +39,9 @@ bool SampleSlot::loadFromFile(const juce::File& file, int stretchAlgo)
 
     // SignalsmithStretch 高音質49音階アンカー事前生成 (ファイルSR使用)
     renderAnchors(stretchAlgo);
+    
+    // トランジェント検出
+    calculateTransients(0.5f);
 
     analyzing.store(false, std::memory_order_release);
     ready.store(true, std::memory_order_release);
@@ -149,6 +152,7 @@ void SampleSlot::copyFrom(const SampleSlot& other)
 
     metadata = other.metadata;
     engineSampleRate = other.engineSampleRate;
+    onsetSamples = other.onsetSamples;
     
     originalBuffer.makeCopyOf(other.originalBuffer);
     for (int i = 0; i < kNumAnchors; ++i)
@@ -158,4 +162,51 @@ void SampleSlot::copyFrom(const SampleSlot& other)
 
     analyzing.store(false, std::memory_order_release);
     ready.store(true, std::memory_order_release);
+}
+
+void SampleSlot::calculateTransients(float sensitivity)
+{
+    onsetSamples.clear();
+    const int numSamples = originalBuffer.getNumSamples();
+    if (numSamples < 100) return;
+
+    onsetSamples.push_back(0); 
+    const int windowSize = 512;
+    const int numCh = originalBuffer.getNumChannels();
+    
+    float maxEnergy = 0.0f;
+    for (int i = 0; i < numSamples - windowSize; i += windowSize)
+    {
+        float sum = 0.0f;
+        for (int ch = 0; ch < numCh; ++ch) {
+            const float* data = originalBuffer.getReadPointer(ch, i);
+            for (int s = 0; s < windowSize; ++s) sum += data[s] * data[s];
+        }
+        maxEnergy = std::max(maxEnergy, sum / (windowSize * numCh));
+    }
+
+    const float threshold = maxEnergy * juce::jmap(sensitivity, 0.0f, 1.0f, 0.3f, 0.01f);
+    
+    float currentEnergy = 0.0f;
+    float prevEnergy = 0.0f;
+    
+    for (int i = 0; i < numSamples - windowSize; i += windowSize / 2)
+    {
+        float sum = 0.0f;
+        for (int ch = 0; ch < numCh; ++ch)
+        {
+            const float* data = originalBuffer.getReadPointer(ch, i);
+            for (int s = 0; s < windowSize; ++s) sum += data[s] * data[s];
+        }
+        currentEnergy = sum / (windowSize * numCh);
+        
+        if (currentEnergy > prevEnergy + threshold && currentEnergy > maxEnergy * 0.05f)
+        {
+            if (onsetSamples.empty() || i - onsetSamples.back() > 4410)
+            {
+                onsetSamples.push_back(i);
+            }
+        }
+        prevEnergy = currentEnergy;
+    }
 }

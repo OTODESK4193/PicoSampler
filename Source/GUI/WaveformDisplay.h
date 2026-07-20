@@ -56,6 +56,9 @@ private:
     float zoomLevel = 1.0f;
     float viewStartRatio = 0.0f;
     float scrollDragStartRatio = 0.0f;
+    
+    int dragStartX = 0;
+    float dragStartValue = 0.0f;
 
     float animPhase = 0.0f;
 

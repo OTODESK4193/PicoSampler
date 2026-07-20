@@ -40,6 +40,9 @@ public:
     void copyFrom(const SampleSlot& other);
     void clear();
 
+    void calculateTransients(float sensitivity = 0.5f);
+    const std::vector<int>& getOnsetSamples() const noexcept { return onsetSamples; }
+
     bool isReady() const noexcept { return ready.load(std::memory_order_relaxed); }
     bool isAnalyzing() const noexcept { return analyzing.load(std::memory_order_relaxed); }
     void setAnalyzing(bool v) noexcept { analyzing.store(v, std::memory_order_release); }
@@ -58,6 +61,8 @@ private:
     std::atomic<bool> analyzing { false };
 
     double engineSampleRate = 44100.0;
+    
+    std::vector<int> onsetSamples;
     juce::AudioBuffer<float> originalBuffer;
     std::array<juce::AudioBuffer<float>, kNumAnchors> anchorBuffers;
     Metadata metadata;

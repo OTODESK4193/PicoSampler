@@ -98,6 +98,7 @@ private:
     double readPosition = 0.0;
     double pitchInc = 1.0;     // ★ メンバーに昇格 (SR補正を含む)
     double currentPitchRatio = 1.0;
+    int currentAnchorSemis = 0;
     EnvStage envStage = EnvStage::Idle;
     float envValue = 0.0f;
 };

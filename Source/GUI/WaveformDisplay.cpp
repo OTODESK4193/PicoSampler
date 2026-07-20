@@ -231,8 +231,29 @@ float WaveformDisplay::findZeroCrossingRatio(float targetRatio) const noexcept
     const int targetIdx = juce::jlimit(0, numSamples - 1, (int)(targetRatio * (float)numSamples));
     
     // Zoom in = smaller search range (disables snapping visually when zoomed heavily for sample-accurate edits)
-    const int searchRange = std::min(2048, (int)(numSamples / (10.0f * zoomLevel)));
+    const int searchRange = std::min(8192, (int)(numSamples / (5.0f * zoomLevel)));
 
+    // 1. まずトランジェント (Onset) へのスナップを試みる
+    const auto& onsets = currentSlot->getOnsetSamples();
+    int bestOnset = -1;
+    int minOnsetDist = searchRange;
+
+    for (int onset : onsets)
+    {
+        int dist = std::abs(onset - targetIdx);
+        if (dist < minOnsetDist)
+        {
+            minOnsetDist = dist;
+            bestOnset = onset;
+        }
+    }
+
+    if (bestOnset >= 0)
+    {
+        return (float)bestOnset / (float)numSamples;
+    }
+
+    // 2. 近くにトランジェントが無ければゼロクロス検索にフォールバック
     int bestIdx = targetIdx;
 
     for (int d = 0; d < searchRange; ++d)
@@ -352,6 +373,12 @@ void WaveformDisplay::mouseDown(const juce::MouseEvent& e)
     else if (std::abs(mouseX - sX) < 10.0f) activeDrag = DragTarget::SampleStart;
     else if (std::abs(mouseX - eX) < 10.0f) activeDrag = DragTarget::SampleEnd;
     else activeDrag = DragTarget::None;
+
+    dragStartX = e.x;
+    if (activeDrag == DragTarget::SampleStart) dragStartValue = startRatio;
+    else if (activeDrag == DragTarget::SampleEnd) dragStartValue = endRatio;
+    else if (activeDrag == DragTarget::LoopStart) dragStartValue = loopStart;
+    else if (activeDrag == DragTarget::LoopEnd) dragStartValue = loopEnd;
 }
 
 void WaveformDisplay::mouseDrag(const juce::MouseEvent& e)
@@ -368,7 +395,16 @@ void WaveformDisplay::mouseDrag(const juce::MouseEvent& e)
         return;
     }
 
-    float normX = (e.x / w) / zoomLevel + viewStartRatio;
+    float normX = 0.0f;
+    if (e.mods.isShiftDown())
+    {
+        float delta = (float)(e.x - dragStartX) / w;
+        normX = dragStartValue + delta * (0.01f / zoomLevel);
+    }
+    else
+    {
+        normX = (e.x / w) / zoomLevel + viewStartRatio;
+    }
     normX = juce::jlimit(0.0f, 1.0f, normX);
     
     const juce::String s = juce::String(activeSlot);

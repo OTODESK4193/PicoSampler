@@ -14,6 +14,11 @@ void SamplerEngine::handleMidi(const juce::MidiBuffer& midi, const Params& p) no
             const int note = msg.getNoteNumber();
             const float vel = msg.getFloatVelocity();
 
+            for (int i = 0; i < heldNotes.size(); ++i) {
+                if (heldNotes[i].note == note) { heldNotes.remove(i); break; }
+            }
+            heldNotes.add({note, vel});
+
             switch (p.mode)
             {
             case SingleMode:
@@ -74,11 +79,28 @@ void SamplerEngine::handleMidi(const juce::MidiBuffer& midi, const Params& p) no
         else if (msg.isNoteOff())
         {
             const int note = msg.getNoteNumber();
-            for (auto& v : voices)
+            
+            for (int i = 0; i < heldNotes.size(); ++i) {
+                if (heldNotes[i].note == note) { heldNotes.remove(i); break; }
+            }
+
+            if (p.polyphonyLimit == 1 && !heldNotes.isEmpty())
             {
-                if (v.isActive() && v.getMidiNote() == note)
+                const auto& prev = heldNotes.getLast();
+                for (auto& v : voices) {
+                    if (v.isActive() && v.getMidiNote() == note) {
+                        triggerSlotNote(v.getSlotIndex(), prev.note, prev.velocity, p);
+                    }
+                }
+            }
+            else
+            {
+                for (auto& v : voices)
                 {
-                    v.stopNote(true);
+                    if (v.isActive() && v.getMidiNote() == note)
+                    {
+                        v.stopNote(true);
+                    }
                 }
             }
         }
