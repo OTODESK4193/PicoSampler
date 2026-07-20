@@ -46,6 +46,8 @@ public:
     void run() override; // スレッド処理 (ファイルロード)
     
     void autoSliceFile(const juce::File& file, int stretchAlgo, float sensitivity);
+    
+    void requestLoadFile(int slotIdx, const juce::File& file, bool autoSlice = false);
 
     void reanalyzeSlot(int slotIdx); // ★ スロットの再解析・再配置
     void clearSlot(int slotIdx);     // ★ スロットの全消去・初期化
@@ -169,6 +171,7 @@ private:
     } modParamsCache;
 
     std::atomic<float>* pSamplerMode;
+    std::atomic<float>* pPolyphony;
     std::atomic<float>* pActiveSlot;
     std::atomic<float>* pOutGain;
     std::atomic<float>* pMasterPitch;
@@ -194,6 +197,8 @@ private:
     {
         int slotIndex = 0;
         juce::File file;
+        bool isAutoSlice = false;
+        float sensitivity = 0.5f;
     };
     juce::Array<AsyncLoadJob> pendingJobs;
     juce::CriticalSection jobLock;

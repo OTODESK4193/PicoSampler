@@ -70,8 +70,8 @@ PicoSamplerAudioProcessorEditor::PicoSamplerAudioProcessorEditor(PicoSamplerAudi
     // 波形エリア D&D & Clear
     waveDisplay.onFileDropped = [this](const juce::File& file) {
         const int activeIdx = (int)audioProcessor.getAPVTS().getRawParameterValue("activeSlot")->load();
-        const int stretchAlgo = (int)audioProcessor.getAPVTS().getRawParameterValue("stretchMode")->load();
-        audioProcessor.getSamplerEngine().getSlot(activeIdx).loadFromFile(file, stretchAlgo);
+        const bool autoSlice = audioProcessor.getAPVTS().getRawParameterValue("autoSliceEnable")->load() > 0.5f;
+        audioProcessor.requestLoadFile(activeIdx, file, autoSlice && activeIdx == 0);
         repaint();
     };
 

@@ -244,6 +244,10 @@ void PicoSamplerAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
     engineParams.outGainDb = pOutGain->load();
     engineParams.masterHpfHz = pMasterHPF->load();
     engineParams.masterLpfHz = pMasterLPF->load();
+    int polyChoice = (int)pPolyphony->load();
+    const int polyVals[] = { 1, 2, 4, 8, 16, 32 };
+    engineParams.polyphonyLimit = polyVals[juce::jlimit(0, 5, polyChoice)];
+
     engineParams.ceilingDb = pCeiling->load();
     engineParams.limReleaseMs = pLimRelease->load();
     engineParams.is24dBFilter = (pFilterSlope->load() > 0.5f);
@@ -476,25 +480,52 @@ void PicoSamplerAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
     }
 }
 
+void PicoSamplerAudioProcessor::requestLoadFile(int slotIdx, const juce::File& file, bool autoSlice)
+{
+    if (!autoSlice) samplerEngine.getSlot(slotIdx).setAnalyzing(true);
+    else samplerEngine.getSlot(0).setAnalyzing(true);
+
+    const juce::ScopedLock lock(jobLock);
+    AsyncLoadJob job;
+    job.slotIndex = slotIdx;
+    job.file = file;
+    job.isAutoSlice = autoSlice;
+    if (autoSlice) {
+        job.sensitivity = pSliceSensitivity->load();
+    }
+    pendingJobs.add(job);
+}
+
 void PicoSamplerAudioProcessor::autoSliceFile(const juce::File& file, int stretchAlgo, float sensitivity)
 {
-    // 1. スロット0にロードして解析 (ストレッチアルゴリズム適用)
+    // 1. スロット0にロードして解析
     samplerEngine.getSlot(0).loadFromFile(file, stretchAlgo);
     const auto& slot0 = samplerEngine.getSlot(0);
     const int numSamples = slot0.getOriginalBuffer().getNumSamples();
     if (numSamples < 100) return;
 
-    // 2. 簡易トランジェント検出 (エネルギーベース)
+    // 2. 最大エネルギーの計算とトランジェント検出
     std::vector<int> onsetSamples;
-    onsetSamples.push_back(0); // 最初のスライスは常に開始位置
+    onsetSamples.push_back(0); 
 
     const int windowSize = 512;
+    const int numCh = slot0.getOriginalBuffer().getNumChannels();
+    
+    float maxEnergy = 0.0f;
+    for (int i = 0; i < numSamples - windowSize; i += windowSize)
+    {
+        float sum = 0.0f;
+        for (int ch = 0; ch < numCh; ++ch) {
+            const float* data = slot0.getOriginalBuffer().getReadPointer(ch, i);
+            for (int s = 0; s < windowSize; ++s) sum += data[s] * data[s];
+        }
+        maxEnergy = std::max(maxEnergy, sum / (windowSize * numCh));
+    }
+
+    const float threshold = maxEnergy * juce::jmap(sensitivity, 0.0f, 1.0f, 0.3f, 0.01f);
+    
     float currentEnergy = 0.0f;
     float prevEnergy = 0.0f;
-    
-    // Sensitivityを閾値にマッピング (高感度 = 低閾値)
-    const float threshold = juce::jmap(sensitivity, 0.0f, 1.0f, 0.05f, 0.001f);
-    const int numCh = slot0.getOriginalBuffer().getNumChannels();
     
     for (int i = 0; i < numSamples - windowSize; i += windowSize / 2)
     {
@@ -502,17 +533,12 @@ void PicoSamplerAudioProcessor::autoSliceFile(const juce::File& file, int stretc
         for (int ch = 0; ch < numCh; ++ch)
         {
             const float* data = slot0.getOriginalBuffer().getReadPointer(ch, i);
-            for (int s = 0; s < windowSize; ++s)
-            {
-                sum += data[s] * data[s];
-            }
+            for (int s = 0; s < windowSize; ++s) sum += data[s] * data[s];
         }
         currentEnergy = sum / (windowSize * numCh);
         
-        // エネルギーの急上昇を検出
-        if (currentEnergy > prevEnergy + threshold && currentEnergy > 0.001f)
+        if (currentEnergy > prevEnergy + threshold && currentEnergy > maxEnergy * 0.05f)
         {
-            // 直前のオンセットから十分離れているか確認 (~100ms)
             if (onsetSamples.empty() || i - onsetSamples.back() > 4410)
             {
                 onsetSamples.push_back(i);
@@ -522,13 +548,12 @@ void PicoSamplerAudioProcessor::autoSliceFile(const juce::File& file, int stretc
         prevEnergy = currentEnergy;
     }
 
-    // 3. 各スロットに展開とパラメータ設定
+    // 3. 各スロットに展開
     int numSlices = (int)std::min((size_t)8, onsetSamples.size());
     for (int i = 0; i < numSlices; ++i)
     {
         if (i > 0)
         {
-            // 高速なバッファコピー (再解析不要)
             samplerEngine.getSlot(i).copyFrom(slot0);
         }
         
@@ -541,6 +566,11 @@ void PicoSamplerAudioProcessor::autoSliceFile(const juce::File& file, int stretc
         const juce::String s = juce::String(i);
         if (auto* p = apvts.getParameter("sampleStart_" + s)) p->setValueNotifyingHost(startRatio);
         if (auto* p = apvts.getParameter("sampleEnd_" + s)) p->setValueNotifyingHost(endRatio);
+        
+        // MPCスタイルにノートをマッピング (Slot 1 = C1 = 36, Slot 2 = C#1 = 37, ...)
+        if (auto* p = apvts.getParameter("rootKey_" + s)) p->setValueNotifyingHost((36.0f + i) / 127.0f);
+        if (auto* p = apvts.getParameter("slotLowNote_" + s)) p->setValueNotifyingHost((36.0f + i) / 127.0f);
+        if (auto* p = apvts.getParameter("slotHighNote_" + s)) p->setValueNotifyingHost((36.0f + i) / 127.0f);
     }
 }
 
@@ -650,7 +680,11 @@ void PicoSamplerAudioProcessor::run()
         if (hasJob)
         {
             const int stretchAlgo = (int)pStretchMode->load();
-            samplerEngine.getSlot(job.slotIndex).loadFromFile(job.file, stretchAlgo);
+            if (job.isAutoSlice) {
+                autoSliceFile(job.file, stretchAlgo, job.sensitivity);
+            } else {
+                samplerEngine.getSlot(job.slotIndex).loadFromFile(job.file, stretchAlgo);
+            }
         }
         else
         {
@@ -663,6 +697,7 @@ void PicoSamplerAudioProcessor::run()
 void PicoSamplerAudioProcessor::initializeParameterCache()
 {
     pSamplerMode = apvts.getRawParameterValue("samplerMode");
+    pPolyphony = apvts.getRawParameterValue("polyphony");
     pActiveSlot = apvts.getRawParameterValue("activeSlot");
     pOutGain = apvts.getRawParameterValue("outGain");
     pMasterPitch = apvts.getRawParameterValue("masterPitch");

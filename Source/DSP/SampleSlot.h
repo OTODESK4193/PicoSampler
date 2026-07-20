@@ -42,6 +42,7 @@ public:
 
     bool isReady() const noexcept { return ready.load(std::memory_order_relaxed); }
     bool isAnalyzing() const noexcept { return analyzing.load(std::memory_order_relaxed); }
+    void setAnalyzing(bool v) noexcept { analyzing.store(v, std::memory_order_release); }
 
     const juce::AudioBuffer<float>& getOriginalBuffer() const noexcept { return originalBuffer; }
     const juce::AudioBuffer<float>* getAnchorBuffer(int stOffset) const noexcept;

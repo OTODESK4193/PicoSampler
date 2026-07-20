@@ -95,8 +95,19 @@ void SamplerEngine::triggerSlotNote(int slotIdx, int midiNote, float velocity, c
     const auto& slot = slots[(size_t)slotIdx];
     if (!slot.isReady()) return;
 
-    int voiceIdx = findFreeVoice();
-    if (voiceIdx < 0) voiceIdx = findOldestVoice();
+    int activeVoices = 0;
+    for (int i = 0; i < NUM_VOICES; ++i) {
+        if (voices[(size_t)i].isActive()) activeVoices++;
+    }
+
+    int voiceIdx = -1;
+    if (activeVoices >= p.polyphonyLimit) {
+        voiceIdx = findOldestVoice();
+    } else {
+        voiceIdx = findFreeVoice();
+        if (voiceIdx < 0) voiceIdx = findOldestVoice();
+    }
+
     if (voiceIdx < 0) return;
 
     auto voiceP = p.slotParams[(size_t)slotIdx];
