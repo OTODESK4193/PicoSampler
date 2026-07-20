@@ -50,6 +50,7 @@ public:
     std::function<juce::Array<juce::File>(juce::String)> getPresetsForCategory;
     std::function<void(juce::String, juce::String)>      onSaveRequested;   // (category, name)
     std::function<void(juce::File)>                      onPresetChosen;
+    std::function<bool(juce::File)>                      onPresetDeleteRequested;  // 戻り値: 削除成功
     std::function<void()>                                onInitConfirmed;
 
     void refreshAll()
@@ -74,7 +75,7 @@ public:
 
     void showMessage(const juce::String& title, const juce::String& body)
     {
-        juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::InfoIcon, title, body, "OK", this);
+        juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::InfoIcon, title, body, "OK", this);
     }
 
     void paint(juce::Graphics& g) override
@@ -156,6 +157,75 @@ private:
     {
         if (row >= 0 && row < currentPresets.size() && onPresetChosen)
             onPresetChosen(currentPresets[row]);
+    }
+
+    // ------------------------------------------------------------------
+    // プリセット行の右クリックメニュー
+    // ------------------------------------------------------------------
+    void presetRowRightClicked(int row)
+    {
+        if (row < 0 || row >= currentPresets.size()) return;
+
+        const juce::File target = currentPresets[row];
+        lstPresets.selectRow(row);
+
+        juce::PopupMenu menu;
+        menu.addSectionHeader(target.getFileNameWithoutExtension());
+        menu.addItem(1, "Load");
+        menu.addSeparator();
+        menu.addItem(2, "Delete...");
+
+        juce::Component::SafePointer<PresetBrowser> safeThis(this);
+
+        menu.showMenuAsync(juce::PopupMenu::Options()
+                               .withTargetComponent(&lstPresets)
+                               .withMousePosition(),
+            [safeThis, target](int result)
+            {
+                if (safeThis == nullptr) return;
+
+                if (result == 1)
+                {
+                    if (safeThis->onPresetChosen) safeThis->onPresetChosen(target);
+                }
+                else if (result == 2)
+                {
+                    safeThis->confirmDelete(target);
+                }
+            });
+    }
+
+    void confirmDelete(const juce::File& target)
+    {
+        juce::Component::SafePointer<PresetBrowser> safeThis(this);
+
+        juce::AlertWindow::showOkCancelBox(
+            juce::MessageBoxIconType::WarningIcon,
+            "Delete Preset",
+            "Delete the preset \"" + target.getFileNameWithoutExtension() + "\"?\n\n"
+            "The preset file will be removed permanently. "
+            "The sample files it refers to are not affected.\n\n"
+            "This cannot be undone.",
+            "Yes",
+            "No",
+            this,
+            juce::ModalCallbackFunction::create([safeThis, target](int result)
+            {
+                if (result != 1 || safeThis == nullptr) return;
+
+                bool ok = false;
+                if (safeThis->onPresetDeleteRequested)
+                    ok = safeThis->onPresetDeleteRequested(target);
+
+                if (!ok)
+                {
+                    safeThis->showMessage("Delete Failed",
+                        "Could not delete the preset file.\n"
+                        "It may be read-only or in use by another application.");
+                }
+
+                safeThis->refreshAll();
+            }));
     }
 
     // ------------------------------------------------------------------
@@ -254,11 +324,22 @@ private:
             g.drawText(items[row], 10, 0, w - 20, h, juce::Justification::centredLeft, true);
         }
 
-        void listBoxItemClicked(int row, const juce::MouseEvent&) override
+        void listBoxItemClicked(int row, const juce::MouseEvent& e) override
         {
             if (owner == nullptr) return;
-            if (isCategoryList) owner->categoryRowClicked(row);
+
+            if (isCategoryList)
+            {
+                owner->categoryRowClicked(row);
+                return;
+            }
+
+            if (e.mods.isPopupMenu())
+                owner->presetRowRightClicked(row);
         }
+
+        // 行のない余白を右クリックした場合は何もしない (行が無くてもJUCEは呼ぶ)
+        void backgroundClicked(const juce::MouseEvent&) override {}
 
         void listBoxItemDoubleClicked(int row, const juce::MouseEvent&) override
         {

@@ -105,6 +105,39 @@ void ConfigPanel::paint(juce::Graphics& g)
 
     drawCaption("Start / End marker de-click", kColA, kRow2Y + kKnobH + 4, kColW);
     drawCaption("Limiter recovery time",       kColC, kRow2Y + kKnobH + 4, kColW);
+
+    // ------------------------------------------------------------------
+    // サードパーティ表記 (ANALYSIS エリア直下)
+    //
+    // Signalsmith Stretch / Signalsmith Linear は MIT ライセンス。
+    // MIT は「著作権表示と許諾表示を配布物に含めること」を要求するため、
+    // ここでの画面表示に加えて、配布パッケージには LICENSE 全文を必ず同梱すること。
+    //   Source/third_party/signalsmith-stretch/LICENSE-stretch.txt
+    //   Source/third_party/signalsmith-stretch/signalsmith-linear/LICENSE-linear.txt
+    // ------------------------------------------------------------------
+    {
+        const int x = kColA;
+        int y = kRow1Y + kItemH + 14;
+
+        g.setColour(juce::Colours::white);
+
+        g.setFont(juce::FontOptions(11.0f, juce::Font::bold));
+        g.drawText("Time-stretching powered by Signalsmith Stretch",
+                   x, y, kColW, 13, juce::Justification::left);
+        y += 14;
+
+        g.setFont(juce::FontOptions(10.0f));
+        g.drawText(juce::CharPointer_UTF8("Copyright \xc2\xa9 2022 Geraint Luff / Signalsmith Audio Ltd."),
+                   x, y, kColW, 12, juce::Justification::left);
+        y += 12;
+
+        g.drawText(juce::CharPointer_UTF8("Signalsmith Linear \xc2\xa9 2025 Signalsmith Audio"),
+                   x, y, kColW, 12, juce::Justification::left);
+        y += 12;
+
+        g.drawText("Used under the MIT License. See LICENSE files included with this product.",
+                   x, y, kColW + 60, 12, juce::Justification::left);
+    }
 }
 
 void ConfigPanel::resized()

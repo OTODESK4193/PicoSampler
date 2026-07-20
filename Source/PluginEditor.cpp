@@ -140,6 +140,22 @@ PicoSamplerAudioProcessorEditor::PicoSamplerAudioProcessorEditor(PicoSamplerAudi
         presetBrowser.setVisible(false);
     };
 
+    presetBrowser.onPresetDeleteRequested = [](juce::File file) -> bool
+    {
+        // 安全策: プリセットルート配下の .picopreset 以外は絶対に消さない。
+        // (コールバック経由で任意のパスが渡ってきても事故らないようにする)
+        const auto root = PicoSamplerAudioProcessor::getPresetRootDirectory();
+
+        if (!file.existsAsFile()) return false;
+        if (!file.hasFileExtension("picopreset")) return false;
+        if (!file.isAChildOf(root)) return false;
+
+        if (!file.moveToTrash())
+            return file.deleteFile();   // ゴミ箱が使えない環境では直接削除
+
+        return true;
+    };
+
     presetBrowser.onInitConfirmed = [this]
     {
         audioProcessor.resetToInitState();

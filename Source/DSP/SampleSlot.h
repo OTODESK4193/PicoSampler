@@ -36,6 +36,7 @@ public:
 
     void prepare(double sr) noexcept { engineSampleRate = sr > 1000.0 ? sr : 44100.0; }
     bool loadFromFile(const juce::File& file, int stretchAlgo = 3);
+
     void reanalyze(int materialMode = 0, int rootKeyOverride = -1, int stretchAlgo = 3);
     void copyFrom(const SampleSlot& other);
     void clear();
@@ -101,6 +102,12 @@ public:
 
 private:
     void renderAnchors(int stretchAlgo);
+
+    // loadFromFile の後処理 (Reader からバッファ構築 + 解析)
+    bool finishLoad(std::unique_ptr<juce::AudioFormatReader> reader,
+                    const juce::String& pathForMetadata,
+                    const juce::String& nameForMetadata,
+                    int stretchAlgo);
 
     // バッファ書き換え前に呼ぶ。ready を落とし、読み手が抜けるまで待機する。
     // (メッセージ/ローダースレッド専用。オーディオスレッドから呼んではいけない)

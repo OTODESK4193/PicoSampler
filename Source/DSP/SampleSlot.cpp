@@ -30,27 +30,34 @@ bool SampleSlot::loadFromFile(const juce::File& file, int stretchAlgo)
 {
     if (!file.existsAsFile()) return false;
 
-    beginBufferWrite();
-    analyzing.store(true, std::memory_order_release);
-
     juce::AudioFormatManager formatManager;
     formatManager.registerBasicFormats();
 
     std::unique_ptr<juce::AudioFormatReader> reader(formatManager.createReaderFor(file));
-    if (!reader)
-    {
-        analyzing.store(false, std::memory_order_release);
-        return false;
-    }
+
+    return finishLoad(std::move(reader), file.getFullPathName(), file.getFileName(), stretchAlgo);
+}
+
+bool SampleSlot::finishLoad(std::unique_ptr<juce::AudioFormatReader> reader,
+                            const juce::String& pathForMetadata,
+                            const juce::String& nameForMetadata,
+                            int stretchAlgo)
+{
+    if (reader == nullptr) return false;
 
     const int numSamples = (int)reader->lengthInSamples;
     const int numCh = std::min(2, (int)reader->numChannels);
 
+    if (numSamples < 4 || numCh < 1) return false;
+
+    beginBufferWrite();
+    analyzing.store(true, std::memory_order_release);
+
     originalBuffer.setSize(numCh, numSamples);
     reader->read(&originalBuffer, 0, numSamples, 0, true, true);
 
-    metadata.filePath = file.getFullPathName();
-    metadata.fileName = file.getFileName();
+    metadata.filePath = pathForMetadata;
+    metadata.fileName = nameForMetadata;
     metadata.fileSampleRate = reader->sampleRate;
 
     // Pitch & Feature Analysis
@@ -60,7 +67,7 @@ bool SampleSlot::loadFromFile(const juce::File& file, int stretchAlgo)
 
     // SignalsmithStretch 高音質49音階アンカー事前生成 (ファイルSR使用)
     renderAnchors(stretchAlgo);
-    
+
     // トランジェント検出
     calculateTransients(0.5f);
 

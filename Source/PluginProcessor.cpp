@@ -11,6 +11,7 @@ PicoSamplerAudioProcessor::PicoSamplerAudioProcessor()
       apvts(*this, nullptr, "Parameters", createParameterLayout())
 {
     initializeParameterCache();
+
     
     samplerEngine.prepare(44100.0);
 
@@ -863,6 +864,7 @@ bool PicoSamplerAudioProcessor::loadPreset(const juce::File& presetFile,
                 samplerEngine.getSlot(idx).setAnalyzing(true);
                 const juce::ScopedLock lock(jobLock);
                 AsyncLoadJob job;
+                job.type = JobType::Load;
                 job.slotIndex = idx;
                 job.file = file;
                 pendingJobs.add(job);
@@ -949,26 +951,25 @@ void PicoSamplerAudioProcessor::setStateInformation(const void* data, int sizeIn
             {
                 if (sXml->hasTagName("Slot"))
                 {
-                    int idx = sXml->getIntAttribute("index", -1);
-                    juce::String path = sXml->getStringAttribute("path");
+                    const int idx = sXml->getIntAttribute("index", -1);
+                    const juce::String path = sXml->getStringAttribute("path");
 
-                    if (idx >= 0 && idx < 8 && path.isNotEmpty())
-                    {
-                        juce::File file(path);
-                        if (file.existsAsFile())
-                        {
-                            // NOTE: 集約初期化 { idx, file } は AsyncLoadJob の
-                            // 先頭メンバが JobType になったため使えない。
-                            // (idx が type に入ってしまう) 必ず明示代入すること。
-                            AsyncLoadJob job;
-                            job.type = JobType::Load;
-                            job.slotIndex = idx;
-                            job.file = file;
-                            pendingJobs.add(job);
+                    if (idx < 0 || idx >= 8 || path.isEmpty()) continue;
 
-                            samplerEngine.getSlot(idx).setAnalyzing(true);
-                        }
-                    }
+                    // NOTE: 集約初期化 { idx, file } は AsyncLoadJob の
+                    // 先頭メンバが JobType になったため使えない。
+                    // (idx が type に入ってしまう) 必ず明示代入すること。
+                    AsyncLoadJob job;
+                    job.slotIndex = idx;
+
+                    const juce::File file(path);
+                    if (!file.existsAsFile()) continue;
+
+                    job.type = JobType::Load;
+                    job.file = file;
+
+                    pendingJobs.add(job);
+                    samplerEngine.getSlot(idx).setAnalyzing(true);
                 }
             }
         }
