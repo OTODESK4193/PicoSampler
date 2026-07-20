@@ -374,11 +374,7 @@ void WaveformDisplay::mouseDown(const juce::MouseEvent& e)
     else if (std::abs(mouseX - eX) < 10.0f) activeDrag = DragTarget::SampleEnd;
     else activeDrag = DragTarget::None;
 
-    dragStartX = e.x;
-    if (activeDrag == DragTarget::SampleStart) dragStartValue = startRatio;
-    else if (activeDrag == DragTarget::SampleEnd) dragStartValue = endRatio;
-    else if (activeDrag == DragTarget::LoopStart) dragStartValue = loopStart;
-    else if (activeDrag == DragTarget::LoopEnd) dragStartValue = loopEnd;
+    if (activeDrag == DragTarget::SampleStart) {} // We no longer need to store dragStartValue
 }
 
 void WaveformDisplay::mouseDrag(const juce::MouseEvent& e)
@@ -395,16 +391,7 @@ void WaveformDisplay::mouseDrag(const juce::MouseEvent& e)
         return;
     }
 
-    float normX = 0.0f;
-    if (e.mods.isShiftDown())
-    {
-        float delta = (float)(e.x - dragStartX) / w;
-        normX = dragStartValue + delta * (0.01f / zoomLevel);
-    }
-    else
-    {
-        normX = (e.x / w) / zoomLevel + viewStartRatio;
-    }
+    float normX = (e.x / w) / zoomLevel + viewStartRatio;
     normX = juce::jlimit(0.0f, 1.0f, normX);
     
     const juce::String s = juce::String(activeSlot);
@@ -425,22 +412,22 @@ void WaveformDisplay::mouseDrag(const juce::MouseEvent& e)
 
     if (activeDrag == DragTarget::SampleStart)
     {
-        const float val = std::min(normX, endVal - 0.01f);
+        const float val = std::min(normX, endVal - 0.000001f);
         if (auto* p = vts->getParameter("sampleStart_" + s)) p->setValueNotifyingHost(val);
     }
     else if (activeDrag == DragTarget::SampleEnd)
     {
-        const float val = std::max(normX, startVal + 0.01f);
+        const float val = std::max(normX, startVal + 0.000001f);
         if (auto* p = vts->getParameter("sampleEnd_" + s)) p->setValueNotifyingHost(val);
     }
     else if (activeDrag == DragTarget::LoopStart)
     {
-        const float val = std::min(normX, lEnd - 0.01f);
+        const float val = std::min(normX, lEnd - 0.000001f);
         if (auto* p = vts->getParameter("loopStart_" + s)) p->setValueNotifyingHost(val);
     }
     else if (activeDrag == DragTarget::LoopEnd)
     {
-        const float val = std::max(normX, lStart + 0.01f);
+        const float val = std::max(normX, lStart + 0.000001f);
         if (auto* p = vts->getParameter("loopEnd_" + s)) p->setValueNotifyingHost(val);
     }
     repaint();

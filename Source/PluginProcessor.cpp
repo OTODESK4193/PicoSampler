@@ -542,7 +542,7 @@ void PicoSamplerAudioProcessor::autoSliceFile(const juce::File& file, int stretc
             if (onsetSamples.empty() || i - onsetSamples.back() > 4410)
             {
                 onsetSamples.push_back(i);
-                if (onsetSamples.size() >= 8) break;
+                if (onsetSamples.size() >= 9) break;
             }
         }
         prevEnergy = currentEnergy;
@@ -559,7 +559,7 @@ void PicoSamplerAudioProcessor::autoSliceFile(const juce::File& file, int stretc
         
         float startRatio = (float)onsetSamples[i] / (float)numSamples;
         float endRatio = 1.0f;
-        if (i < numSlices - 1) {
+        if (i < onsetSamples.size() - 1) {
             endRatio = (float)onsetSamples[i+1] / (float)numSamples;
         }
         
@@ -569,8 +569,8 @@ void PicoSamplerAudioProcessor::autoSliceFile(const juce::File& file, int stretc
         
         // MPCスタイルにノートをマッピング (Slot 1 = C1 = 36, Slot 2 = C#1 = 37, ...)
         if (auto* p = apvts.getParameter("rootKey_" + s)) p->setValueNotifyingHost((36.0f + i) / 127.0f);
-        if (auto* p = apvts.getParameter("slotLowNote_" + s)) p->setValueNotifyingHost((36.0f + i) / 127.0f);
-        if (auto* p = apvts.getParameter("slotHighNote_" + s)) p->setValueNotifyingHost((36.0f + i) / 127.0f);
+        if (auto* p = apvts.getParameter("slotLowNote_" + s)) p->setValueNotifyingHost(0.0f);
+        if (auto* p = apvts.getParameter("slotHighNote_" + s)) p->setValueNotifyingHost(1.0f);
     }
 }
 

@@ -49,8 +49,16 @@ PicoSamplerAudioProcessorEditor::PicoSamplerAudioProcessorEditor(PicoSamplerAudi
     btnTabConfig.onClick = [this] { setActiveTab(4); };
 
     btnReAnalyze.onClick = [this] {
-        const int activeIdx = (int)audioProcessor.getAPVTS().getRawParameterValue("activeSlot")->load();
-        audioProcessor.reanalyzeSlot(activeIdx);
+        const bool isAutoSlice = audioProcessor.getAPVTS().getRawParameterValue("autoSliceEnable")->load() > 0.5f;
+        if (isAutoSlice) {
+            const juce::File file = audioProcessor.getSamplerEngine().getSlot(0).getMetadata().filePath;
+            if (file.existsAsFile()) {
+                audioProcessor.requestLoadFile(0, file, true);
+            }
+        } else {
+            const int activeIdx = (int)audioProcessor.getAPVTS().getRawParameterValue("activeSlot")->load();
+            audioProcessor.reanalyzeSlot(activeIdx);
+        }
         repaint();
     };
 

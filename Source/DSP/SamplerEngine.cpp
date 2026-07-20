@@ -188,7 +188,9 @@ void SamplerEngine::renderNextBlock(juce::AudioBuffer<float>& normalBuffer,
             const int slotIdx = v.getSlotIndex();
             if (slotIdx >= 0 && slotIdx < NUM_SLOTS)
             {
-                const auto& sp = p.slotParams[(size_t)slotIdx];
+                auto sp = p.slotParams[(size_t)slotIdx];
+                sp.portaEnable = p.portaEnable;
+                sp.portaTime = p.portaTime;
                 
                 juce::AudioBuffer<float>& targetBuf = 
                     (sp.isFilterBypass && sp.isFxBypass)  ? bothBypassBuffer :

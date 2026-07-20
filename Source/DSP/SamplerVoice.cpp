@@ -145,7 +145,7 @@ void PicoVoice::renderNextBlock(juce::AudioBuffer<float>& outputBuffer, int star
     if (p.portaEnable && currentPitchRatio != targetPitchRatio)
     {
         const double timeMs = juce::jmap(p.portaTime, 0.0f, 1.0f, 5.0f, 1000.0f);
-        portaMultiplier = std::exp(-1.0 / ((timeMs * 0.001) * sampleRate));
+        portaMultiplier = std::exp(-4.605 / ((timeMs * 0.001) * sampleRate));
     }
     else
     {
