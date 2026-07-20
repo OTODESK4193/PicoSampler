@@ -113,10 +113,22 @@ void WaveformDisplay::paint(juce::Graphics& g)
 
     // 4. マーカー位置描画
     // 見た目の波形を正として、画面左=Start, 画面右=End で統一
-    float startRatio = getParamFloat("sampleStart_" + s, 0.0f);
-    float endRatio   = getParamFloat("sampleEnd_" + s, 1.0f);
-    float loopStart  = getParamFloat("loopStart_" + s, 0.2f);
-    float loopEnd    = getParamFloat("loopEnd_" + s, 0.7f);
+    auto getDouble = [&](const juce::String& name, double& uiVal, float def) {
+        if (!vts) return def;
+        if (auto* p = vts->getRawParameterValue(name)) {
+            float apvtsVal = p->load();
+            if (std::abs(apvtsVal - (float)uiVal) > 5.0e-6f) {
+                uiVal = (double)apvtsVal;
+            }
+            return (float)uiVal;
+        }
+        return def;
+    };
+
+    float startRatio = getDouble("sampleStart_" + s, uiStartRatio[activeSlot], 0.0f);
+    float endRatio   = getDouble("sampleEnd_" + s, uiEndRatio[activeSlot], 1.0f);
+    float loopStart  = getDouble("loopStart_" + s, uiLoopStart[activeSlot], 0.2f);
+    float loopEnd    = getDouble("loopEnd_" + s, uiLoopEnd[activeSlot], 0.7f);
     float crossfade  = getParamFloat("crossfade_" + s, 0.05f);
     bool isLooping   = getParamFloat("isLooping_" + s, 0.0f) > 0.5f;
 
@@ -146,10 +158,10 @@ void WaveformDisplay::paint(juce::Graphics& g)
     float liveLSX = ratioToX(liveLStart);
     float liveLEX = ratioToX(liveLEnd);
 
-    if (activeDrag == DragTarget::SampleStart) sX = ratioToX(dragStartParamValue) + (currentMouseX - dragStartX);
-    else if (activeDrag == DragTarget::SampleEnd) eX = ratioToX(dragStartParamValue) + (currentMouseX - dragStartX);
-    else if (activeDrag == DragTarget::LoopStart) liveLSX = ratioToX(dragStartParamValue) + (currentMouseX - dragStartX);
-    else if (activeDrag == DragTarget::LoopEnd) liveLEX = ratioToX(dragStartParamValue) + (currentMouseX - dragStartX);
+    if (activeDrag == DragTarget::SampleStart) sX = ratioToX(uiStartRatio[activeSlot]);
+    else if (activeDrag == DragTarget::SampleEnd) eX = ratioToX(uiEndRatio[activeSlot]);
+    else if (activeDrag == DragTarget::LoopStart) liveLSX = ratioToX(uiLoopStart[activeSlot]);
+    else if (activeDrag == DragTarget::LoopEnd) liveLEX = ratioToX(uiLoopEnd[activeSlot]);
 
     // 静的ベース Start マーカー
     g.setColour(juce::Colours::yellow.withAlpha(0.6f));
@@ -255,7 +267,22 @@ float WaveformDisplay::findZeroCrossingRatio(float targetRatio) const noexcept
 
     if (bestOnset >= 0)
     {
-        return (float)bestOnset / (float)numSamples;
+        // ゼロクロスに厳密に補正 (Onset付近の最も近いゼロクロスを探す)
+        int zeroOnset = bestOnset;
+        for (int d = 0; d < 500; ++d)
+        {
+            int left = bestOnset - d;
+            int right = bestOnset + d;
+            if (left >= 0 && left < numSamples - 1 && (samples[left] * samples[left + 1] <= 0.0f || std::abs(samples[left]) < 1.0e-4f)) {
+                zeroOnset = left;
+                break;
+            }
+            if (right >= 0 && right < numSamples - 1 && (samples[right] * samples[right + 1] <= 0.0f || std::abs(samples[right]) < 1.0e-4f)) {
+                zeroOnset = right;
+                break;
+            }
+        }
+        return (float)zeroOnset / (float)numSamples;
     }
 
     // 2. 近くにトランジェントが無ければゼロクロス検索にフォールバック
@@ -379,10 +406,10 @@ void WaveformDisplay::mouseDown(const juce::MouseEvent& e)
     else if (std::abs(mouseX - eX) < 10.0f) activeDrag = DragTarget::SampleEnd;
     else activeDrag = DragTarget::None;
 
-    if (activeDrag == DragTarget::SampleStart) dragStartParamValue = startRatio;
-    else if (activeDrag == DragTarget::SampleEnd) dragStartParamValue = endRatio;
-    else if (activeDrag == DragTarget::LoopStart) dragStartParamValue = loopStart;
-    else if (activeDrag == DragTarget::LoopEnd) dragStartParamValue = loopEnd;
+    if (activeDrag == DragTarget::SampleStart) dragStartParamValue = uiStartRatio[activeSlot];
+    else if (activeDrag == DragTarget::SampleEnd) dragStartParamValue = uiEndRatio[activeSlot];
+    else if (activeDrag == DragTarget::LoopStart) dragStartParamValue = uiLoopStart[activeSlot];
+    else if (activeDrag == DragTarget::LoopEnd) dragStartParamValue = uiLoopEnd[activeSlot];
 
     dragStartX = e.x;
 }
@@ -403,8 +430,8 @@ void WaveformDisplay::mouseDrag(const juce::MouseEvent& e)
         return;
     }
 
-    float normX = dragStartParamValue + (float)(e.x - dragStartX) / w / zoomLevel;
-    normX = juce::jlimit(0.0f, 1.0f, normX);
+    double normX = dragStartParamValue + (double)(e.x - dragStartX) / (double)w / (double)zoomLevel;
+    normX = juce::jlimit(0.0, 1.0, normX);
     
     const juce::String s = juce::String(activeSlot);
 
@@ -415,32 +442,32 @@ void WaveformDisplay::mouseDrag(const juce::MouseEvent& e)
     };
 
     const bool isSnap = getParamFloat("isSnap_" + s, 0.0f) > 0.5f;
-    if (isSnap) normX = findZeroCrossingRatio(normX);
+    if (isSnap) normX = (double)findZeroCrossingRatio((float)normX);
 
-    const float startVal = getParamFloat("sampleStart_" + s, 0.0f);
-    const float endVal   = getParamFloat("sampleEnd_" + s, 1.0f);
-    const float lStart   = getParamFloat("loopStart_" + s, 0.2f);
-    const float lEnd     = getParamFloat("loopEnd_" + s, 0.7f);
+    const double startVal = uiStartRatio[activeSlot];
+    const double endVal   = uiEndRatio[activeSlot];
+    const double lStart   = uiLoopStart[activeSlot];
+    const double lEnd     = uiLoopEnd[activeSlot];
 
     if (activeDrag == DragTarget::SampleStart)
     {
-        const float val = std::min(normX, endVal - 0.000001f);
-        if (auto* p = vts->getParameter("sampleStart_" + s)) p->setValueNotifyingHost(val);
+        uiStartRatio[activeSlot] = std::min(normX, endVal - 0.000001);
+        if (auto* p = vts->getParameter("sampleStart_" + s)) p->setValueNotifyingHost((float)uiStartRatio[activeSlot]);
     }
     else if (activeDrag == DragTarget::SampleEnd)
     {
-        const float val = std::max(normX, startVal + 0.000001f);
-        if (auto* p = vts->getParameter("sampleEnd_" + s)) p->setValueNotifyingHost(val);
+        uiEndRatio[activeSlot] = std::max(normX, startVal + 0.000001);
+        if (auto* p = vts->getParameter("sampleEnd_" + s)) p->setValueNotifyingHost((float)uiEndRatio[activeSlot]);
     }
     else if (activeDrag == DragTarget::LoopStart)
     {
-        const float val = std::min(normX, lEnd - 0.000001f);
-        if (auto* p = vts->getParameter("loopStart_" + s)) p->setValueNotifyingHost(val);
+        uiLoopStart[activeSlot] = std::min(normX, lEnd - 0.000001);
+        if (auto* p = vts->getParameter("loopStart_" + s)) p->setValueNotifyingHost((float)uiLoopStart[activeSlot]);
     }
     else if (activeDrag == DragTarget::LoopEnd)
     {
-        const float val = std::max(normX, lStart + 0.000001f);
-        if (auto* p = vts->getParameter("loopEnd_" + s)) p->setValueNotifyingHost(val);
+        uiLoopEnd[activeSlot] = std::max(normX, lStart + 0.000001);
+        if (auto* p = vts->getParameter("loopEnd_" + s)) p->setValueNotifyingHost((float)uiLoopEnd[activeSlot]);
     }
     repaint();
 }

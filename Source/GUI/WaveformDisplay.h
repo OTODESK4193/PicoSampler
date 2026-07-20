@@ -28,7 +28,12 @@ public:
     void setModMatrix(const ModMatrix* mod) { modMatrix = mod; }
 
     std::function<void(const juce::File& file)> onFileDropped;
-    std::function<void(int slotIdx)> onClearSlotRequested;
+    std::function<void(int)> onActiveSlotChanged;
+    std::function<void(int)> onClearSlotRequested;
+    std::function<void(float)> onZoomLevelChanged;
+
+    void setZoomLevel(float z) { zoomLevel = z; if(onZoomLevelChanged) onZoomLevelChanged(z); repaint(); }
+    float getZoomLevel() const { return zoomLevel; }
 
     bool isInterestedInFileDrag(const juce::StringArray& files) override;
     void filesDropped(const juce::StringArray& files, int x, int y) override;
@@ -56,7 +61,14 @@ private:
     float zoomLevel = 1.0f;
     float viewStartRatio = 0.0f;
     float scrollDragStartRatio = 0.0f;
-    float dragStartParamValue = 0.0f;
+    
+    // High-precision internal UI states (bypasses float APVTS truncation)
+    double uiStartRatio[8] = {0};
+    double uiEndRatio[8] = {1,1,1,1,1,1,1,1};
+    double uiLoopStart[8] = {0.2,0.2,0.2,0.2,0.2,0.2,0.2,0.2};
+    double uiLoopEnd[8] = {0.7,0.7,0.7,0.7,0.7,0.7,0.7,0.7};
+
+    double dragStartParamValue = 0.0;
     int dragStartX = 0;
     int currentMouseX = 0;
 

@@ -539,9 +539,22 @@ void PicoSamplerAudioProcessor::autoSliceFile(const juce::File& file, int stretc
         
         if (currentEnergy > prevEnergy + threshold && currentEnergy > maxEnergy * 0.05f)
         {
-            if (onsetSamples.empty() || i - onsetSamples.back() > 4410)
+            const int minSliceDist = (int)juce::jmap(sensitivity, 0.0f, 1.0f, 8820.0f, 441.0f); // 200ms to 10ms based on Sens
+            if (onsetSamples.empty() || i - onsetSamples.back() > minSliceDist)
             {
-                onsetSamples.push_back(i);
+                int zeroOnset = i;
+                for (int d = 0; d < 500; ++d)
+                {
+                    int left = i - d;
+                    int right = i + d;
+                    if (left >= 0 && left < numSamples - 1 && (slot0.getOriginalBuffer().getSample(0, left) * slot0.getOriginalBuffer().getSample(0, left + 1) <= 0.0f)) {
+                        zeroOnset = left; break;
+                    }
+                    if (right >= 0 && right < numSamples - 1 && (slot0.getOriginalBuffer().getSample(0, right) * slot0.getOriginalBuffer().getSample(0, right + 1) <= 0.0f)) {
+                        zeroOnset = right; break;
+                    }
+                }
+                onsetSamples.push_back(zeroOnset);
                 if (onsetSamples.size() >= 9) break;
             }
         }
