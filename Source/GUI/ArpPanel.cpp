@@ -77,23 +77,19 @@ ArpPanel::ArpPanel(juce::AudioProcessorValueTreeState& apvts) : vts(apvts)
     addAndMakeVisible(btnFilterEnable);
     buttonAttachments.push_back(std::make_unique<ButtonAttach>(vts, "fltEnable", btnFilterEnable));
 
-    comboFilterModel.addItemList({ "Clean SVF", "Vowel Formant", "Comb Filter" }, 1);
-    comboFilterType.addItemList({ "LowPass", "BandPass", "HighPass", "Notch" }, 1);
+    comboFilterType.addItemList({ "LPF", "HPF", "BPF", "Notch", "Comb", "Ladder LPF", "Vowel", "Comb+", "Phaser" }, 1);
     comboFilterSlope.addItemList({ "12dB/oct", "24dB/oct" }, 1);
 
-    styleCombo(comboFilterModel);
     styleCombo(comboFilterType);
     styleCombo(comboFilterSlope);
 
-    addAndMakeVisible(comboFilterModel);
     addAndMakeVisible(comboFilterType);
     addAndMakeVisible(comboFilterSlope);
 
-    comboAttachments.push_back(std::make_unique<ComboAttach>(vts, "fltModel", comboFilterModel));
     comboAttachments.push_back(std::make_unique<ComboAttach>(vts, "fltType", comboFilterType));
     comboAttachments.push_back(std::make_unique<ComboAttach>(vts, "fltSlope", comboFilterSlope));
 
-    comboFilterModel.onChange = [this] { updateFilterUIState(); };
+    comboFilterType.onChange = [this] { updateFilterUIState(); };
 
     knobFilterCutoff.knob.setDoubleClickReturnValue(true, 2000.0);
     knobFilterRes.knob.setDoubleClickReturnValue(true, 0.707);
@@ -146,9 +142,8 @@ void ArpPanel::updateFilterCurveDisplay() noexcept
     };
 
     fp.enable  = fetchBool("fltEnable");
-    fp.model   = (int)fetchFloat("fltModel", 0.0f);
     fp.type    = (int)fetchFloat("fltType", 0.0f);
-    fp.slope   = (int)fetchFloat("fltSlope", 0.0f);
+    fp.slope24 = fetchFloat("fltSlope", 0.0f) > 0.5f;
 
     const float baseCutoff  = fetchFloat("fltCutoff", 2000.0f);
     const float baseRes     = fetchFloat("fltRes", 0.707f);
@@ -181,44 +176,29 @@ void ArpPanel::updateFilterCurveDisplay() noexcept
         fp.combMix = baseCombMix;
     }
 
-    filterCurveComp.updateFilterState(fp);
+    filterCurveComp.updateFilterState(fp, currentSampleRateForCurve);
 }
 
 void ArpPanel::updateFilterUIState() noexcept
 {
     updateFilterCurveDisplay();
 
-    auto* pModel = vts.getRawParameterValue("fltModel");
-    if (pModel == nullptr) return;
-    const int modelIdx = (int)pModel->load();
+    auto* pType = vts.getRawParameterValue("fltType");
+    if (pType == nullptr) return;
+    const int typeIdx = (int)pType->load();
 
-    if (modelIdx == 0) // Clean SVF
-    {
-        comboFilterType.setEnabled(true);
-        comboFilterSlope.setEnabled(true);
-        knobFilterCutoff.setEnabled(true);
-        knobFilterRes.setEnabled(true);
-        knobFilterFormant.setEnabled(false);
-        knobFilterCombMix.setEnabled(false);
-    }
-    else if (modelIdx == 1) // Vowel Formant
-    {
-        comboFilterType.setEnabled(false);
-        comboFilterSlope.setEnabled(false);
-        knobFilterCutoff.setEnabled(true);
-        knobFilterRes.setEnabled(true);
-        knobFilterFormant.setEnabled(true);
-        knobFilterCombMix.setEnabled(false);
-    }
-    else if (modelIdx == 2) // Comb Filter
-    {
-        comboFilterType.setEnabled(false);
-        comboFilterSlope.setEnabled(false);
-        knobFilterCutoff.setEnabled(true);
-        knobFilterRes.setEnabled(true);
-        knobFilterFormant.setEnabled(false);
-        knobFilterCombMix.setEnabled(true);
-    }
+    // Wavetableプロジェクト DualFilterEngine::FilterType と同じ並び
+    //   0=LPF 1=HPF 2=BPF 3=Notch 4=Comb 5=LadderLPF 6=Vowel 7=CombPlus 8=Phaser
+    const bool isSlopeType   = (typeIdx == PicoFilter::LPF || typeIdx == PicoFilter::HPF
+                              || typeIdx == PicoFilter::BPF || typeIdx == PicoFilter::Phaser);
+    const bool isVowel       = (typeIdx == PicoFilter::Vowel);
+    const bool usesMixKnob   = (typeIdx == PicoFilter::CombPlus || typeIdx == PicoFilter::Phaser);
+
+    comboFilterSlope.setEnabled(isSlopeType);
+    knobFilterCutoff.setEnabled(true);
+    knobFilterRes.setEnabled(true);
+    knobFilterFormant.setEnabled(isVowel);
+    knobFilterCombMix.setEnabled(usesMixKnob);
 }
 
 void ArpPanel::paint(juce::Graphics& g)
@@ -236,7 +216,7 @@ void ArpPanel::paint(juce::Graphics& g)
 
     drawSectionHeader("ARPEGGIATOR SETTINGS", 20, 8, 480, PicoColors::lavender);
     drawSectionHeader("SCALE QUANTIZER",     520, 8, 300, PicoColors::mint);
-    drawSectionHeader("MAIN FILTER (CleanSVF / Vowel / Comb)", 20, 148, 430, PicoColors::mint);
+    drawSectionHeader("MAIN FILTER (LPF/HPF/BPF/Notch/Comb/Ladder/Vowel/Comb+/Phaser)", 20, 148, 430, PicoColors::mint);
     drawSectionHeader("FILTER ENVELOPE", 470, 248, 300, PicoColors::babyBlue);
 }
 
@@ -267,9 +247,8 @@ void ArpPanel::resized()
     // --- FILTER セクション (左: コンボ+カーブ / 右: ノブ類) ---
     // 左側: コンボボックス
     btnFilterEnable.setBounds(20,  172, 85, 26);
-    comboFilterModel.setBounds(111, 172, 110, 26);
-    comboFilterType.setBounds(227,  172, 100, 26);
-    comboFilterSlope.setBounds(333, 172, 85, 26);
+    comboFilterType.setBounds(111, 172, 130, 26);
+    comboFilterSlope.setBounds(247, 172, 90, 26);
 
     // 左側: フィルターカーブ表示 (縦幅拡大)
     filterCurveComp.setBounds(20, 206, 420, 128);

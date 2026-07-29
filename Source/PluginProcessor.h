@@ -134,7 +134,6 @@ private:
 
     struct CachedFilterParams {
         std::atomic<float>* enable;
-        std::atomic<float>* model;
         std::atomic<float>* cutoff;
         std::atomic<float>* res;
         std::atomic<float>* type;

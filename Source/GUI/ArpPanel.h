@@ -1,7 +1,7 @@
 // ==========================================
 // File: ArpPanel.h
-// アルペジエイター ＆ スケール量子化 ＆ フィルター(CleanSVF/Vowel/Comb) パネル
-// (Filter Curve 表示統合完全移植)
+// アルペジエイター ＆ スケール量子化 ＆ フィルター
+// (LPF/HPF/BPF/Notch/Comb/LadderLPF/Vowel/CombPlus/Phaser。Wavetableプロジェクトより移植)
 // ==========================================
 #pragma once
 
@@ -26,6 +26,8 @@ public:
 
     // カーブ表示にモジュレーション量を反映させるため ModMatrix を参照する
     void setModMatrix(const ModMatrix* mod) noexcept { modMatrix = mod; }
+    // フィルターカーブの周波数配置計算に使うサンプルレート
+    void setSampleRate(double sr) noexcept { currentSampleRateForCurve = sr > 1000.0 ? sr : 44100.0; }
 
     juce::Slider& getOctavesKnob() { return knobOctaves.knob; }
     juce::Slider& getRateKnob()    { return knobRateFree.knob; }
@@ -88,14 +90,13 @@ private:
     // --- FILTER ---
     GlowToggle btnFilterEnable { "FILTER ON" };
 
-    juce::ComboBox comboFilterModel;
     juce::ComboBox comboFilterType;
     juce::ComboBox comboFilterSlope;
 
     LabeledKnob knobFilterCutoff  { "Cutoff",  PicoColors::mint };
     LabeledKnob knobFilterRes     { "Reso",    PicoColors::mint };
     LabeledKnob knobFilterFormant { "Formant", PicoColors::peach };
-    LabeledKnob knobFilterCombMix { "Comb Mix",PicoColors::peach };
+    LabeledKnob knobFilterCombMix { "Mix",     PicoColors::peach };
 
     // --- FILTER ENVELOPE ---
     LabeledKnob knobFltEnvA   { "Attack",  PicoColors::babyBlue };
@@ -106,6 +107,7 @@ private:
 
     FilterCurveComponent filterCurveComp;
     const ModMatrix* modMatrix = nullptr;
+    double currentSampleRateForCurve = 44100.0;
 
     using Attachment = juce::AudioProcessorValueTreeState::SliderAttachment;
     using ComboAttach = juce::AudioProcessorValueTreeState::ComboBoxAttachment;

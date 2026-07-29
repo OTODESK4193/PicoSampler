@@ -139,12 +139,12 @@ juce::AudioProcessorValueTreeState::ParameterLayout PicoSamplerAudioProcessor::c
     params.push_back(std::make_unique<juce::AudioParameterChoice>("key", "Root Key", juce::StringArray{ "Auto", "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" }, 0));
     params.push_back(std::make_unique<juce::AudioParameterChoice>("scale", "Scale", ScaleQuantizer::getScaleNames(), 0));
 
-    // PicoFilter (CleanSVF, Vowel, Comb)
+    // PicoFilter (LPF/HPF/BPF/Notch/Comb/LadderLPF/Vowel/CombPlus/Phaser。Wavetableプロジェクトより移植)
     params.push_back(std::make_unique<juce::AudioParameterBool>("fltEnable", "Filter Enable", false));
-    params.push_back(std::make_unique<juce::AudioParameterChoice>("fltModel", "Filter Model", juce::StringArray{ "Clean SVF", "Vowel Formant", "Comb Filter" }, 0));
     params.push_back(std::make_unique<juce::AudioParameterFloat>("fltCutoff", "Filter Cutoff", 20.0f, 20000.0f, 2000.0f));
     params.push_back(std::make_unique<juce::AudioParameterFloat>("fltRes", "Filter Resonance", 0.1f, 10.0f, 0.707f));
-    params.push_back(std::make_unique<juce::AudioParameterChoice>("fltType", "Filter Type", juce::StringArray{ "LowPass", "BandPass", "HighPass", "Notch" }, 0));
+    params.push_back(std::make_unique<juce::AudioParameterChoice>("fltType", "Filter Type",
+        juce::StringArray{ "LPF", "HPF", "BPF", "Notch", "Comb", "Ladder LPF", "Vowel", "Comb+", "Phaser" }, 0));
     params.push_back(std::make_unique<juce::AudioParameterChoice>("fltSlope", "Filter Slope", juce::StringArray{ "12dB/oct", "24dB/oct" }, 0));
     params.push_back(std::make_unique<juce::AudioParameterFloat>("fltFormant", "Filter Formant", 0.0f, 1.0f, 0.0f));
     params.push_back(std::make_unique<juce::AudioParameterFloat>("fltCombMix", "Filter Comb Mix", 0.0f, 1.0f, 0.5f));
@@ -434,10 +434,9 @@ void PicoSamplerAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
     // 1. 各スロットのボイスをルーティングに応じて各バッファにレンダリング
     samplerEngine.renderNextBlock(buffer, fltBypassBuffer, fxBypassBuffer, bothBypassBuffer, engineParams, &visualizerData);
 
-    // 2. PicoFilter (CleanSVF, Vowel, Comb) 適用 (FLT BYPASSがオフのスロット音声に適用)
+    // 2. PicoFilter (LPF/HPF/BPF/Notch/Comb/LadderLPF/Vowel/CombPlus/Phaser) 適用 (FLT BYPASSがオフのスロット音声に適用)
     PicoFilter::Params fltParams;
     fltParams.enable  = filterParamsCache.enable->load() > 0.5f;
-    fltParams.model   = (int)filterParamsCache.model->load();
 
     const float baseCutoff = filterParamsCache.cutoff->load();
     float targetCutoff = baseCutoff;
@@ -455,7 +454,7 @@ void PicoSamplerAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
     fltParams.cutoff  = smoothedCutoff.getNextValue();
     fltParams.res     = smoothedReso.getNextValue();
     fltParams.type    = (int)filterParamsCache.type->load();
-    fltParams.slope   = (int)filterParamsCache.slope->load();
+    fltParams.slope24 = filterParamsCache.slope->load() > 0.5f;
     fltParams.formant = juce::jlimit(0.0f, 1.0f, filterParamsCache.formant->load() + modMatrix.get(ModMatrix::DstFltFormant));
     fltParams.combMix = juce::jlimit(0.0f, 1.0f, filterParamsCache.combMix->load() + modMatrix.get(ModMatrix::DstFltCombMix));
 
@@ -1095,7 +1094,6 @@ void PicoSamplerAudioProcessor::initializeParameterCache()
     arpParamsCache.scale = apvts.getRawParameterValue("scale");
 
     filterParamsCache.enable = apvts.getRawParameterValue("fltEnable");
-    filterParamsCache.model = apvts.getRawParameterValue("fltModel");
     filterParamsCache.cutoff = apvts.getRawParameterValue("fltCutoff");
     filterParamsCache.res = apvts.getRawParameterValue("fltRes");
     filterParamsCache.type = apvts.getRawParameterValue("fltType");

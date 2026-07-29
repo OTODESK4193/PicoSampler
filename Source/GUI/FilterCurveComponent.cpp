@@ -66,7 +66,7 @@ void FilterCurveComponent::paint(juce::Graphics& g)
     {
         const float normX = (float)px / (float)numPoints;
         const float freq = 20.0f * std::pow(1000.0f, normX);
-        const float mag = dummyFilter.getMagnitudeForFrequency(freq, currentParams);
+        const float mag = PicoFilter::getMagnitudeForFrequency(freq, currentParams, sampleRate);
 
         const float db = juce::Decibels::gainToDecibels(mag, -120.0f);
         const float y = juce::jlimit(-10.0f, h + 10.0f, juce::jmap(db, dbTop, dbBottom, 0.0f, h));
