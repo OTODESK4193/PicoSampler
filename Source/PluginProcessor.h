@@ -74,6 +74,9 @@ public:
     ModMatrix& getModMatrix() { return modMatrix; }
     SampleVisualizerData& getVisualizerData() { return visualizerData; }
 
+    // GUI (ArpPanel) がフィルターカーブに Filter Envelope の動きを反映するための現在値 (0..1)
+    float getFilterEnvValue() const noexcept { return guiFilterEnvValue.load(std::memory_order_relaxed); }
+
 private:
     juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
     float getParamFloat(const juce::String& paramId, float defaultVal = 0.0f) const;
@@ -84,6 +87,7 @@ private:
     PicoFilter mainFilter;
     PicoFilter fxBypassFilter;
     juce::ADSR filterAdsr;
+    std::atomic<float> guiFilterEnvValue { 0.0f };
     double currentSampleRate = 44100.0;
     ModMatrix modMatrix;
     FxChain fxChain;

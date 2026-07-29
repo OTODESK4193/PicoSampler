@@ -149,32 +149,24 @@ void ArpPanel::updateFilterCurveDisplay() noexcept
     const float baseRes     = fetchFloat("fltRes", 0.707f);
     const float baseFormant = fetchFloat("fltFormant", 0.0f);
     const float baseCombMix = fetchFloat("fltCombMix", 0.5f);
+    const float envAmt      = fetchFloat("fltEnvAmt", 0.0f);
 
     // ------------------------------------------------------------------
     // モジュレーション反映
     // 計算式は PluginProcessor 側の DSP と必ず一致させること
-    // (Cutoff は ±4 オクターブの指数変調、Reso は ±5 の線形加算)。
-    // ズレるとカーブ表示と実際の音が食い違う。
+    // (Cutoff は Filter Envelope ±4oct + ModMatrix ±4oct の指数変調、
+    //  Reso は ModMatrix ±5 の線形加算)。ズレるとカーブ表示と実際の音が食い違う。
     // ------------------------------------------------------------------
-    if (modMatrix != nullptr)
-    {
-        const float modCutoff  = modMatrix->get(ModMatrix::DstFltCutoff);
-        const float modReso    = modMatrix->get(ModMatrix::DstFltReso);
-        const float modFormant = modMatrix->get(ModMatrix::DstFltFormant);
-        const float modComb    = modMatrix->get(ModMatrix::DstFltCombMix);
+    const float modCutoff  = modMatrix != nullptr ? modMatrix->get(ModMatrix::DstFltCutoff)  : 0.0f;
+    const float modReso    = modMatrix != nullptr ? modMatrix->get(ModMatrix::DstFltReso)    : 0.0f;
+    const float modFormant = modMatrix != nullptr ? modMatrix->get(ModMatrix::DstFltFormant) : 0.0f;
+    const float modComb    = modMatrix != nullptr ? modMatrix->get(ModMatrix::DstFltCombMix) : 0.0f;
 
-        fp.cutoff  = juce::jlimit(20.0f, 20000.0f, baseCutoff * std::pow(2.0f, modCutoff * 4.0f));
-        fp.res     = juce::jlimit(0.1f, 10.0f, baseRes + modReso * 5.0f);
-        fp.formant = juce::jlimit(0.0f, 1.0f, baseFormant + modFormant);
-        fp.combMix = juce::jlimit(0.0f, 1.0f, baseCombMix + modComb);
-    }
-    else
-    {
-        fp.cutoff  = baseCutoff;
-        fp.res     = baseRes;
-        fp.formant = baseFormant;
-        fp.combMix = baseCombMix;
-    }
+    const float octaveShift = liveFilterEnvValue * envAmt * 4.0f + modCutoff * 4.0f;
+    fp.cutoff  = juce::jlimit(20.0f, 20000.0f, baseCutoff * std::pow(2.0f, octaveShift));
+    fp.res     = juce::jlimit(0.1f, 10.0f, baseRes + modReso * 5.0f);
+    fp.formant = juce::jlimit(0.0f, 1.0f, baseFormant + modFormant);
+    fp.combMix = juce::jlimit(0.0f, 1.0f, baseCombMix + modComb);
 
     filterCurveComp.updateFilterState(fp, currentSampleRateForCurve);
 }

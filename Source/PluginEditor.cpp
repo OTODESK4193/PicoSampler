@@ -346,6 +346,7 @@ void PicoSamplerAudioProcessorEditor::timerCallback()
     waveDisplay.setModMatrix(&audioProcessor.getModMatrix());
     arpPanel.setModMatrix(&audioProcessor.getModMatrix());
     arpPanel.setSampleRate(audioProcessor.getSampleRate());
+    arpPanel.setFilterEnvValue(audioProcessor.getFilterEnvValue());
     waveDisplay.setActiveSlotIndex(activeIdx);
     waveDisplay.repaint();
 

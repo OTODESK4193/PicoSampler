@@ -28,6 +28,8 @@ public:
     void setModMatrix(const ModMatrix* mod) noexcept { modMatrix = mod; }
     // フィルターカーブの周波数配置計算に使うサンプルレート
     void setSampleRate(double sr) noexcept { currentSampleRateForCurve = sr > 1000.0 ? sr : 44100.0; }
+    // Filter Envelope (ADSR) の現在値 (0..1) をカーブ描画に反映させる
+    void setFilterEnvValue(float v) noexcept { liveFilterEnvValue = v; }
 
     juce::Slider& getOctavesKnob() { return knobOctaves.knob; }
     juce::Slider& getRateKnob()    { return knobRateFree.knob; }
@@ -108,6 +110,7 @@ private:
     FilterCurveComponent filterCurveComp;
     const ModMatrix* modMatrix = nullptr;
     double currentSampleRateForCurve = 44100.0;
+    float liveFilterEnvValue = 0.0f;
 
     using Attachment = juce::AudioProcessorValueTreeState::SliderAttachment;
     using ComboAttach = juce::AudioProcessorValueTreeState::ComboBoxAttachment;

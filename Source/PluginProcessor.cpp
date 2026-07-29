@@ -419,8 +419,15 @@ void PicoSamplerAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
     adsrP.release = filterParamsCache.envRelease->load();
     filterAdsr.setParameters(adsrP);
 
-    const float envVal = filterAdsr.getNextSample();
+    // ★バグ修正: 以前は getNextSample() をブロックにつき1回しか呼んでいなかったため、
+    //   ADSR が「1ブロック = 1サンプル」のペースでしか進まず、Attack/Decay/Release が
+    //   ノブの設定値よりブロックサイズ倍（512サンプルバッファなら約512倍）遅く進んでいた。
+    //   実際の再生時間に合わせてブロック内のサンプル数ぶんだけ進める。
+    float envVal = 0.0f;
+    for (int i = 0; i < numSamples; ++i)
+        envVal = filterAdsr.getNextSample();
     const float envAmt = filterParamsCache.envAmt->load();
+    guiFilterEnvValue.store(envVal, std::memory_order_relaxed);
 
     const int numChannels = buffer.getNumChannels();
     juce::AudioBuffer<float> fltBypassBuffer(numChannels, numSamples);
