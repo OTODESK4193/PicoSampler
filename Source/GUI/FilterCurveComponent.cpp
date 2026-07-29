@@ -4,6 +4,40 @@
 // ==========================================
 #include "FilterCurveComponent.h"
 
+namespace
+{
+    // ==========================================================================
+    // 低域に広くスペースを割く 2 区間対数スケール。
+    //   20Hz .. kBreakFreq を横幅の kLowRatio 分、kBreakFreq .. 20000Hz を残りに割り当てる。
+    //   1kHz が画面中央付近に来てしまう単純な 20Hz-20kHz 一括対数スケールに対して、
+    //   低域(20Hz-1kHz)の変化がグラフ上でよく見えるようにする。
+    // ==========================================================================
+    constexpr float kMinFreq   = 20.0f;
+    constexpr float kMaxFreq   = 20000.0f;
+    constexpr float kBreakFreq = 1000.0f;
+    constexpr float kLowRatio  = 0.7f; // 20Hz-1kHz に割く横幅の比率
+
+    // 周波数 -> x (0..1 正規化)
+    float freqToNormX(float freq) noexcept
+    {
+        freq = juce::jlimit(kMinFreq, kMaxFreq, freq);
+        if (freq <= kBreakFreq)
+            return (std::log10(freq / kMinFreq) / std::log10(kBreakFreq / kMinFreq)) * kLowRatio;
+
+        return kLowRatio + (std::log10(freq / kBreakFreq) / std::log10(kMaxFreq / kBreakFreq)) * (1.0f - kLowRatio);
+    }
+
+    // x (0..1 正規化) -> 周波数
+    float normXToFreq(float t) noexcept
+    {
+        t = juce::jlimit(0.0f, 1.0f, t);
+        if (t <= kLowRatio)
+            return kMinFreq * std::pow(kBreakFreq / kMinFreq, t / kLowRatio);
+
+        return kBreakFreq * std::pow(kMaxFreq / kBreakFreq, (t - kLowRatio) / (1.0f - kLowRatio));
+    }
+}
+
 void FilterCurveComponent::paint(juce::Graphics& g)
 {
     const float w = (float)getWidth();
@@ -37,17 +71,17 @@ void FilterCurveComponent::paint(juce::Graphics& g)
         g.drawText(juce::String((int)dbLine) + "dB", 4, (int)yDb - 10, 35, 10, juce::Justification::left);
     }
 
-    // 2. 周波数 垂直グリッド線 (100Hz, 500Hz, 1kHz, 5kHz, 10kHz)
-    static const float freqs[] = { 100.0f, 500.0f, 1000.0f, 5000.0f, 10000.0f };
-    static const juce::String labels[] = { "100Hz", "500Hz", "1kHz", "5kHz", "10kHz" };
+    // 2. 周波数 垂直グリッド線 (低域を広く取ったぶん、低域側のグリッドを増やす)
+    static const float freqs[] = { 50.0f, 100.0f, 200.0f, 500.0f, 1000.0f, 2000.0f, 5000.0f, 10000.0f };
+    static const juce::String labels[] = { "50", "100", "200", "500", "1k", "2k", "5k", "10k" };
 
-    for (int i = 0; i < 5; ++i)
+    for (int i = 0; i < 8; ++i)
     {
-        float x = w * std::log10(freqs[i] / 20.0f) / 3.0f; // 20Hz -> 20000Hz (3 decade)
+        float x = freqToNormX(freqs[i]) * w;
         g.setColour(juce::Colours::white.withAlpha(0.08f));
         g.drawVerticalLine((int)x, 0.0f, h);
         g.setColour(PicoColors::textDim.withAlpha(0.7f));
-        g.drawText(labels[i], (int)x + 2, (int)h - 13, 40, 10, juce::Justification::left);
+        g.drawText(labels[i], (int)x + 2, (int)h - 13, 30, 10, juce::Justification::left);
     }
 
     if (!currentParams.enable)
@@ -64,15 +98,16 @@ void FilterCurveComponent::paint(juce::Graphics& g)
 
     for (int px = 0; px < numPoints; ++px)
     {
-        const float normX = (float)px / (float)numPoints;
-        const float freq = 20.0f * std::pow(1000.0f, normX);
+        const float normX = (float)px / (float)(numPoints - 1);
+        const float freq = normXToFreq(normX);
         const float mag = PicoFilter::getMagnitudeForFrequency(freq, currentParams, sampleRate);
 
         const float db = juce::Decibels::gainToDecibels(mag, -120.0f);
         const float y = juce::jlimit(-10.0f, h + 10.0f, juce::jmap(db, dbTop, dbBottom, 0.0f, h));
+        const float x = normX * w;
 
-        if (px == 0) curvePath.startNewSubPath(0.0f, y);
-        else curvePath.lineTo((float)px * (w / (float)numPoints), y);
+        if (px == 0) curvePath.startNewSubPath(x, y);
+        else curvePath.lineTo(x, y);
     }
 
     // カーブ下部の半透明グラデーション塗りつぶし
