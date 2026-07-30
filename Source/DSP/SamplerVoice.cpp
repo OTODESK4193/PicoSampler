@@ -89,6 +89,11 @@ void PicoVoice::startNote(int midiNoteNumber, float noteVelocity, int slotIdx,
             envStage = EnvStage::Attack;
             envValue = 0.0f;
         }
+
+        // Loop ON時でも、まず Start -> End (L-Endではない) の初回パスを再生してから
+        // L-Start/L-End 間のループに入る仕様。Legato で音を継続する場合は
+        // 既にループに入っているかもしれないため状態を維持する。
+        hasEnteredLoop = false;
     }
 }
 
@@ -266,10 +271,18 @@ void PicoVoice::renderNextBlock(juce::AudioBuffer<float>& outputBuffer, int star
         {
             if (p.isLooping)
             {
-                while (readPosition >= (double)lpEndFile)
-                    readPosition -= (double)std::max(1, lpEndFile - lpStartFile);
-                if (readPosition < (double)lpStartFile)
-                    readPosition = (double)lpStartFile;
+                // 仕様: Note-On直後はまず Start -> End (Endマーカーまで) の初回パスを
+                // そのまま再生し、Endに到達して初めて L-Start/L-End 間のループに入る。
+                // hasEnteredLoop が立つまでは lpEndFile ではなく smpEndFile を境界に使う。
+                const int wrapBoundary = hasEnteredLoop ? lpEndFile : smpEndFile;
+                if (readPosition >= (double)wrapBoundary)
+                {
+                    hasEnteredLoop = true;
+                    while (readPosition >= (double)lpEndFile)
+                        readPosition -= (double)std::max(1, lpEndFile - lpStartFile);
+                    if (readPosition < (double)lpStartFile)
+                        readPosition = (double)lpStartFile;
+                }
             }
             else
             {
@@ -281,10 +294,15 @@ void PicoVoice::renderNextBlock(juce::AudioBuffer<float>& outputBuffer, int star
             // Reverse ON: ファイル上では減少方向へ進む
             if (p.isLooping)
             {
-                while (readPosition <= (double)lpEndFile)
-                    readPosition += (double)std::max(1, lpStartFile - lpEndFile);
-                if (readPosition > (double)lpStartFile)
-                    readPosition = (double)lpStartFile;
+                const int wrapBoundary = hasEnteredLoop ? lpEndFile : smpEndFile;
+                if (readPosition <= (double)wrapBoundary)
+                {
+                    hasEnteredLoop = true;
+                    while (readPosition <= (double)lpEndFile)
+                        readPosition += (double)std::max(1, lpStartFile - lpEndFile);
+                    if (readPosition > (double)lpStartFile)
+                        readPosition = (double)lpStartFile;
+                }
             }
             else
             {
@@ -316,8 +334,8 @@ void PicoVoice::renderNextBlock(juce::AudioBuffer<float>& outputBuffer, int star
             sL = sR = lagrange3rdInterpolate(chL[i0], chL[i1], chL[i2], chL[i3], frac);
         }
 
-        // ループ Crossfade
-        if (p.isLooping)
+        // ループ Crossfade (初回の Start->End パス中はまだループしていないので対象外)
+        if (p.isLooping && hasEnteredLoop)
         {
             bool isCrossfading = false;
             double loopOffsetPos = 0.0;

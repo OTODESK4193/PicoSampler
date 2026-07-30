@@ -74,6 +74,7 @@ public:
         envValue = 0.0f;
         pitchInc = 1.0;
         currentPitchRatio = 1.0;
+        hasEnteredLoop = false;
     }
 
     bool isActive() const noexcept { return active; }
@@ -105,4 +106,10 @@ private:
     int currentAnchorSemis = 0;
     EnvStage envStage = EnvStage::Idle;
     float envValue = 0.0f;
+
+    // Loop ON時、Start->End の初回パスを最後まで再生してから
+    // L-Start/L-End 間のループに入ったかどうかのフラグ。
+    // (初回パス中に readPosition が L-Start 未満でも強制的に
+    //  L-Start へスナップしてしまわないようにするため)
+    bool hasEnteredLoop = false;
 };
