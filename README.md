@@ -6,6 +6,16 @@
 ![Platform](https://img.shields.io/badge/platform-Windows-lightgrey)
 ![Downloads](https://img.shields.io/github/downloads/OTODESK4193/PicoSampler/total.svg)
 
+## Demo Videos
+
+<p align="center">
+  <b>Introduction　YoutubeLink</b><br>
+  <a href="https://youtu.be/axVJELc55GA">
+    <img src="Thumbnails/thumbnail_1_overview.jpg"
+         alt="NextGenKick2 - Introduction　YoutubeLink" width="640" height="360">
+  </a>
+</p>
+
 ##
 <img src="Source/Assets/Main.jpg" width="700">
 
