@@ -452,6 +452,12 @@ void PicoSamplerAudioProcessorEditor::timerCallback()
     updateKnobProps(arpPanel.getFormantKnob(), ModMatrix::DstFltFormant);
     updateKnobProps(arpPanel.getCombMixKnob(), ModMatrix::DstFltCombMix);
 
+    // ModPanel: LFO Rate ノブ範囲更新 (LFO→LFO クロスモジュレーション)
+    for (int i = 0; i < ModMatrix::kNumLfos; ++i)
+    {
+        updateKnobProps(modPanel.getLfoRateKnob(i), ModMatrix::DstLfo1Rate + i);
+    }
+
     // FxPanel ノブ範囲更新
     for (int i = 0; i < 5; ++i)
     {
@@ -461,12 +467,17 @@ void PicoSamplerAudioProcessorEditor::timerCallback()
         }
     }
 
+    // 【修正】 detailKnobs は選択中のFXタイプによって中身が丸ごと入れ替わるため、
+    // 「先頭からの連番 = DstSatDrive起点の連番」という決め打ちは誤り
+    // (例: Chorus選択時に detailKnobs[0]=ChoRate が DstSatDrive の変調レンジを
+    //  表示してしまっていた)。FxPanel側が保持する実際のDst対応表を使う。
     const auto& detailKnobs = fxPanel.getDetailKnobs();
-    for (size_t i = 0; i < detailKnobs.size(); ++i)
+    const auto& detailKnobDsts = fxPanel.getDetailKnobDsts();
+    for (size_t i = 0; i < detailKnobs.size() && i < detailKnobDsts.size(); ++i)
     {
         if (detailKnobs[i])
         {
-            updateKnobProps(*detailKnobs[i], ModMatrix::DstSatDrive + (int)i);
+            updateKnobProps(*detailKnobs[i], detailKnobDsts[i]);
         }
     }
 

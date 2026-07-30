@@ -23,6 +23,9 @@ public:
     void paint(juce::Graphics& g) override;
     void resized() override;
 
+    // LFO Rate ノブ (LFO→LFO クロスモジュレーションの変調レンジ表示用に外部公開)
+    ValueKnob& getLfoRateKnob(int idx) { return lfoRateKnob[(size_t)juce::jlimit(0, ModMatrix::kNumLfos - 1, idx)]; }
+
 private:
     void setupKnob(ValueKnob& s, const juce::String& paramID, juce::Colour accent);
     void setupCombo(juce::ComboBox& c, const juce::String& paramID);

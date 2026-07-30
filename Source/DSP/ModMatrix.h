@@ -75,6 +75,10 @@ public:
         DstS1Pan, DstS2Pan, DstS3Pan, DstS4Pan,
         DstS5Pan, DstS6Pan, DstS7Pan, DstS8Pan,
 
+        // LFO 1..4 Rate (Hz) — LFO同士のクロスモジュレーション用。
+        // (末尾追記。上の注意書き参照)
+        DstLfo1Rate, DstLfo2Rate, DstLfo3Rate, DstLfo4Rate,
+
         NumDsts
     };
 
@@ -141,6 +145,9 @@ public:
         // Dst enum の並びと 1:1 で対応させること (末尾に追記)
         for (int i = 1; i <= 8; ++i)
             list.add("S" + juce::String(i) + "/Pan");
+
+        for (int i = 1; i <= 4; ++i)
+            list.add("LFO " + juce::String(i) + " Rate");
 
         return list;
     }
@@ -238,6 +245,14 @@ public:
                 const double bpm = p.bpm > 1.0 ? p.bpm : 120.0;
                 freq = bpm / (60.0 * beatsTable[juce::jlimit(0, 12, lp.rateSync)]);
             }
+
+            // LFO Rate へのMOD適用 (LFO→LFOのクロスモジュレーション用)。
+            // destAccum はこの processBlock 呼び出しの直前 = 前ブロックまでの
+            // 集計値を保持しているので、ここで参照すれば「自分自身のRateを
+            // 自分でMODする」ような自己参照でも1ブロック遅延で安全に成立する。
+            const float rateMod = destAccum[(size_t)(DstLfo1Rate + i)];
+            if (std::abs(rateMod) > 0.0001f)
+                freq = juce::jlimit(0.05, 30.0, freq + (double)rateMod * 15.0);
 
             src[SrcLfo1 + i] = lfoValue(st, lp.wave);
 

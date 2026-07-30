@@ -89,6 +89,10 @@ public:
     int getSelectedSlot() const noexcept { return selectedSlot; }
     const std::vector<std::unique_ptr<ValueKnob>>& getDetailKnobs() const { return detailKnobs; }
 
+    // 各 detailKnobs[i] に対応する ModMatrix::Dst 番号 (選択中のFXタイプにより変わる)。
+    // 呼び出し側は detailKnobs のインデックスをそのまま Dst 番号に変換してはいけない。
+    const std::vector<int>& getDetailKnobDsts() const { return detailKnobDsts; }
+
 private:
     void swapSlots(int a, int b);
     void selectSlot(int slot);
@@ -108,6 +112,7 @@ private:
 
     std::vector<std::unique_ptr<ValueKnob>>   detailKnobs;
     std::vector<std::unique_ptr<juce::Label>> detailKnobLabels;
+    std::vector<int> detailKnobDsts;
     std::vector<std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>> detailKnobAttachments;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(FxPanel)

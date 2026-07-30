@@ -4,6 +4,7 @@
 // ==========================================
 #include "FxPanel.h"
 #include "../DSP/FxChain.h"
+#include "../DSP/ModMatrix.h"
 
 namespace
 {
@@ -185,30 +186,48 @@ void FxPanel::rebuildDetails()
     detailComboLabel.reset();
     detailKnobs.clear();
     detailKnobLabels.clear();
+    detailKnobDsts.clear();
 
-    struct KnobDef { const char* id; const char* label; };
+    struct KnobDef { const char* id; const char* label; int dst; };
     std::vector<KnobDef> knobDefs;
     const char* comboId = nullptr;
     const char* comboLabelText = nullptr;
 
+    // 【重要】 各ノブに ModMatrix::Dst を明示的に対応付けておく。
+    // detailKnobs は選択中のFXタイプに応じて毎回中身が totally 入れ替わる
+    // (常に Sat の3個とは限らない) ため、呼び出し側 (PluginEditor) で
+    // 「先頭からのindex = DstSatDriveからの連番」と決め打ちすると、
+    // Chorus/Delay/Freeze/Reverb 選択時に全く別のDstの変調レンジを
+    // 表示してしまうバグになる。ここで正しいDstを持たせて解消する。
     switch (getSlotType(selectedSlot))
     {
     case FxChain::Saturation:
         comboId = "satAlgo"; comboLabelText = "ALGO";
-        knobDefs = { { "satDrive", "DRIVE" }, { "satPreHz", "PRE-HPF" }, { "satTrim", "TRIM" } };
+        knobDefs = { { "satDrive", "DRIVE", ModMatrix::DstSatDrive },
+                     { "satPreHz", "PRE-HPF", ModMatrix::DstSatPreHz },
+                     { "satTrim", "TRIM", ModMatrix::DstSatTrim } };
         break;
     case FxChain::Chorus:
-        knobDefs = { { "choRate", "RATE" }, { "choDepth", "DEPTH" }, { "choWidth", "WIDTH" } };
+        knobDefs = { { "choRate", "RATE", ModMatrix::DstChoRate },
+                     { "choDepth", "DEPTH", ModMatrix::DstChoDepth },
+                     { "choWidth", "WIDTH", ModMatrix::DstChoWidth } };
         break;
     case FxChain::Delay:
         comboId = "dlyTime"; comboLabelText = "TIME";
-        knobDefs = { { "dlyFeedback", "FEEDBACK" }, { "dlyDuck", "DUCK" }, { "dlyDamp", "DAMP" } };
+        knobDefs = { { "dlyFeedback", "FEEDBACK", ModMatrix::DstDlyFeedback },
+                     { "dlyDuck", "DUCK", ModMatrix::DstDlyDuck },
+                     { "dlyDamp", "DAMP", ModMatrix::DstDlyDamp } };
         break;
     case FxChain::Freeze:
-        knobDefs = { { "frzSize", "SIZE" }, { "frzFeedback", "FEEDBACK" }, { "frzDamp", "DAMP" } };
+        knobDefs = { { "frzSize", "SIZE", ModMatrix::DstFrzSize },
+                     { "frzFeedback", "FEEDBACK", ModMatrix::DstFrzFeedback },
+                     { "frzDamp", "DAMP", ModMatrix::DstFrzDamp } };
         break;
     case FxChain::Reverb:
-        knobDefs = { { "revDecay", "DECAY" }, { "revShimmer", "SHIMMER" }, { "revDamp", "DAMP" }, { "revMod", "MOD" } };
+        knobDefs = { { "revDecay", "DECAY", ModMatrix::DstRevDecay },
+                     { "revShimmer", "SHIMMER", ModMatrix::DstRevShimmer },
+                     { "revDamp", "DAMP", ModMatrix::DstRevDamp },
+                     { "revMod", "MOD", ModMatrix::DstRevMod } };
         break;
     default:
         break;
@@ -242,6 +261,7 @@ void FxPanel::rebuildDetails()
         detailKnobAttachments.push_back(std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
             proc.getAPVTS(), def.id, *knob));
         detailKnobs.push_back(std::move(knob));
+        detailKnobDsts.push_back(def.dst);
 
         auto label = std::make_unique<juce::Label>();
         label->setText(def.label, juce::dontSendNotification);
