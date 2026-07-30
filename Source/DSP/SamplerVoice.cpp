@@ -273,11 +273,21 @@ void PicoVoice::renderNextBlock(juce::AudioBuffer<float>& outputBuffer, int star
             {
                 // 仕様: Note-On直後はまず Start -> End (Endマーカーまで) の初回パスを
                 // そのまま再生し、Endに到達して初めて L-Start/L-End 間のループに入る。
-                // hasEnteredLoop が立つまでは lpEndFile ではなく smpEndFile を境界に使う。
-                const int wrapBoundary = hasEnteredLoop ? lpEndFile : smpEndFile;
-                if (readPosition >= (double)wrapBoundary)
+                if (!hasEnteredLoop)
                 {
-                    hasEnteredLoop = true;
+                    // 初回パス: End -> L-Start へジャンプ (span = smpEnd - lpStart)
+                    if (readPosition >= (double)smpEndFile)
+                    {
+                        const int span = std::max(1, smpEndFile - lpStartFile);
+                        while (readPosition >= (double)smpEndFile)
+                            readPosition -= (double)span;
+                        if (readPosition < (double)lpStartFile)
+                            readPosition = (double)lpStartFile;
+                        hasEnteredLoop = true;
+                    }
+                }
+                else
+                {
                     while (readPosition >= (double)lpEndFile)
                         readPosition -= (double)std::max(1, lpEndFile - lpStartFile);
                     if (readPosition < (double)lpStartFile)
@@ -294,10 +304,20 @@ void PicoVoice::renderNextBlock(juce::AudioBuffer<float>& outputBuffer, int star
             // Reverse ON: ファイル上では減少方向へ進む
             if (p.isLooping)
             {
-                const int wrapBoundary = hasEnteredLoop ? lpEndFile : smpEndFile;
-                if (readPosition <= (double)wrapBoundary)
+                if (!hasEnteredLoop)
                 {
-                    hasEnteredLoop = true;
+                    if (readPosition <= (double)smpEndFile)
+                    {
+                        const int span = std::max(1, lpStartFile - smpEndFile);
+                        while (readPosition <= (double)smpEndFile)
+                            readPosition += (double)span;
+                        if (readPosition > (double)lpStartFile)
+                            readPosition = (double)lpStartFile;
+                        hasEnteredLoop = true;
+                    }
+                }
+                else
+                {
                     while (readPosition <= (double)lpEndFile)
                         readPosition += (double)std::max(1, lpStartFile - lpEndFile);
                     if (readPosition > (double)lpStartFile)
@@ -334,24 +354,47 @@ void PicoVoice::renderNextBlock(juce::AudioBuffer<float>& outputBuffer, int star
             sL = sR = lagrange3rdInterpolate(chL[i0], chL[i1], chL[i2], chL[i3], frac);
         }
 
-        // ループ Crossfade (初回の Start->End パス中はまだループしていないので対象外)
-        if (p.isLooping && hasEnteredLoop)
+        // ループ Crossfade
+        // ・初回の Start->End パス中 (!hasEnteredLoop) は Endマーカー手前で
+        //   L-Start側の内容とクロスフェードしてから最初のループへ入る
+        //   (これが無いと Start->End->L-Start のジャンプでプチノイズが出る)。
+        // ・以降のループ中 (hasEnteredLoop) は従来通り L-End 手前で L-Start側と
+        //   クロスフェードする。
+        if (p.isLooping)
         {
             bool isCrossfading = false;
             double loopOffsetPos = 0.0;
             float xfFactor = 0.0f;
 
-            if (!p.isReverse && readPosition >= (double)(lpEndFile - xfadeLen))
+            if (!hasEnteredLoop)
             {
-                isCrossfading = true;
-                xfFactor = (float)(readPosition - (double)(lpEndFile - xfadeLen)) / (float)xfadeLen;
-                loopOffsetPos = readPosition - (double)(lpEndFile - lpStartFile);
+                if (!p.isReverse && readPosition >= (double)(smpEndFile - xfadeLen))
+                {
+                    isCrossfading = true;
+                    xfFactor = (float)(readPosition - (double)(smpEndFile - xfadeLen)) / (float)xfadeLen;
+                    loopOffsetPos = readPosition - (double)(smpEndFile - lpStartFile);
+                }
+                else if (p.isReverse && readPosition <= (double)(smpEndFile + xfadeLen))
+                {
+                    isCrossfading = true;
+                    xfFactor = (float)((double)(smpEndFile + xfadeLen) - readPosition) / (float)xfadeLen;
+                    loopOffsetPos = readPosition + (double)(lpStartFile - smpEndFile);
+                }
             }
-            else if (p.isReverse && readPosition <= (double)(lpEndFile + xfadeLen))
+            else
             {
-                isCrossfading = true;
-                xfFactor = (float)((double)(lpEndFile + xfadeLen) - readPosition) / (float)xfadeLen;
-                loopOffsetPos = readPosition + (double)(lpStartFile - lpEndFile);
+                if (!p.isReverse && readPosition >= (double)(lpEndFile - xfadeLen))
+                {
+                    isCrossfading = true;
+                    xfFactor = (float)(readPosition - (double)(lpEndFile - xfadeLen)) / (float)xfadeLen;
+                    loopOffsetPos = readPosition - (double)(lpEndFile - lpStartFile);
+                }
+                else if (p.isReverse && readPosition <= (double)(lpEndFile + xfadeLen))
+                {
+                    isCrossfading = true;
+                    xfFactor = (float)((double)(lpEndFile + xfadeLen) - readPosition) / (float)xfadeLen;
+                    loopOffsetPos = readPosition + (double)(lpStartFile - lpEndFile);
+                }
             }
 
             if (isCrossfading)

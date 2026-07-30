@@ -214,10 +214,16 @@ void WaveformDisplay::paint(juce::Graphics& g)
         const float xfW = (liveXFade * lpLenR) * zoomLevel * w;
         const float xfX = leX - xfW;
 
-        // X-Fade フェードオーバーラップ領域をグラデーション描画
+        // X-Fade フェードオーバーラップ領域をグラデーション描画 (L-End手前: フェードアウト側)
         juce::ColourGradient xfGrad(PicoColors::mint.withAlpha(0.0f), xfX, 0.0f, PicoColors::mint.withAlpha(0.35f), xfX + xfW, 0.0f, false);
         g.setGradientFill(xfGrad);
         g.fillRect(xfX, lpMarginY, std::max(1.0f, xfW), lpH);
+
+        // L-Start 側 (フェードイン側): ループ突入時・周回時ともにここの内容が
+        // 上のフェードアウト領域とブレンドされるため、同じ幅で対になる表示にする。
+        juce::ColourGradient xfGradIn(PicoColors::mint.withAlpha(0.35f), lsX, 0.0f, PicoColors::mint.withAlpha(0.0f), lsX + xfW, 0.0f, false);
+        g.setGradientFill(xfGradIn);
+        g.fillRect(lsX, lpMarginY, std::max(1.0f, xfW), lpH);
 
         g.setColour(PicoColors::mint);
         g.drawLine(lsX, lpMarginY, lsX, lpMarginY + lpH, 2.0f);
