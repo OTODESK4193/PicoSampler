@@ -4,6 +4,7 @@
 ![License](https://img.shields.io/badge/license-AGPLv3-green)
 ![JUCE](https://img.shields.io/badge/JUCE-8.0.x-blue)
 ![Platform](https://img.shields.io/badge/platform-Windows-lightgrey)
+![Downloads](https://img.shields.io/github/downloads/OTODESK4193/PicoSampler/total.svg)
 
 ##
 <img src="Source/Assets/Main.jpg" width="700">
@@ -248,7 +249,7 @@ Quick manuals covering every tab and parameter, plus starting-point settings and
 
 ## Installation
 
-1. Download `PicoSampler.vst3` from the Releases page.
+1. Download `PicoSampler.vst3` from the [Releases](https://github.com/OTODESK4193/PicoSampler/releases/latest)  page.
 2. Copy it to your VST3 directory:
    ```
    C:\Program Files\Common Files\VST3\
