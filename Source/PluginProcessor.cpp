@@ -544,7 +544,8 @@ void PicoSamplerAudioProcessor::requestLoadFile(int slotIdx, const juce::File& f
 void PicoSamplerAudioProcessor::autoSliceFile(const juce::File& file, int stretchAlgo, float sensitivity)
 {
     // 1. スロット0にロードして解析
-    samplerEngine.getSlot(0).loadFromFile(file, stretchAlgo);
+    // shouldAbort: プラグイン終了時にローダースレッドを即座に打ち切れるようにする。
+    samplerEngine.getSlot(0).loadFromFile(file, stretchAlgo, [this] { return threadShouldExit(); });
     const auto& slot0 = samplerEngine.getSlot(0);
     const int numSamples = slot0.getOriginalBuffer().getNumSamples();
     const int numChIn    = slot0.getOriginalBuffer().getNumChannels();
@@ -1013,6 +1014,10 @@ void PicoSamplerAudioProcessor::run()
         if (hasJob)
         {
             const int stretchAlgo = (pStretchMode != nullptr) ? (int)pStretchMode->load() : 3;
+            // 終了操作 (stopThread) が来たら、重い renderAnchors 等をすぐに打ち切る。
+            // これが無いと stopThread(4000) がタイムアウトして戻った後もこのスレッドが
+            // 動き続け、破棄済みの SamplerEngine/SampleSlot へ書き込んでクラッシュしうる。
+            auto shouldAbort = [this] { return threadShouldExit(); };
 
             switch (job.type)
             {
@@ -1022,13 +1027,13 @@ void PicoSamplerAudioProcessor::run()
 
             case JobType::Reanalyze:
                 samplerEngine.getSlot(job.slotIndex)
-                             .reanalyze(job.materialMode, job.rootOverride, stretchAlgo);
+                             .reanalyze(job.materialMode, job.rootOverride, stretchAlgo, shouldAbort);
                 samplerEngine.getSlot(job.slotIndex).setAnalyzing(false);
                 break;
 
             case JobType::Load:
             default:
-                if (!samplerEngine.getSlot(job.slotIndex).loadFromFile(job.file, stretchAlgo))
+                if (!samplerEngine.getSlot(job.slotIndex).loadFromFile(job.file, stretchAlgo, shouldAbort))
                 {
                     // 読み込み失敗時に「解析中...」が residual で残らないようにする
                     samplerEngine.getSlot(job.slotIndex).setAnalyzing(false);

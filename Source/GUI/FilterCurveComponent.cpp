@@ -7,34 +7,27 @@
 namespace
 {
     // ==========================================================================
-    // 低域に広くスペースを割く 2 区間対数スケール。
-    //   20Hz .. kBreakFreq を横幅の kLowRatio 分、kBreakFreq .. 20000Hz を残りに割り当てる。
-    //   1kHz が画面中央付近に来てしまう単純な 20Hz-20kHz 一括対数スケールに対して、
-    //   低域(20Hz-1kHz)の変化がグラフ上でよく見えるようにする。
+    // Wavetable プロジェクト (FilterCurve.h) と同じ縮尺に統一。
+    //   20Hz .. 20000Hz を 3 デケードの単純な対数配置で描く。
+    //   以前は低域(20Hz-1kHz)に横幅70%を割く2区間スケールだったが、
+    //   ノブの回転量とカーブの動きの対応がねじれて見えるとの指摘があり、
+    //   Wavetable側の素直な等比対数スケールに合わせて解消する。
     // ==========================================================================
-    constexpr float kMinFreq   = 20.0f;
-    constexpr float kMaxFreq   = 20000.0f;
-    constexpr float kBreakFreq = 1000.0f;
-    constexpr float kLowRatio  = 0.7f; // 20Hz-1kHz に割く横幅の比率
+    constexpr float kMinFreq = 20.0f;
+    constexpr float kMaxFreq = 20000.0f;
 
     // 周波数 -> x (0..1 正規化)
     float freqToNormX(float freq) noexcept
     {
         freq = juce::jlimit(kMinFreq, kMaxFreq, freq);
-        if (freq <= kBreakFreq)
-            return (std::log10(freq / kMinFreq) / std::log10(kBreakFreq / kMinFreq)) * kLowRatio;
-
-        return kLowRatio + (std::log10(freq / kBreakFreq) / std::log10(kMaxFreq / kBreakFreq)) * (1.0f - kLowRatio);
+        return std::log10(freq / kMinFreq) / 3.0f; // 20Hz..20kHz = 3 decades
     }
 
     // x (0..1 正規化) -> 周波数
     float normXToFreq(float t) noexcept
     {
         t = juce::jlimit(0.0f, 1.0f, t);
-        if (t <= kLowRatio)
-            return kMinFreq * std::pow(kBreakFreq / kMinFreq, t / kLowRatio);
-
-        return kBreakFreq * std::pow(kMaxFreq / kBreakFreq, (t - kLowRatio) / (1.0f - kLowRatio));
+        return kMinFreq * std::pow(1000.0f, t);
     }
 }
 
@@ -50,8 +43,9 @@ void FilterCurveComponent::paint(juce::Graphics& g)
     g.setColour(PicoColors::knobTrack);
     g.drawRoundedRectangle(getLocalBounds().toFloat(), 4.0f, 1.0f);
 
-    const float dbTop = 40.0f;
-    const float dbBottom = -80.0f;
+    // Wavetable と同じ dB レンジ (24 .. -48dB, 計72dB幅)
+    const float dbTop = 24.0f;
+    const float dbBottom = -48.0f;
 
     // 1. dB 水平グリッド線
     const float y0dB = juce::jmap(0.0f, dbTop, dbBottom, 0.0f, h);
@@ -61,7 +55,7 @@ void FilterCurveComponent::paint(juce::Graphics& g)
     g.setColour(PicoColors::textDim);
     g.drawText("0dB", 4, (int)y0dB - 10, 30, 10, juce::Justification::left);
 
-    static const float dbGridLines[] = { 20.0f, -20.0f, -40.0f, -60.0f };
+    static const float dbGridLines[] = { 12.0f, -12.0f, -24.0f, -36.0f };
     for (float dbLine : dbGridLines)
     {
         float yDb = juce::jmap(dbLine, dbTop, dbBottom, 0.0f, h);
@@ -71,11 +65,11 @@ void FilterCurveComponent::paint(juce::Graphics& g)
         g.drawText(juce::String((int)dbLine) + "dB", 4, (int)yDb - 10, 35, 10, juce::Justification::left);
     }
 
-    // 2. 周波数 垂直グリッド線 (低域を広く取ったぶん、低域側のグリッドを増やす)
-    static const float freqs[] = { 50.0f, 100.0f, 200.0f, 500.0f, 1000.0f, 2000.0f, 5000.0f, 10000.0f };
-    static const juce::String labels[] = { "50", "100", "200", "500", "1k", "2k", "5k", "10k" };
+    // 2. 周波数 垂直グリッド線 (Wavetableと同じ 100/500/1k/5k/10k)
+    static const float freqs[] = { 100.0f, 500.0f, 1000.0f, 5000.0f, 10000.0f };
+    static const juce::String labels[] = { "100", "500", "1k", "5k", "10k" };
 
-    for (int i = 0; i < 8; ++i)
+    for (int i = 0; i < 5; ++i)
     {
         float x = freqToNormX(freqs[i]) * w;
         g.setColour(juce::Colours::white.withAlpha(0.08f));

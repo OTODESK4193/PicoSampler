@@ -26,7 +26,7 @@ void SampleSlot::beginBufferWrite() noexcept
     jassertfalse; // 読み手が抜けない = どこかでガードを持ち逃げしている
 }
 
-bool SampleSlot::loadFromFile(const juce::File& file, int stretchAlgo)
+bool SampleSlot::loadFromFile(const juce::File& file, int stretchAlgo, std::function<bool()> shouldAbort)
 {
     if (!file.existsAsFile()) return false;
 
@@ -35,13 +35,14 @@ bool SampleSlot::loadFromFile(const juce::File& file, int stretchAlgo)
 
     std::unique_ptr<juce::AudioFormatReader> reader(formatManager.createReaderFor(file));
 
-    return finishLoad(std::move(reader), file.getFullPathName(), file.getFileName(), stretchAlgo);
+    return finishLoad(std::move(reader), file.getFullPathName(), file.getFileName(), stretchAlgo, shouldAbort);
 }
 
 bool SampleSlot::finishLoad(std::unique_ptr<juce::AudioFormatReader> reader,
                             const juce::String& pathForMetadata,
                             const juce::String& nameForMetadata,
-                            int stretchAlgo)
+                            int stretchAlgo,
+                            const std::function<bool()>& shouldAbort)
 {
     if (reader == nullptr) return false;
 
@@ -65,8 +66,28 @@ bool SampleSlot::finishLoad(std::unique_ptr<juce::AudioFormatReader> reader,
     metadata.rootKey = (analysis.rootNote >= 0) ? analysis.rootNote : 60;
     metadata.centsOffset = analysis.centsOffset;
 
+    // ---------------------------------------------------------------
+    // 【重要】 プラグイン終了などで中断要求が来ていたら、ここで打ち切る。
+    // renderAnchors() は49アンカー分の時間伸縮処理で非常に重く、これを
+    // チェックせずに進めると「終了操作をした後もこの関数が動き続け、その間に
+    // 呼び出し元 (SamplerEngine 等) が破棄されて解放済みメモリに書き込み、
+    // クラッシュする」という間欠的な不具合の原因になる。
+    // analyzing/ready はどちらも false のままにしておく (中断時は「未完了」扱い)。
+    // ---------------------------------------------------------------
+    if (shouldAbort && shouldAbort())
+    {
+        analyzing.store(false, std::memory_order_release);
+        return false;
+    }
+
     // SignalsmithStretch 高音質49音階アンカー事前生成 (ファイルSR使用)
-    renderAnchors(stretchAlgo);
+    renderAnchors(stretchAlgo, shouldAbort);
+
+    if (shouldAbort && shouldAbort())
+    {
+        analyzing.store(false, std::memory_order_release);
+        return false;
+    }
 
     // トランジェント検出
     calculateTransients(0.5f);
@@ -76,7 +97,7 @@ bool SampleSlot::finishLoad(std::unique_ptr<juce::AudioFormatReader> reader,
     return true;
 }
 
-void SampleSlot::reanalyze(int materialMode, int rootKeyOverride, int stretchAlgo)
+void SampleSlot::reanalyze(int materialMode, int rootKeyOverride, int stretchAlgo, std::function<bool()> shouldAbort)
 {
     if (originalBuffer.getNumSamples() < 4) return;
 
@@ -95,13 +116,25 @@ void SampleSlot::reanalyze(int materialMode, int rootKeyOverride, int stretchAlg
         metadata.centsOffset = analysis.centsOffset;
     }
 
-    renderAnchors(stretchAlgo);
+    if (shouldAbort && shouldAbort())
+    {
+        analyzing.store(false, std::memory_order_release);
+        return;
+    }
+
+    renderAnchors(stretchAlgo, shouldAbort);
+
+    if (shouldAbort && shouldAbort())
+    {
+        analyzing.store(false, std::memory_order_release);
+        return;
+    }
 
     analyzing.store(false, std::memory_order_release);
     ready.store(true, std::memory_order_release);
 }
 
-void SampleSlot::renderAnchors(int stretchAlgo)
+void SampleSlot::renderAnchors(int stretchAlgo, const std::function<bool()>& shouldAbort)
 {
     const int numSamples = originalBuffer.getNumSamples();
     const int numCh = originalBuffer.getNumChannels();
@@ -109,6 +142,10 @@ void SampleSlot::renderAnchors(int stretchAlgo)
 
     for (int i = 0; i < kNumAnchors; ++i)
     {
+        // 49アンカー×時間伸縮は重いため、アンカー単位で中断要求をチェックする。
+        if (shouldAbort && shouldAbort())
+            return;
+
         const int stOffset = i - 24; // -24 ~ +24 半音 (全4オクターブ)
 
         signalsmith::stretch::SignalsmithStretch<float> stretch;
@@ -140,9 +177,15 @@ void SampleSlot::renderAnchors(int stretchAlgo)
 
         const int blockSize = 256;
         int readPos = 0;
+        int chunkCounter = 0;
 
         while (readPos < numSamples)
         {
+            // 長尺サンプルは1アンカーの処理だけでも時間がかかりうるため、
+            // 一定チャンクごとにも中断要求をチェックする (約256*256=65536サンプルおき)。
+            if (shouldAbort && (++chunkCounter & 0xFF) == 0 && shouldAbort())
+                return;
+
             const int currentBlock = std::min(blockSize, numSamples - readPos);
             std::vector<const float*> inputPtrs((size_t)numCh);
             std::vector<float*> outputPtrs((size_t)numCh);

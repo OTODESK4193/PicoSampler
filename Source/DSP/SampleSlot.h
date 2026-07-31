@@ -7,6 +7,7 @@
 #include <JuceHeader.h>
 #include <array>
 #include <atomic>
+#include <functional>
 #include "signalsmith-stretch/signalsmith-stretch.h"
 
 class SampleSlot
@@ -35,9 +36,17 @@ public:
     ~SampleSlot() = default;
 
     void prepare(double sr) noexcept { engineSampleRate = sr > 1000.0 ? sr : 44100.0; }
-    bool loadFromFile(const juce::File& file, int stretchAlgo = 3);
 
-    void reanalyze(int materialMode = 0, int rootKeyOverride = -1, int stretchAlgo = 3);
+    // shouldAbort: ローダースレッドがプラグイン終了時などに即座に処理を打ち切れるようにする
+    // フック。renderAnchors() は49アンカー×時間伸縮という重い処理のため、これが無いと
+    // 「終了操作をしてからこの関数が戻るまで」ずっと処理し続けてしまい、その間に
+    // 呼び出し元 (SamplerEngine/Processor) が破棄されると解放済みメモリへの書き込みで
+    // クラッシュする。未指定時は常にfalse (中断しない=従来通り)。
+    bool loadFromFile(const juce::File& file, int stretchAlgo = 3,
+                       std::function<bool()> shouldAbort = {});
+
+    void reanalyze(int materialMode = 0, int rootKeyOverride = -1, int stretchAlgo = 3,
+                   std::function<bool()> shouldAbort = {});
     void copyFrom(const SampleSlot& other);
     void clear();
 
@@ -101,13 +110,14 @@ public:
     };
 
 private:
-    void renderAnchors(int stretchAlgo);
+    void renderAnchors(int stretchAlgo, const std::function<bool()>& shouldAbort);
 
     // loadFromFile の後処理 (Reader からバッファ構築 + 解析)
     bool finishLoad(std::unique_ptr<juce::AudioFormatReader> reader,
                     const juce::String& pathForMetadata,
                     const juce::String& nameForMetadata,
-                    int stretchAlgo);
+                    int stretchAlgo,
+                    const std::function<bool()>& shouldAbort);
 
     // バッファ書き換え前に呼ぶ。ready を落とし、読み手が抜けるまで待機する。
     // (メッセージ/ローダースレッド専用。オーディオスレッドから呼んではいけない)
