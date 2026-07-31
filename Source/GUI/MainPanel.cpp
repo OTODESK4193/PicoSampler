@@ -261,6 +261,17 @@ void MainPanel::bindSlotParameters(int slotIdx)
         lk->knob.repaint();
     }
 
+    // Amp ADSR は色こそスロット固有色にしないが (ENVELOPEブロックは常時ピンク統一)、
+    // スロット切替時に変調残像だけは即クリアする。
+    for (auto* lk : { &knobAttack, &knobDecay, &knobSustain, &knobRelease })
+    {
+        lk->knob.getProperties().remove("mod_active");
+        lk->knob.getProperties().remove("mod_min");
+        lk->knob.getProperties().remove("mod_max");
+        lk->knob.getProperties().remove("mod_live");
+        lk->knob.repaint();
+    }
+
     const juce::String s = juce::String(slotIdx);
 
     auto bind = [this, &s](LabeledKnob& lk, const juce::String& pName) {

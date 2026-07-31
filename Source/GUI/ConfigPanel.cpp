@@ -46,13 +46,11 @@ ConfigPanel::ConfigPanel(juce::AudioProcessorValueTreeState& apvts) : vts(apvts)
     themeAttach      = std::make_unique<ChoiceAttach>(vts, "colorTheme", choiceTheme.combo);
     polyAttach       = std::make_unique<ChoiceAttach>(vts, "polyphony", choicePoly.combo);
     stretchAttach    = std::make_unique<ChoiceAttach>(vts, "stretchMode", choiceStretch.combo);
-    
+
     limReleaseAttach = std::make_unique<SliderAttach>(vts, "limRelease", knobLimRelease.knob);
     sliceSensAttach  = std::make_unique<SliderAttach>(vts, "sliceSensitivity", knobSliceSens.knob);
     portaAttach      = std::make_unique<ButtonAttach>(vts, "portaEnable", btnPorta);
     portaTimeAttach  = std::make_unique<SliderAttach>(vts, "portaTime", knobPortaTime.knob);
-    fadeInAttach     = std::make_unique<SliderAttach>(vts, "edgeFadeIn", knobFadeIn.knob);
-    fadeOutAttach    = std::make_unique<SliderAttach>(vts, "edgeFadeOut", knobFadeOut.knob);
 
     knobLimRelease.knob.setDoubleClickReturnValue(true, 50.0);
     knobSliceSens.knob.setDoubleClickReturnValue(true, 0.5);
@@ -70,6 +68,43 @@ ConfigPanel::ConfigPanel(juce::AudioProcessorValueTreeState& apvts) : vts(apvts)
     knobFadeOut.knob.textFromValueFunction = msText;
     knobFadeIn.knob.updateText();
     knobFadeOut.knob.updateText();
+
+    // Sample Edge: S1..S8 スロット選択ボタン。テーマカラーはスロットごとに変える。
+    for (int i = 0; i < 8; ++i)
+    {
+        auto& b = btnEdgeSlots[(size_t)i];
+        b.setButtonText("S" + juce::String(i + 1));
+        b.setClickingTogglesState(false);
+        addAndMakeVisible(b);
+        b.onClick = [this, i] { bindEdgeSlot(i); };
+    }
+
+    bindEdgeSlot(0);
+}
+
+void ConfigPanel::bindEdgeSlot(int slotIdx)
+{
+    currentEdgeSlot = juce::jlimit(0, 7, slotIdx);
+    const juce::String s = juce::String(currentEdgeSlot);
+
+    fadeInAttach.reset();
+    fadeOutAttach.reset();
+    fadeInAttach  = std::make_unique<SliderAttach>(vts, "edgeFadeIn_" + s,  knobFadeIn.knob);
+    fadeOutAttach = std::make_unique<SliderAttach>(vts, "edgeFadeOut_" + s, knobFadeOut.knob);
+
+    const auto slotColor = PicoColors::getSlotColor(currentEdgeSlot);
+    knobFadeIn.knob.setColour(juce::Slider::rotarySliderFillColourId, slotColor);
+    knobFadeOut.knob.setColour(juce::Slider::rotarySliderFillColourId, slotColor);
+
+    for (int i = 0; i < 8; ++i)
+    {
+        const bool isAct = (i == currentEdgeSlot);
+        const auto col = PicoColors::getSlotColor(i);
+        btnEdgeSlots[(size_t)i].setColour(juce::TextButton::buttonColourId, isAct ? col : PicoColors::knobTrack);
+        btnEdgeSlots[(size_t)i].setColour(juce::TextButton::textColourOffId, isAct ? juce::Colours::black : PicoColors::textDim);
+    }
+
+    repaint();
 }
 
 void ConfigPanel::paint(juce::Graphics& g)
@@ -98,13 +133,29 @@ void ConfigPanel::paint(juce::Graphics& g)
     drawSectionHeader("SLICING",    kColB, kRow1Head, kColW, PicoColors::lavender);
     drawSectionHeader("APPEARANCE", kColC, kRow1Head, kColW, PicoColors::babyBlue);
 
+    // Stretch Mode は「読み込み時 / Reanalyze時」にのみ焼き込まれる設定であることを明記。
+    // (choiceStretch の直下。下のライセンス表記ブロックと衝突しないよう、
+    //  ライセンス表記側の開始Yを kLicenseY までまとめて下げてある)
+    g.setColour(PicoColors::textDim.withAlpha(0.8f));
+    g.setFont(juce::FontOptions(9.5f));
+    g.drawText("Changes apply only to newly loaded samples.",
+               kColA + kItemW + 16, kRow1Y + kItemH + 6, kItemW + 40, 11, juce::Justification::left);
+    g.drawText("Click REANALYZE to apply.",
+               kColA + kItemW + 16, kRow1Y + kItemH + 17, kItemW + 40, 11, juce::Justification::left);
+
     // 下段
     drawSectionHeader("SAMPLE EDGE", kColA, kRow2Head, kColW, PicoColors::peach);
     drawSectionHeader("PERFORMANCE", kColB, kRow2Head, kColW, PicoColors::pink);
     drawSectionHeader("OUTPUT",      kColC, kRow2Head, kColW, PicoColors::mint);
 
-    drawCaption("Start / End marker de-click", kColA, kRow2Y + kKnobH + 4, kColW);
+    drawCaption("Start / End marker de-click", kColA, kEdgeKnobY + kKnobH + 4, kColW);
     drawCaption("Limiter recovery time",       kColC, kRow2Y + kKnobH + 4, kColW);
+
+    // バージョン表記 (Lim Release ノブの右側)
+    g.setColour(PicoColors::textDim);
+    g.setFont(juce::FontOptions(11.0f, juce::Font::bold));
+    g.drawText("PicoSampler v1.1",
+               kColC + kKnobW + 20, kRow2Y, 160, kKnobH, juce::Justification::centredLeft);
 
     // ------------------------------------------------------------------
     // サードパーティ表記 (ANALYSIS エリア直下)
@@ -155,9 +206,18 @@ void ConfigPanel::resized()
     choiceTheme.setBounds(kColC, kRow1Y, kItemW, kItemH);
 
     // --- 下段 ---
-    // SAMPLE EDGE
-    knobFadeIn.setBounds (kColA, kRow2Y, kKnobW, kKnobH);
-    knobFadeOut.setBounds(kColA + kKnobW + 16, kRow2Y, kKnobW, kKnobH);
+    // SAMPLE EDGE: S1..S8 切替ボタンを上段に、Fade In/Out ノブをその下に配置
+    {
+        const int btnW = 36, btnGap = 4, btnH = 18;
+        int bx = kColA;
+        for (auto& b : btnEdgeSlots)
+        {
+            b.setBounds(bx, kRow2Y, btnW, btnH);
+            bx += btnW + btnGap;
+        }
+    }
+    knobFadeIn.setBounds (kColA, kEdgeKnobY, kKnobW, kKnobH);
+    knobFadeOut.setBounds(kColA + kKnobW + 16, kEdgeKnobY, kKnobW, kKnobH);
 
     // PERFORMANCE (Polyphony はここが自然なのでこの区画に置く)
     choicePoly.setBounds   (kColB, kRow2Y, kItemW, kItemH);

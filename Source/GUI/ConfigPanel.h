@@ -19,6 +19,8 @@ public:
     void resized() override;
 
 private:
+    void bindEdgeSlot(int slotIdx);
+
     struct LabeledChoice : public juce::Component
     {
         juce::ComboBox combo;
@@ -73,6 +75,8 @@ private:
     static constexpr int kRow1Y    = 38;
     static constexpr int kRow2Head = 152;
     static constexpr int kRow2Y    = 178;
+    // SAMPLE EDGE 列のみ、上に S1..S8 切替ボタンを乗せる分ノブを下げる
+    static constexpr int kEdgeKnobY = kRow2Y + 22;
 
     static constexpr int kItemW = 160;
     static constexpr int kItemH = 46;
@@ -91,7 +95,11 @@ private:
     LabeledKnob knobSliceSens    { "Slice Sens", PicoColors::lavender };
     LabeledKnob knobFadeIn       { "Fade In", PicoColors::peach };
     LabeledKnob knobFadeOut      { "Fade Out", PicoColors::peach };
-    
+
+    // Sample Edge (Fade In/Out) はスロット毎の設定。S1..S8 で対象を切替える。
+    std::array<juce::TextButton, 8> btnEdgeSlots;
+    int currentEdgeSlot = 0;
+
     juce::ToggleButton btnPorta  { "Portamento" };
     LabeledKnob knobPortaTime    { "Glide Time", PicoColors::pink };
 
@@ -107,6 +115,7 @@ private:
     
     std::unique_ptr<SliderAttach> limReleaseAttach;
     std::unique_ptr<SliderAttach> sliceSensAttach;
+    // Fade In/Out はスロット切替のたびに対象パラメータへ付け替える (MainPanelと同じ方式)
     std::unique_ptr<SliderAttach> fadeInAttach;
     std::unique_ptr<SliderAttach> fadeOutAttach;
     

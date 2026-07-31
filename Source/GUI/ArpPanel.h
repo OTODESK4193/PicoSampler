@@ -44,6 +44,12 @@ public:
     juce::Slider& getFormantKnob() { return knobFilterFormant.knob; }
     juce::Slider& getCombMixKnob() { return knobFilterCombMix.knob; }
 
+    // Filter Envelope (ADSR) ノブ。MODアサイン先として公開。
+    juce::Slider& getFltEnvAttackKnob()  { return knobFltEnvA.knob; }
+    juce::Slider& getFltEnvDecayKnob()   { return knobFltEnvD.knob; }
+    juce::Slider& getFltEnvSustainKnob() { return knobFltEnvS.knob; }
+    juce::Slider& getFltEnvReleaseKnob() { return knobFltEnvR.knob; }
+
 private:
     struct LabeledKnob : public juce::Component
     {

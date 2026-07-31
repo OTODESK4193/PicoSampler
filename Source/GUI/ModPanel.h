@@ -13,6 +13,7 @@
 #include "ValueKnob.h"
 #include "GlowToggle.h"
 #include "ColorPalette.h"
+#include "ModDestSelector.h"
 
 class ModPanel : public juce::Component
 {
@@ -56,9 +57,14 @@ private:
     juce::TextButton page2Btn { "PAGE 2 (9-16)" };
     int matrixPage = 0;
     std::array<juce::Label, ModMatrix::kNumSlots> rowLabel;
-    std::array<juce::ComboBox, ModMatrix::kNumSlots> srcBox, dstBox;
+    std::array<juce::ComboBox, ModMatrix::kNumSlots> srcBox;
+    // Destination はカテゴリ分類ツリー表示の専用コントロールに置き換え (通常のComboBoxではない)
+    std::array<ModDestSelector, ModMatrix::kNumSlots> dstBox;
     std::array<ValueKnob, ModMatrix::kNumSlots> amtSlider;
     std::array<std::unique_ptr<GlowToggle>, ModMatrix::kNumSlots> uniButton;
+
+    // Destination のカテゴリ分類済み PopupMenu を構築する
+    juce::PopupMenu buildDestMenu() const;
 
     std::vector<std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>>   sliderAttachments;
     std::vector<std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment>> comboAttachments;

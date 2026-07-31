@@ -62,18 +62,6 @@ juce::AudioProcessorValueTreeState::ParameterLayout PicoSamplerAudioProcessor::c
     params.push_back(std::make_unique<juce::AudioParameterFloat>("portaTime", "Glide Time", 0.0f, 1.0f, 0.1f));
     params.push_back(std::make_unique<juce::AudioParameterChoice>("stretchMode", "Stretch Mode", juce::StringArray{ "Beat", "Tone", "Texture", "Complex" }, 3));
 
-    // ---------------------------------------------------------------
-    // Edge Fade: Start/End マーカーが波形の途中に来た時のプチノイズ(ブチ切れ)対策。
-    // 単位は ms。既定 2.0ms は「聴感上は無音のまま、クリックだけ消える」自然な値。
-    // 0.0 にすれば従来通りの完全なハードカット。
-    // ---------------------------------------------------------------
-    params.push_back(std::make_unique<juce::AudioParameterFloat>(
-        "edgeFadeIn", "Fade In",
-        juce::NormalisableRange<float>(0.0f, 200.0f, 0.0f, 0.35f), 2.0f));
-    params.push_back(std::make_unique<juce::AudioParameterFloat>(
-        "edgeFadeOut", "Fade Out",
-        juce::NormalisableRange<float>(0.0f, 200.0f, 0.0f, 0.35f), 3.0f));
-
     // Slots 1-8 Parameters
     for (int i = 0; i < 8; ++i)
     {
@@ -108,6 +96,18 @@ juce::AudioProcessorValueTreeState::ParameterLayout PicoSamplerAudioProcessor::c
         params.push_back(std::make_unique<juce::AudioParameterBool>("isSnap_" + s, "Snap " + s, true));
         params.push_back(std::make_unique<juce::AudioParameterBool>("filterBypass_" + s, "Filter Bypass " + s, false));
         params.push_back(std::make_unique<juce::AudioParameterBool>("fxBypass_" + s, "FX Bypass " + s, false));
+
+        // ---------------------------------------------------------------
+        // Edge Fade (v1.1〜スロット毎): Start/End マーカーが波形の途中に来た時の
+        // プチノイズ(ブチ切れ)対策。単位は ms。既定 2.0/3.0ms は「聴感上は無音のまま、
+        // クリックだけ消える」自然な値。0.0 にすれば従来通りの完全なハードカット。
+        // ---------------------------------------------------------------
+        params.push_back(std::make_unique<juce::AudioParameterFloat>(
+            "edgeFadeIn_" + s, "Fade In " + s,
+            juce::NormalisableRange<float>(0.0f, 200.0f, 0.0f, 0.35f), 2.0f));
+        params.push_back(std::make_unique<juce::AudioParameterFloat>(
+            "edgeFadeOut_" + s, "Fade Out " + s,
+            juce::NormalisableRange<float>(0.0f, 200.0f, 0.0f, 0.35f), 3.0f));
 
         // RootKey 手動オーバーライド (-1 = Auto, 0-127 = 手動)
         params.push_back(std::make_unique<juce::AudioParameterInt>(
@@ -367,10 +367,13 @@ void PicoSamplerAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
     {
         const juce::String s = juce::String(i);
         auto& sp = engineParams.slotParams[(size_t)i];
-        sp.attack  = slotParamsCache[(size_t)i].attack->load();
-        sp.decay   = slotParamsCache[(size_t)i].decay->load();
-        sp.sustain = slotParamsCache[(size_t)i].sustain->load();
-        sp.release = slotParamsCache[(size_t)i].release->load();
+
+        // Amp ADSR: DstS1AmpAttack.. は S1..S8 の順で4個ずつ並んでいる
+        const int ampDstBase = ModMatrix::DstS1AmpAttack + i * 4;
+        sp.attack  = juce::jlimit(0.001f, 5.0f,  slotParamsCache[(size_t)i].attack->load()  + modMatrix.get(ampDstBase + 0) * 2.5f);
+        sp.decay   = juce::jlimit(0.001f, 5.0f,  slotParamsCache[(size_t)i].decay->load()   + modMatrix.get(ampDstBase + 1) * 2.5f);
+        sp.sustain = juce::jlimit(0.0f,   1.0f,  slotParamsCache[(size_t)i].sustain->load() + modMatrix.get(ampDstBase + 2));
+        sp.release = juce::jlimit(0.001f, 10.0f, slotParamsCache[(size_t)i].release->load() + modMatrix.get(ampDstBase + 3) * 5.0f);
 
         sp.octave   = (int)slotParamsCache[(size_t)i].octave->load();
         sp.semitone = (int)slotParamsCache[(size_t)i].pitchSt->load() + (int)std::round(effectiveMasterPitch);
@@ -389,8 +392,8 @@ void PicoSamplerAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
         sp.loopEndRatio     = juce::jlimit(0.01f, 1.0f, slotParamsCache[(size_t)i].loopEnd->load() + modMatrix.get(dstBase + 3));
         sp.crossfadeRatio   = juce::jlimit(0.0f, 0.5f, slotParamsCache[(size_t)i].crossfade->load() + modMatrix.get(dstBase + 4));
 
-        sp.edgeFadeInMs  = pEdgeFadeIn  != nullptr ? pEdgeFadeIn->load()  : 2.0f;
-        sp.edgeFadeOutMs = pEdgeFadeOut != nullptr ? pEdgeFadeOut->load() : 3.0f;
+        sp.edgeFadeInMs  = slotParamsCache[(size_t)i].edgeFadeIn  != nullptr ? slotParamsCache[(size_t)i].edgeFadeIn->load()  : 2.0f;
+        sp.edgeFadeOutMs = slotParamsCache[(size_t)i].edgeFadeOut != nullptr ? slotParamsCache[(size_t)i].edgeFadeOut->load() : 3.0f;
 
         sp.isLooping = slotParamsCache[(size_t)i].isLooping->load() > 0.5f;
         sp.isStretchMode = slotParamsCache[(size_t)i].isStretchMode->load() > 0.5f;
@@ -417,10 +420,10 @@ void PicoSamplerAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
     }
 
     juce::ADSR::Parameters adsrP;
-    adsrP.attack  = filterParamsCache.envAttack->load();
-    adsrP.decay   = filterParamsCache.envDecay->load();
-    adsrP.sustain = filterParamsCache.envSustain->load();
-    adsrP.release = filterParamsCache.envRelease->load();
+    adsrP.attack  = juce::jlimit(0.001f, 5.0f,  filterParamsCache.envAttack->load()  + modMatrix.get(ModMatrix::DstFltEnvAttack)  * 2.5f);
+    adsrP.decay   = juce::jlimit(0.001f, 5.0f,  filterParamsCache.envDecay->load()   + modMatrix.get(ModMatrix::DstFltEnvDecay)   * 2.5f);
+    adsrP.sustain = juce::jlimit(0.0f,   1.0f,  filterParamsCache.envSustain->load() + modMatrix.get(ModMatrix::DstFltEnvSustain));
+    adsrP.release = juce::jlimit(0.001f, 10.0f, filterParamsCache.envRelease->load() + modMatrix.get(ModMatrix::DstFltEnvRelease) * 5.0f);
     filterAdsr.setParameters(adsrP);
 
     // ★バグ修正: 以前は getNextSample() をブロックにつき1回しか呼んでいなかったため、
@@ -1059,8 +1062,6 @@ void PicoSamplerAudioProcessor::initializeParameterCache()
     pAutoSliceEnable = apvts.getRawParameterValue("autoSliceEnable");
     pSliceSensitivity = apvts.getRawParameterValue("sliceSensitivity");
     pStretchMode = apvts.getRawParameterValue("stretchMode");
-    pEdgeFadeIn  = apvts.getRawParameterValue("edgeFadeIn");
-    pEdgeFadeOut = apvts.getRawParameterValue("edgeFadeOut");
 
     for (int i = 0; i < 8; ++i) {
         auto s = juce::String(i);
@@ -1087,6 +1088,8 @@ void PicoSamplerAudioProcessor::initializeParameterCache()
         slotParamsCache[i].rootKeyOverride = apvts.getRawParameterValue("rootKey_" + s);
         slotParamsCache[i].slotLowNote = apvts.getRawParameterValue("slotLowNote_" + s);
         slotParamsCache[i].slotHighNote = apvts.getRawParameterValue("slotHighNote_" + s);
+        slotParamsCache[i].edgeFadeIn = apvts.getRawParameterValue("edgeFadeIn_" + s);
+        slotParamsCache[i].edgeFadeOut = apvts.getRawParameterValue("edgeFadeOut_" + s);
     }
 
     arpParamsCache.enable = apvts.getRawParameterValue("arpEnable");

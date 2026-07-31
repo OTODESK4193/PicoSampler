@@ -79,6 +79,20 @@ public:
         // (末尾追記。上の注意書き参照)
         DstLfo1Rate, DstLfo2Rate, DstLfo3Rate, DstLfo4Rate,
 
+        // Filter Envelope (ADSR)。元は「ADSR除く」で意図的に外していたが、
+        // MODアサイン先として使いたいという要望により追加。(末尾追記)
+        DstFltEnvAttack, DstFltEnvDecay, DstFltEnvSustain, DstFltEnvRelease,
+
+        // Slot 1..8 Amp ADSR (各スロットの音量エンベロープ。32個。末尾追記)
+        DstS1AmpAttack, DstS1AmpDecay, DstS1AmpSustain, DstS1AmpRelease,
+        DstS2AmpAttack, DstS2AmpDecay, DstS2AmpSustain, DstS2AmpRelease,
+        DstS3AmpAttack, DstS3AmpDecay, DstS3AmpSustain, DstS3AmpRelease,
+        DstS4AmpAttack, DstS4AmpDecay, DstS4AmpSustain, DstS4AmpRelease,
+        DstS5AmpAttack, DstS5AmpDecay, DstS5AmpSustain, DstS5AmpRelease,
+        DstS6AmpAttack, DstS6AmpDecay, DstS6AmpSustain, DstS6AmpRelease,
+        DstS7AmpAttack, DstS7AmpDecay, DstS7AmpSustain, DstS7AmpRelease,
+        DstS8AmpAttack, DstS8AmpDecay, DstS8AmpSustain, DstS8AmpRelease,
+
         NumDsts
     };
 
@@ -148,6 +162,20 @@ public:
 
         for (int i = 1; i <= 4; ++i)
             list.add("LFO " + juce::String(i) + " Rate");
+
+        list.add("Filter Env Attack");
+        list.add("Filter Env Decay");
+        list.add("Filter Env Sustain");
+        list.add("Filter Env Release");
+
+        for (int i = 1; i <= 8; ++i)
+        {
+            const juce::String s = "S" + juce::String(i) + " Amp ";
+            list.add(s + "Attack");
+            list.add(s + "Decay");
+            list.add(s + "Sustain");
+            list.add(s + "Release");
+        }
 
         return list;
     }

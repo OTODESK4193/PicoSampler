@@ -438,6 +438,15 @@ void PicoSamplerAudioProcessorEditor::timerCallback()
 
     updateKnobProps(mainPanel.getMasterPitchKnob(), ModMatrix::DstMasterPitch);
 
+    // Amp ADSR (現在バインド中のスロットぶんのDstを都度切替える)
+    {
+        const int ampDstBase = ModMatrix::DstS1AmpAttack + boundSlot * 4;
+        updateKnobProps(mainPanel.getAttackKnob(),  ampDstBase + 0);
+        updateKnobProps(mainPanel.getDecayKnob(),   ampDstBase + 1);
+        updateKnobProps(mainPanel.getSustainKnob(), ampDstBase + 2);
+        updateKnobProps(mainPanel.getReleaseKnob(), ampDstBase + 3);
+    }
+
     // ArpPanel ノブ範囲更新
     updateKnobProps(arpPanel.getOctavesKnob(), ModMatrix::DstArpOctaves);
     updateKnobProps(arpPanel.getRateKnob(),    ModMatrix::DstArpRate);
@@ -451,6 +460,11 @@ void PicoSamplerAudioProcessorEditor::timerCallback()
     updateKnobProps(arpPanel.getResoKnob(),    ModMatrix::DstFltReso);
     updateKnobProps(arpPanel.getFormantKnob(), ModMatrix::DstFltFormant);
     updateKnobProps(arpPanel.getCombMixKnob(), ModMatrix::DstFltCombMix);
+
+    updateKnobProps(arpPanel.getFltEnvAttackKnob(),  ModMatrix::DstFltEnvAttack);
+    updateKnobProps(arpPanel.getFltEnvDecayKnob(),   ModMatrix::DstFltEnvDecay);
+    updateKnobProps(arpPanel.getFltEnvSustainKnob(), ModMatrix::DstFltEnvSustain);
+    updateKnobProps(arpPanel.getFltEnvReleaseKnob(), ModMatrix::DstFltEnvRelease);
 
     // ModPanel: LFO Rate ノブ範囲更新 (LFO→LFO クロスモジュレーション)
     for (int i = 0; i < ModMatrix::kNumLfos; ++i)

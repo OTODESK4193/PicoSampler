@@ -29,6 +29,13 @@ public:
     ValueKnob& getSlotPanKnob()     { return knobSlotPan.knob; }
     ValueKnob& getSlotVolumeKnob()  { return knobSlotVolume.knob; }
     ValueKnob& getMasterPitchKnob() { return knobMasterPitch.knob; }
+
+    // Amp ADSR (現在バインド中のスロットの値)。MODアサイン先の変調表示用に公開。
+    ValueKnob& getAttackKnob()  { return knobAttack.knob; }
+    ValueKnob& getDecayKnob()   { return knobDecay.knob; }
+    ValueKnob& getSustainKnob() { return knobSustain.knob; }
+    ValueKnob& getReleaseKnob() { return knobRelease.knob; }
+
     int getCurrentBoundSlot() const noexcept { return currentBoundSlot; }
 
     // 束縛済みフラグだけを落とす。次の updateStates() で貼り直される。

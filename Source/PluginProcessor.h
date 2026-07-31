@@ -117,6 +117,8 @@ private:
         std::atomic<float>* rootKeyOverride;
         std::atomic<float>* slotLowNote;
         std::atomic<float>* slotHighNote;
+        std::atomic<float>* edgeFadeIn;
+        std::atomic<float>* edgeFadeOut;
     } slotParamsCache[8];
 
     struct CachedArpParams {
@@ -206,8 +208,8 @@ private:
     std::atomic<float>* pAutoSliceEnable;
     std::atomic<float>* pSliceSensitivity;
     std::atomic<float>* pStretchMode;
-    std::atomic<float>* pEdgeFadeIn  = nullptr;
-    std::atomic<float>* pEdgeFadeOut = nullptr;
+    // Edge Fade は v1.1 でスロット毎(edgeFadeIn_0..7 / edgeFadeOut_0..7)に変更。
+    // 値本体は slotParamsCache[i].edgeFadeIn / edgeFadeOut で保持する。
 
     void initializeParameterCache();
 

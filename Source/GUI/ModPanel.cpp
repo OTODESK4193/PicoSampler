@@ -71,7 +71,6 @@ ModPanel::ModPanel(PicoSamplerAudioProcessor& processor)
 
     // --- マトリクス16行 ---
     const auto srcNames = ModMatrix::getSourceNames();
-    const auto dstNames = ModMatrix::getDestNames();
 
     for (int i = 0; i < ModMatrix::kNumSlots; ++i)
     {
@@ -84,9 +83,11 @@ ModPanel::ModPanel(PicoSamplerAudioProcessor& processor)
         addAndMakeVisible(rowLabel[(size_t)i]);
 
         srcBox[(size_t)i].addItemList(srcNames, 1);
-        dstBox[(size_t)i].addItemList(dstNames, 1);
         setupCombo(srcBox[(size_t)i], "mod" + idx + "Src");
-        setupCombo(dstBox[(size_t)i], "mod" + idx + "Dst");
+
+        addAndMakeVisible(dstBox[(size_t)i]);
+        dstBox[(size_t)i].buildMenu = [this] { return buildDestMenu(); };
+        dstBox[(size_t)i].bindTo(vts, "mod" + idx + "Dst");
 
         uniButton[(size_t)i] = std::make_unique<GlowToggle>("UNI", PicoColors::babyBlue);
         addAndMakeVisible(*uniButton[(size_t)i]);
@@ -132,6 +133,106 @@ void ModPanel::setupCombo(juce::ComboBox& c, const juce::String& paramID)
     addAndMakeVisible(c);
     comboAttachments.push_back(std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>(
         vts, paramID, c));
+}
+
+juce::PopupMenu ModPanel::buildDestMenu() const
+{
+    const auto names = ModMatrix::getDestNames();
+    juce::PopupMenu menu;
+
+    // itemID は Dst値+1 (0はPopupMenuの「選択せず閉じた」を表す予約値のため)
+    auto addItem = [&](juce::PopupMenu& m, int dst)
+    {
+        if (dst >= 0 && dst < names.size())
+            m.addItem(dst + 1, names[dst]);
+    };
+
+    menu.addItem((int)ModMatrix::DstNone + 1, "None");
+
+    for (int slot = 0; slot < 8; ++slot)
+    {
+        juce::PopupMenu sub;
+        const int base = (int)ModMatrix::DstS1Start + slot * 5;
+        addItem(sub, base + 0); // Start
+        addItem(sub, base + 1); // End
+        addItem(sub, base + 2); // L-Start
+        addItem(sub, base + 3); // L-End
+        addItem(sub, base + 4); // X-Fade
+        addItem(sub, (int)ModMatrix::DstS1Pan + slot); // Pan (末尾に離れて配置されている)
+
+        const int ampBase = (int)ModMatrix::DstS1AmpAttack + slot * 4;
+        addItem(sub, ampBase + 0); // Amp Attack
+        addItem(sub, ampBase + 1); // Amp Decay
+        addItem(sub, ampBase + 2); // Amp Sustain
+        addItem(sub, ampBase + 3); // Amp Release
+
+        menu.addSubMenu("S" + juce::String(slot + 1), sub);
+    }
+
+    {
+        // ユーザー指定のカテゴリ一覧には無いが、Master Pitch の行き場が無くなるため
+        // 独立カテゴリとして追加。
+        juce::PopupMenu sub;
+        addItem(sub, (int)ModMatrix::DstMasterPitch);
+        menu.addSubMenu("Master", sub);
+    }
+
+    {
+        juce::PopupMenu sub;
+        for (int d = (int)ModMatrix::DstArpOctaves; d <= (int)ModMatrix::DstArpAccent; ++d) addItem(sub, d);
+        menu.addSubMenu("ARP", sub);
+    }
+
+    {
+        juce::PopupMenu sub;
+        for (int d = (int)ModMatrix::DstFltCutoff; d <= (int)ModMatrix::DstFltCombMix; ++d) addItem(sub, d);
+        for (int d = (int)ModMatrix::DstFltEnvAttack; d <= (int)ModMatrix::DstFltEnvRelease; ++d) addItem(sub, d);
+        menu.addSubMenu("Filter", sub);
+    }
+
+    {
+        juce::PopupMenu sub;
+        for (int d = (int)ModMatrix::DstLfo1Rate; d <= (int)ModMatrix::DstLfo4Rate; ++d) addItem(sub, d);
+        menu.addSubMenu("LFO", sub);
+    }
+
+    {
+        juce::PopupMenu sub;
+        for (int d = (int)ModMatrix::DstFx1Amount; d <= (int)ModMatrix::DstFx5Amount; ++d) addItem(sub, d);
+        menu.addSubMenu("FX", sub);
+    }
+
+    {
+        juce::PopupMenu sub;
+        for (int d = (int)ModMatrix::DstSatDrive; d <= (int)ModMatrix::DstSatTrim; ++d) addItem(sub, d);
+        menu.addSubMenu("Sat", sub);
+    }
+
+    {
+        juce::PopupMenu sub;
+        for (int d = (int)ModMatrix::DstChoRate; d <= (int)ModMatrix::DstChoWidth; ++d) addItem(sub, d);
+        menu.addSubMenu("Chorus", sub);
+    }
+
+    {
+        juce::PopupMenu sub;
+        for (int d = (int)ModMatrix::DstDlyFeedback; d <= (int)ModMatrix::DstDlyDamp; ++d) addItem(sub, d);
+        menu.addSubMenu("Delay", sub);
+    }
+
+    {
+        juce::PopupMenu sub;
+        for (int d = (int)ModMatrix::DstRevDecay; d <= (int)ModMatrix::DstRevMod; ++d) addItem(sub, d);
+        menu.addSubMenu("Reverb", sub);
+    }
+
+    {
+        juce::PopupMenu sub;
+        for (int d = (int)ModMatrix::DstFrzSize; d <= (int)ModMatrix::DstFrzDamp; ++d) addItem(sub, d);
+        menu.addSubMenu("Freeze", sub);
+    }
+
+    return menu;
 }
 
 void ModPanel::styleTab(juce::TextButton& b, bool active)
