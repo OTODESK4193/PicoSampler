@@ -232,6 +232,38 @@ MainPanel::MainPanel(juce::AudioProcessorValueTreeState& apvts) : vts(apvts)
     addAndMakeVisible(knobOutGain);
     addAndMakeVisible(knobCeiling);
 
+    // ---------------------------------------------------------------
+    // Start が End を追い越したり (逆に End が Start を追い越したり)、
+    // L-Start が L-End を追い越したりしないようクランプする。
+    // WaveformDisplay 上のドラッグは既に自前でクランプしているが、
+    // このノブ (数値直接入力やドラッグ) にはガードが無かったため、
+    // ここで値変更のたびに相互チェックする。
+    // setValue(..., sendNotificationSync) を使うのは、クランプ後の値を
+    // 必ずパラメータ側 (Attachment経由) にも反映させるため。
+    // 一度直すと再度コールバックが走っても条件が満たされず即終了するので
+    // 無限ループにはならない。
+    // ---------------------------------------------------------------
+    knobSampleStart.knob.onValueChange = [this] {
+        const double endVal = knobSampleEnd.knob.getValue();
+        if (knobSampleStart.knob.getValue() >= endVal)
+            knobSampleStart.knob.setValue(endVal - 0.0001, juce::sendNotificationSync);
+    };
+    knobSampleEnd.knob.onValueChange = [this] {
+        const double startVal = knobSampleStart.knob.getValue();
+        if (knobSampleEnd.knob.getValue() <= startVal)
+            knobSampleEnd.knob.setValue(startVal + 0.0001, juce::sendNotificationSync);
+    };
+    knobLoopStart.knob.onValueChange = [this] {
+        const double endVal = knobLoopEnd.knob.getValue();
+        if (knobLoopStart.knob.getValue() >= endVal)
+            knobLoopStart.knob.setValue(endVal - 0.0001, juce::sendNotificationSync);
+    };
+    knobLoopEnd.knob.onValueChange = [this] {
+        const double startVal = knobLoopStart.knob.getValue();
+        if (knobLoopEnd.knob.getValue() <= startVal)
+            knobLoopEnd.knob.setValue(startVal + 0.0001, juce::sendNotificationSync);
+    };
+
     bindSlotParameters(0);
     updateStates();
 }

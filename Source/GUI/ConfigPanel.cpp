@@ -58,16 +58,8 @@ ConfigPanel::ConfigPanel(juce::AudioProcessorValueTreeState& apvts) : vts(apvts)
     knobFadeIn.knob.setDoubleClickReturnValue(true, 2.0);
     knobFadeOut.knob.setDoubleClickReturnValue(true, 3.0);
 
-    // ms 表記。0 は「フェード無し = ハードカット」であることが一目で分かるようにする。
-    auto msText = [](double v) -> juce::String
-    {
-        if (v < 0.005) return "Off";
-        return juce::String(v, v < 10.0 ? 2 : 1) + " ms";
-    };
-    knobFadeIn.knob.textFromValueFunction  = msText;
-    knobFadeOut.knob.textFromValueFunction = msText;
-    knobFadeIn.knob.updateText();
-    knobFadeOut.knob.updateText();
+    // ms 表記 (0 は「フェード無し = ハードカット」) は、実際のアタッチ後でないと
+    // SliderAttachment に上書きされてしまうため bindEdgeSlot() 側で毎回設定する。
 
     // Sample Edge: S1..S8 スロット選択ボタン。テーマカラーはスロットごとに変える。
     for (int i = 0; i < 8; ++i)
@@ -91,6 +83,21 @@ void ConfigPanel::bindEdgeSlot(int slotIdx)
     fadeOutAttach.reset();
     fadeInAttach  = std::make_unique<SliderAttach>(vts, "edgeFadeIn_" + s,  knobFadeIn.knob);
     fadeOutAttach = std::make_unique<SliderAttach>(vts, "edgeFadeOut_" + s, knobFadeOut.knob);
+
+    // 【重要】 SliderAttachment (内部の SliderParameterAttachment) はコンストラクト時に
+    // Slider::textFromValueFunction を「パラメータのgetText()をそのまま使う」内容で
+    // 上書きしてしまう。そのため ms 表記のカスタムフォーマッタはスロット切替のたびに
+    // 消え、素の数値 (interval=0 レンジのため7桁の "0.0000000" 表示) に戻ってしまう。
+    // MainPanel の Start/End 等と同じく、アタッチ後に毎回再設定する。
+    auto msText = [](double v) -> juce::String
+    {
+        if (v < 0.005) return "Off";
+        return juce::String(v, v < 10.0 ? 2 : 1) + " ms";
+    };
+    knobFadeIn.knob.textFromValueFunction  = msText;
+    knobFadeOut.knob.textFromValueFunction = msText;
+    knobFadeIn.knob.updateText();
+    knobFadeOut.knob.updateText();
 
     const auto slotColor = PicoColors::getSlotColor(currentEdgeSlot);
     knobFadeIn.knob.setColour(juce::Slider::rotarySliderFillColourId, slotColor);
@@ -139,9 +146,9 @@ void ConfigPanel::paint(juce::Graphics& g)
     g.setColour(PicoColors::textDim.withAlpha(0.8f));
     g.setFont(juce::FontOptions(9.5f));
     g.drawText("Changes apply only to newly loaded samples.",
-               kColA + kItemW + 16, kRow1Y + kItemH + 6, kItemW + 40, 11, juce::Justification::left);
+               kColA + kItemW + 16, kRow1Y + kItemH + 6, kItemW + 24, 11, juce::Justification::left);
     g.drawText("Click REANALYZE to apply.",
-               kColA + kItemW + 16, kRow1Y + kItemH + 17, kItemW + 40, 11, juce::Justification::left);
+               kColA + kItemW + 16, kRow1Y + kItemH + 17, kItemW + 24, 11, juce::Justification::left);
 
     // 下段
     drawSectionHeader("SAMPLE EDGE", kColA, kRow2Head, kColW, PicoColors::peach);
@@ -154,7 +161,7 @@ void ConfigPanel::paint(juce::Graphics& g)
     // バージョン表記 (Lim Release ノブの右側)
     g.setColour(PicoColors::textDim);
     g.setFont(juce::FontOptions(11.0f, juce::Font::bold));
-    g.drawText("PicoSampler v1.1",
+    g.drawText("PicoSampler v1.1.0",
                kColC + kKnobW + 20, kRow2Y, 160, kKnobH, juce::Justification::centredLeft);
 
     // ------------------------------------------------------------------
@@ -168,26 +175,21 @@ void ConfigPanel::paint(juce::Graphics& g)
     // ------------------------------------------------------------------
     {
         const int x = kColA;
-        int y = kRow1Y + kItemH + 14;
+        // Stretch Mode の注記 (2行, kRow1Y+kItemH+6 起点で17px間隔) や
+        // 下の SAMPLE EDGE ヘッダー (kRow2Head) と衝突しないよう、2行に圧縮してある。
+        int y = kRow1Y + kItemH + 32;
 
         g.setColour(juce::Colours::white);
 
-        g.setFont(juce::FontOptions(11.0f, juce::Font::bold));
-        g.drawText("Time-stretching powered by Signalsmith Stretch",
-                   x, y, kColW, 13, juce::Justification::left);
-        y += 14;
+        g.setFont(juce::FontOptions(10.5f, juce::Font::bold));
+        g.drawText("Time-stretching powered by Signalsmith Stretch / Linear",
+                   x, y, kColW + 20, 13, juce::Justification::left);
+        y += 13;
 
-        g.setFont(juce::FontOptions(10.0f));
-        g.drawText(juce::CharPointer_UTF8("Copyright \xc2\xa9 2022 Geraint Luff / Signalsmith Audio Ltd."),
-                   x, y, kColW, 12, juce::Justification::left);
-        y += 12;
-
-        g.drawText(juce::CharPointer_UTF8("Signalsmith Linear \xc2\xa9 2025 Signalsmith Audio"),
-                   x, y, kColW, 12, juce::Justification::left);
-        y += 12;
-
-        g.drawText("Used under the MIT License. See LICENSE files included with this product.",
-                   x, y, kColW + 60, 12, juce::Justification::left);
+        g.setFont(juce::FontOptions(9.0f));
+        g.drawText(juce::CharPointer_UTF8(
+                       "\xc2\xa9 2022 Geraint Luff, \xc2\xa9 2025 Signalsmith Audio \xc2\xb7 MIT License (see included LICENSE files)"),
+                   x, y, kColW + 40, 12, juce::Justification::left);
     }
 }
 
