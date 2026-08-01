@@ -160,7 +160,7 @@ Filter and FX can each be bypassed **per slot**, so one slot can stay dry while 
 | HPF | 20 – 2000 Hz | 20 Hz | Master high-pass |
 | LPF | 200 – 20000 Hz | 20000 Hz | Master low-pass |
 | Gain | -36 – +12 dB | 0 dB | Output level |
-| Ceiling | -12 – 0 dB | 0 dB | Brick-wall limiter ceiling |
+| Ceiling | -12 – 0 dB | **-1 dB** | Brick-wall limiter ceiling. Always active |
 
 ### Arpeggiator
 
@@ -305,6 +305,21 @@ cmake --build build --config Release
 * **Auto-pan movement:** assign an LFO to `S1/Pan` in the MOD MATRIX. Per-slot Pan destinations sit at the end of the destination list.
 * **Evolving filter:** assign ENV 1 (with Loop on) to Filter Cutoff, then watch the response curve — it moves in real time with the modulation.
 * **Precision knob work:** hold **Ctrl** while dragging to cover the full range fast, or **Shift** for sample-level fine tuning. Press the modifier *before* grabbing the knob.
+
+
+## Disclaimer
+
+**Please read before use.**
+
+PicoSampler is a sampler with feedback-based effects (Delay, Freeze, Reverb), resonant filters, and a modulation matrix that can drive them. Certain combinations of settings — high resonance, high feedback, or modulation applied to those controls — can produce sudden, extremely loud output.
+
+* **Always keep a limiter in the signal path.** PicoSampler's output stage runs a brick-wall limiter at all times, and **CEILING** defaults to −1 dB. Do not raise it to 0 dB unless you have another limiter after it. Placing an additional limiter on your master bus is strongly recommended.
+* **Start at low monitoring levels**, especially when using headphones, when auditioning unfamiliar presets, or when experimenting with the modulation matrix.
+* **Protect your hearing and your equipment.** Sudden loud output can cause permanent hearing damage and can damage speakers, headphones, and other audio equipment.
+
+THIS SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY — INCLUDING BUT NOT LIMITED TO HEARING DAMAGE, DAMAGE TO AUDIO EQUIPMENT, DATA LOSS, OR LOST WORK — WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+**You use this software entirely at your own risk.**
 
 
 ## License
