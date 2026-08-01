@@ -282,8 +282,12 @@ void MainPanel::bindSlotParameters(int slotIdx)
     fxBypassAttach.reset();
 
     // Slot固有のテーマカラー適用 & 変調残像の即時クリア
+    //
+    // Pan / Volume もスロット単位のパラメータ (pan_N / slotGain_N) なので、
+    // Start〜X-Fade と同じくスロットカラーに揃える。
     const auto slotColor = PicoColors::getSlotColor(slotIdx);
-    for (auto* lk : { &knobSampleStart, &knobSampleEnd, &knobLoopStart, &knobLoopEnd, &knobCrossfade })
+    for (auto* lk : { &knobSampleStart, &knobSampleEnd, &knobLoopStart, &knobLoopEnd,
+                      &knobCrossfade, &knobSlotPan, &knobSlotVolume })
     {
         lk->knob.setColour(juce::Slider::rotarySliderFillColourId, slotColor);
         lk->knob.getProperties().remove("mod_active");
@@ -384,10 +388,10 @@ void MainPanel::updateStates()
     auto* pMode   = vts.getRawParameterValue("samplerMode");
     if (!pActive || !pMode) return;
 
-    const int activeSlotIdx = (int)pActive->load();
+    const int activeSlotIdx = juce::roundToInt(pActive->load());
     bindSlotParameters(activeSlotIdx);
 
-    const int modeVal = (int)pMode->load();
+    const int modeVal = juce::roundToInt(pMode->load());
     auto styleModeBtn = [](juce::TextButton& b, bool active) {
         b.setColour(juce::TextButton::buttonColourId, active ? PicoColors::mint : PicoColors::knobTrack);
         b.setColour(juce::TextButton::textColourOffId, active ? juce::Colours::black : PicoColors::textDim);

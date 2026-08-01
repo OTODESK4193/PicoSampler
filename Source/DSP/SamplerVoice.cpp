@@ -120,6 +120,14 @@ void PicoVoice::startNote(int midiNoteNumber, float noteVelocity, int slotIdx,
         const float g0   = velocity * juce::Decibels::decibelsToGain(p.slotGainDb);
         smGainL.setCurrentAndTargetValue(std::sqrt(0.5f * (1.0f - pan0)) * g0);
         smGainR.setCurrentAndTargetValue(std::sqrt(0.5f * (1.0f + pan0)) * g0);
+
+        // マーカーも Note-On では現在値へスナップ。
+        // (前のノートの位置から滑ってくると発音頭が意図しない場所になる)
+        smStartRatio.setCurrentAndTargetValue(juce::jlimit(0.0f, 1.0f, p.sampleStartRatio));
+        smEndRatio.setCurrentAndTargetValue  (juce::jlimit(0.0f, 1.0f, p.sampleEndRatio));
+        smLoopStart.setCurrentAndTargetValue (juce::jlimit(0.0f, 1.0f, p.loopStartRatio));
+        smLoopEnd.setCurrentAndTargetValue   (juce::jlimit(0.0f, 1.0f, p.loopEndRatio));
+        smXFade.setCurrentAndTargetValue     (juce::jlimit(0.0f, 0.5f, p.crossfadeRatio));
     }
 }
 
@@ -195,62 +203,85 @@ void PicoVoice::renderNextBlock(juce::AudioBuffer<float>& outputBuffer, int star
         currentPitchRatio = targetPitchRatio;
     }
 
+    // ------------------------------------------------------------------
     // マーカー・再生制御
+    //
+    // Start / End / L-Start / L-End / X-Fade は MOD のアサイン先であり、
+    // LFO をかけるとブロック単位で大きく動く。
+    // 旧実装はブロック先頭で一度だけ整数位置を求めていたため、
+    // L-End が readPosition を一気に追い越した瞬間に
+    //     while (readPosition >= lpEndFile) readPosition -= ループ長;
+    // でクロスフェード区間を通らずに位置がワープし、波形が不連続になって
+    // プチッと鳴っていた。
+    //
+    // 比率をサンプル単位で補間することで、マーカーは1サンプルあたり
+    // わずかしか動かなくなる。readPosition は必ずクロスフェード区間を
+    // 通ってからループ端を越えるため、段差が出ない。
+    //
+    // 計算式そのものは従来と完全に同一 (入力が平滑値になっただけ)。
+    // ------------------------------------------------------------------
     static constexpr int kMinSpan = 32;
+
+    smStartRatio.setTargetValue(juce::jlimit(0.0f, 1.0f, p.sampleStartRatio));
+    smEndRatio.setTargetValue  (juce::jlimit(0.0f, 1.0f, p.sampleEndRatio));
+    smLoopStart.setTargetValue (juce::jlimit(0.0f, 1.0f, p.loopStartRatio));
+    smLoopEnd.setTargetValue   (juce::jlimit(0.0f, 1.0f, p.loopEndRatio));
+    smXFade.setTargetValue     (juce::jlimit(0.0f, 0.5f, p.crossfadeRatio));
 
     int smpStartFile = 0, smpEndFile = bufLen - 1;
     int lpStartFile = 0, lpEndFile = bufLen - 1;
+    int lpLen = kMinSpan;
+    int xfadeLen = 8;
+    int fadeInLen = 0, fadeOutLen = 0;
 
-    if (!p.isReverse)
+    // Edge Fade の長さ (ms → サンプル)。ノブは MOD 対象外なのでブロック単位で十分。
+    const float fadeInSamples  = juce::jmax(0.0f, p.edgeFadeInMs)  * 0.001f * (float)sampleRate;
+    const float fadeOutSamples = juce::jmax(0.0f, p.edgeFadeOutMs) * 0.001f * (float)sampleRate;
+
+    auto updateMarkers = [&](float startR, float endR, float lsR, float leR, float xfR) noexcept
     {
-        smpStartFile = (int)(bufLen * juce::jlimit(0.0f, 0.98f, p.sampleStartRatio));
-        smpEndFile   = (int)(bufLen * juce::jlimit(0.02f, 1.0f, p.sampleEndRatio));
-        if (smpEndFile <= smpStartFile + kMinSpan)
-            smpEndFile = std::min(bufLen - 1, smpStartFile + kMinSpan);
+        if (!p.isReverse)
+        {
+            smpStartFile = (int)(bufLen * juce::jlimit(0.0f, 0.98f, startR));
+            smpEndFile   = (int)(bufLen * juce::jlimit(0.02f, 1.0f, endR));
+            if (smpEndFile <= smpStartFile + kMinSpan)
+                smpEndFile = std::min(bufLen - 1, smpStartFile + kMinSpan);
 
-        lpStartFile  = (int)(bufLen * juce::jlimit(0.0f, 0.98f, p.loopStartRatio));
-        lpEndFile    = (int)(bufLen * juce::jlimit(0.02f, 1.0f, p.loopEndRatio));
-        lpStartFile  = juce::jlimit(smpStartFile, smpEndFile - kMinSpan, lpStartFile);
-        lpEndFile    = juce::jlimit(lpStartFile + kMinSpan, smpEndFile, lpEndFile);
-    }
-    else
-    {
-        // Reverse ON
-        smpStartFile = (int)(bufLen * (1.0f - juce::jlimit(0.0f, 0.98f, p.sampleStartRatio)));
-        smpEndFile   = (int)(bufLen * (1.0f - juce::jlimit(0.02f, 1.0f, p.sampleEndRatio)));
-        if (smpStartFile <= smpEndFile + kMinSpan)
-            smpStartFile = std::min(bufLen - 1, smpEndFile + kMinSpan);
+            lpStartFile  = (int)(bufLen * juce::jlimit(0.0f, 0.98f, lsR));
+            lpEndFile    = (int)(bufLen * juce::jlimit(0.02f, 1.0f, leR));
+            lpStartFile  = juce::jlimit(smpStartFile, smpEndFile - kMinSpan, lpStartFile);
+            lpEndFile    = juce::jlimit(lpStartFile + kMinSpan, smpEndFile, lpEndFile);
+        }
+        else
+        {
+            // Reverse ON
+            smpStartFile = (int)(bufLen * (1.0f - juce::jlimit(0.0f, 0.98f, startR)));
+            smpEndFile   = (int)(bufLen * (1.0f - juce::jlimit(0.02f, 1.0f, endR)));
+            if (smpStartFile <= smpEndFile + kMinSpan)
+                smpStartFile = std::min(bufLen - 1, smpEndFile + kMinSpan);
 
-        lpStartFile  = (int)(bufLen * (1.0f - juce::jlimit(0.0f, 0.98f, p.loopStartRatio)));
-        lpEndFile    = (int)(bufLen * (1.0f - juce::jlimit(0.02f, 1.0f, p.loopEndRatio)));
-        lpStartFile  = juce::jlimit(smpEndFile + kMinSpan, smpStartFile, lpStartFile);
-        lpEndFile    = juce::jlimit(smpEndFile, lpStartFile - kMinSpan, lpEndFile);
-    }
+            lpStartFile  = (int)(bufLen * (1.0f - juce::jlimit(0.0f, 0.98f, lsR)));
+            lpEndFile    = (int)(bufLen * (1.0f - juce::jlimit(0.02f, 1.0f, leR)));
+            lpStartFile  = juce::jlimit(smpEndFile + kMinSpan, smpStartFile, lpStartFile);
+            lpEndFile    = juce::jlimit(smpEndFile, lpStartFile - kMinSpan, lpEndFile);
+        }
 
-    const int lpLen = std::max(kMinSpan, std::abs(lpEndFile - lpStartFile));
-    const int xfadeLen = juce::jlimit(8, lpLen / 2, (int)(lpLen * juce::jlimit(0.0f, 0.5f, p.crossfadeRatio)));
+        lpLen    = std::max(kMinSpan, std::abs(lpEndFile - lpStartFile));
+        xfadeLen = juce::jlimit(8, lpLen / 2, (int)(lpLen * juce::jlimit(0.0f, 0.5f, xfR)));
 
-    // ------------------------------------------------------------------
-    // Edge Fade
-    // Start/End マーカーが波形の途中 (振幅が 0 でない位置) に置かれると
-    // 再生開始/終了の瞬間に段差が生じてプチッと鳴る。
-    // その端だけを短時間フェードして段差を殺す。
-    //
-    // ・長さは Config の Fade In / Fade Out (ms) から算出。
-    // ・区間長の 1/3 を超えないようにクランプ (極短スライスで音が消えるのを防ぐ)。
-    // ・カーブは raised cosine。直線フェードより可聴なカドが出にくい。
-    // ------------------------------------------------------------------
-    const int spanLen = std::max(kMinSpan, std::abs(smpEndFile - smpStartFile));
-    const int maxFade = std::max(1, spanLen / 3);
+        // ------------------------------------------------------------------
+        // Edge Fade
+        // Start/End マーカーが波形の途中 (振幅が 0 でない位置) に置かれると
+        // 再生開始/終了の瞬間に段差が生じてプチッと鳴る。
+        // その端だけを短時間フェードして段差を殺す。
+        // 区間長の 1/3 を超えないようにクランプ (極短スライスで音が消えるのを防ぐ)。
+        // ------------------------------------------------------------------
+        const int spanLen = std::max(kMinSpan, std::abs(smpEndFile - smpStartFile));
+        const int maxFade = std::max(1, spanLen / 3);
 
-    const int fadeInLen  = juce::jlimit(0, maxFade,
-                              (int)(juce::jmax(0.0f, p.edgeFadeInMs)  * 0.001f * (float)sampleRate));
-    const int fadeOutLen = juce::jlimit(0, maxFade,
-                              (int)(juce::jmax(0.0f, p.edgeFadeOutMs) * 0.001f * (float)sampleRate));
-
-    // ループ中は End 側をループ Crossfade が担当するので Fade Out は掛けない
-    const bool applyFadeOut = (fadeOutLen > 0) && !p.isLooping;
-    const bool applyFadeIn  = (fadeInLen > 0);
+        fadeInLen  = juce::jlimit(0, maxFade, (int)fadeInSamples);
+        fadeOutLen = juce::jlimit(0, maxFade, (int)fadeOutSamples);
+    };
 
     auto raisedCos = [](float t) noexcept
     {
@@ -269,6 +300,15 @@ void PicoVoice::renderNextBlock(juce::AudioBuffer<float>& outputBuffer, int star
 
     for (int s = 0; s < numSamples; ++s)
     {
+        // マーカーはサンプルごとに更新する (上の説明を参照)
+        updateMarkers(smStartRatio.getNextValue(), smEndRatio.getNextValue(),
+                      smLoopStart.getNextValue(), smLoopEnd.getNextValue(),
+                      smXFade.getNextValue());
+
+        // ループ中は End 側をループ Crossfade が担当するので Fade Out は掛けない
+        const bool applyFadeOut = (fadeOutLen > 0) && !p.isLooping;
+        const bool applyFadeIn  = (fadeInLen > 0);
+
         if (p.portaEnable && currentPitchRatio != targetPitchRatio)
         {
             currentPitchRatio = targetPitchRatio + (currentPitchRatio - targetPitchRatio) * portaMultiplier;

@@ -137,7 +137,7 @@ FxPanel::FxPanel(PicoSamplerAudioProcessor& p) : proc(p)
 int FxPanel::getSlotType(int slot) const
 {
     if (auto* p = proc.getAPVTS().getRawParameterValue("fx" + juce::String(slot + 1) + "Type"))
-        return (int)p->load();
+        return juce::roundToInt(p->load());
     return 0;
 }
 

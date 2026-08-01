@@ -64,6 +64,15 @@ public:
         // LFO をかけた時に定位が階段状に動いてしまう。
         smGainL.reset(sampleRate, 0.01);
         smGainR.reset(sampleRate, 0.01);
+
+        // Start / End / L-Start / L-End / X-Fade も MOD のアサイン先。
+        // ブロック単位で動かすとループ端が readPosition を一気に追い越し、
+        // クロスフェードを通らずに波形がワープしてプチッと鳴る。
+        smStartRatio.reset(sampleRate, 0.01);
+        smEndRatio.reset(sampleRate, 0.01);
+        smLoopStart.reset(sampleRate, 0.01);
+        smLoopEnd.reset(sampleRate, 0.01);
+        smXFade.reset(sampleRate, 0.01);
     }
 
     void startNote(int midiNoteNumber, float noteVelocity, int slotIdx,
@@ -133,6 +142,13 @@ private:
     // Note-On では現在値へスナップさせる (立ち上がりを鈍らせないため)。
     juce::LinearSmoothedValue<float> smGainL { 0.0f };
     juce::LinearSmoothedValue<float> smGainR { 0.0f };
+
+    // サンプル位置マーカー (比率 0..1)。Note-On で現在値へスナップする。
+    juce::LinearSmoothedValue<float> smStartRatio { 0.0f };
+    juce::LinearSmoothedValue<float> smEndRatio   { 1.0f };
+    juce::LinearSmoothedValue<float> smLoopStart  { 0.2f };
+    juce::LinearSmoothedValue<float> smLoopEnd    { 0.7f };
+    juce::LinearSmoothedValue<float> smXFade      { 0.05f };
 
     EnvStage envStage = EnvStage::Idle;
     float envValue = 0.0f;

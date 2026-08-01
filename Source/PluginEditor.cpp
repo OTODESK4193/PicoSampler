@@ -59,7 +59,7 @@ PicoSamplerAudioProcessorEditor::PicoSamplerAudioProcessorEditor(PicoSamplerAudi
                 audioProcessor.requestLoadFile(0, file, true);
             }
         } else {
-            const int activeIdx = (int)audioProcessor.getAPVTS().getRawParameterValue("activeSlot")->load();
+            const int activeIdx = juce::roundToInt(audioProcessor.getAPVTS().getRawParameterValue("activeSlot")->load());
             audioProcessor.reanalyzeSlot(activeIdx);
         }
         repaint();
@@ -171,7 +171,7 @@ PicoSamplerAudioProcessorEditor::PicoSamplerAudioProcessorEditor(PicoSamplerAudi
 
     // 波形エリア D&D & Clear
     waveDisplay.onFileDropped = [this](const juce::File& file) {
-        const int activeIdx = (int)audioProcessor.getAPVTS().getRawParameterValue("activeSlot")->load();
+        const int activeIdx = juce::roundToInt(audioProcessor.getAPVTS().getRawParameterValue("activeSlot")->load());
         const bool autoSlice = audioProcessor.getAPVTS().getRawParameterValue("autoSliceEnable")->load() > 0.5f;
         audioProcessor.requestLoadFile(activeIdx, file, autoSlice && activeIdx == 0);
         repaint();
@@ -183,7 +183,7 @@ PicoSamplerAudioProcessorEditor::PicoSamplerAudioProcessorEditor(PicoSamplerAudi
     };
     // KeyRangeMap 操作ハンドラ
     auto snapFunc = [this](double v) -> double {
-        const int activeIdx = (int)audioProcessor.getAPVTS().getRawParameterValue("activeSlot")->load();
+        const int activeIdx = juce::roundToInt(audioProcessor.getAPVTS().getRawParameterValue("activeSlot")->load());
         const bool isSnap = audioProcessor.getAPVTS().getRawParameterValue("isSnap_" + juce::String(activeIdx))->load() > 0.5f;
         if (isSnap) {
             return waveDisplay.findZeroCrossingRatio((float)v);
@@ -253,12 +253,12 @@ void PicoSamplerAudioProcessorEditor::paint(juce::Graphics& g)
     g.drawText("P I C O  S A M P L E R", 20, 10, 280, 28, juce::Justification::centredLeft);
 
     // 2. HUD 情報
-    const int activeIdx = (int)audioProcessor.getAPVTS().getRawParameterValue("activeSlot")->load();
+    const int activeIdx = juce::roundToInt(audioProcessor.getAPVTS().getRawParameterValue("activeSlot")->load());
     const auto& slot = audioProcessor.getSamplerEngine().getSlot(activeIdx);
     const auto& meta = slot.getMetadata();
 
-    const int lowNote = (int)audioProcessor.getAPVTS().getRawParameterValue("slotLowNote_" + juce::String(activeIdx))->load();
-    const int highNote = (int)audioProcessor.getAPVTS().getRawParameterValue("slotHighNote_" + juce::String(activeIdx))->load();
+    const int lowNote = juce::roundToInt(audioProcessor.getAPVTS().getRawParameterValue("slotLowNote_" + juce::String(activeIdx))->load());
+    const int highNote = juce::roundToInt(audioProcessor.getAPVTS().getRawParameterValue("slotHighNote_" + juce::String(activeIdx))->load());
 
     g.setColour(juce::Colours::white.withAlpha(0.9f));
     g.setFont(juce::FontOptions(11.5f, juce::Font::bold));
@@ -329,7 +329,7 @@ void PicoSamplerAudioProcessorEditor::rebindActiveSlot()
     arpPanel.updateFilterUIState();
 
     auto* pActive = audioProcessor.getAPVTS().getRawParameterValue("activeSlot");
-    const int activeIdx = pActive ? juce::jlimit(0, 7, (int)pActive->load()) : 0;
+    const int activeIdx = pActive ? juce::jlimit(0, 7, juce::roundToInt(pActive->load())) : 0;
 
     waveDisplay.setActiveSlotIndex(activeIdx);
     waveDisplay.setSampleSlot(&audioProcessor.getSamplerEngine().getSlot(activeIdx));
@@ -344,7 +344,7 @@ void PicoSamplerAudioProcessorEditor::timerCallback()
     auto* pActive = audioProcessor.getAPVTS().getRawParameterValue("activeSlot");
     if (pActive == nullptr) return;
 
-    const int activeIdx = (int)pActive->load();
+    const int activeIdx = juce::roundToInt(pActive->load());
     waveDisplay.setSampleSlot(&audioProcessor.getSamplerEngine().getSlot(activeIdx));
     waveDisplay.setModMatrix(&audioProcessor.getModMatrix());
     arpPanel.setModMatrix(&audioProcessor.getModMatrix());
@@ -356,7 +356,7 @@ void PicoSamplerAudioProcessorEditor::timerCallback()
     auto* pTheme = audioProcessor.getAPVTS().getRawParameterValue("colorTheme");
     if (pTheme != nullptr)
     {
-        const int themeIdx = (int)pTheme->load();
+        const int themeIdx = juce::roundToInt(pTheme->load());
         if (themeIdx != lastThemeIdx)
         {
             lastThemeIdx = themeIdx;
@@ -377,8 +377,8 @@ void PicoSamplerAudioProcessorEditor::timerCallback()
         auto* pLow  = audioProcessor.getAPVTS().getRawParameterValue("slotLowNote_" + s);
         auto* pHigh = audioProcessor.getAPVTS().getRawParameterValue("slotHighNote_" + s);
 
-        const int low  = pLow  ? (int)pLow->load()  : 0;
-        const int high = pHigh ? (int)pHigh->load() : 127;
+        const int low  = pLow  ? juce::roundToInt(pLow->load())  : 0;
+        const int high = pHigh ? juce::roundToInt(pHigh->load()) : 127;
         ranges[(size_t)i] = { low, high };
 
         const auto& slot = audioProcessor.getSamplerEngine().getSlot(i);

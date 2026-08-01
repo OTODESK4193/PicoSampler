@@ -5,6 +5,17 @@
 > - ✅ 段階2 完了: 項目 7, 10, 11 + FX 全パラメータのスムージング
 >   + 追加発見・修正: **Sat Pre-HPF が未実装だった**（ノブも MOD 先もあるのに DSP が値を使っていなかった）
 >   + 訂正: Master HPF/LPF は `TptSvfFilter` が内部で係数を平滑化済みだった（対応不要）
+> - ✅ 追加修正（ユーザー報告）:
+>   + **離散パラメータの `(int)` 切り捨てバグ** — `roundToInt` へ全面置換（37箇所）。
+>     MOD アサイン先が1つ手前にズレる原因。`getRawParameterValue()` が返すのは
+>     非正規化 float で、AudioParameterChoice でも整数ぴったりとは限らない。
+>     122 個の Dst のうち **8 個は完全な float 往復でも壊れる**
+>     （S1/Start→None, S1/End→S1/Start, S1/L-End, S2/L-Start, S4/Start,
+>     S7/End, Chorus Rate→Delay Damp, Delay Feedback→Freeze Damp）。
+>   + **Start/End/L-Start/L-End/X-Fade のサンプル単位補間** —
+>     LFO でループ端が readPosition を追い越すとクロスフェードを通らずに
+>     位置がワープしてプチノイズが出ていた。
+>   + Pan / Volume ノブの Arc をスロットカラーに統一。
 > - ⬜ 段階3 未着手: 項目 8, 12（Arp Rate MOD / Arc 倍率）
 
 

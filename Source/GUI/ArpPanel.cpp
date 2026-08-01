@@ -177,7 +177,7 @@ void ArpPanel::updateFilterUIState() noexcept
 
     auto* pType = vts.getRawParameterValue("fltType");
     if (pType == nullptr) return;
-    const int typeIdx = (int)pType->load();
+    const int typeIdx = juce::roundToInt(pType->load());
 
     // Wavetableプロジェクト DualFilterEngine::FilterType と同じ並び
     //   0=LPF 1=HPF 2=BPF 3=Notch 4=Comb 5=LadderLPF 6=Vowel 7=CombPlus 8=Phaser
