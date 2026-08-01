@@ -6,6 +6,15 @@
 ![Platform](https://img.shields.io/badge/platform-Windows-lightgrey)
 ![Downloads](https://img.shields.io/github/downloads/OTODESK4193/PicoSampler/total.svg)
 
+## What's New in v1.1.0
+
+* **Greatly expanded modulation destinations** — the mod matrix now reaches every per-slot Sample knob, Pan, Amp ADSR, Filter Envelope, LFO Rate, and the full FX detail set.
+* **Category tree for modulation destinations** — destinations are grouped into submenus (S1–S8 / Master / ARP / Filter / LFO / FX / Sat / Chorus / Delay / Reverb / Freeze) instead of one long flat list, making them far easier to find.
+* **Per-slot Fade In / Out** — edge fades are now configured independently for each loaded slot rather than globally.
+* **Reworked Start / End marker logic** — marker positions are interpolated per sample, so modulating them no longer produces clicks.
+* **Version info shown on the Config page.**
+* **Various stability and robustness improvements.**
+
 ## Demo Videos
 
 <p align="center">
