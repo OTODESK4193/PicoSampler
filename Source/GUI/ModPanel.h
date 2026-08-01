@@ -64,7 +64,8 @@ private:
     std::array<std::unique_ptr<GlowToggle>, ModMatrix::kNumSlots> uniButton;
 
     // Destination のカテゴリ分類済み PopupMenu を構築する
-    juce::PopupMenu buildDestMenu() const;
+    // currentDst: 現在選択中の Dst。該当項目にチェックを付けるために使う。
+    juce::PopupMenu buildDestMenu(int currentDst) const;
 
     std::vector<std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>>   sliderAttachments;
     std::vector<std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment>> comboAttachments;

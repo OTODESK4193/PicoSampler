@@ -86,7 +86,7 @@ ModPanel::ModPanel(PicoSamplerAudioProcessor& processor)
         setupCombo(srcBox[(size_t)i], "mod" + idx + "Src");
 
         addAndMakeVisible(dstBox[(size_t)i]);
-        dstBox[(size_t)i].buildMenu = [this] { return buildDestMenu(); };
+        dstBox[(size_t)i].buildMenu = [this](int currentDst) { return buildDestMenu(currentDst); };
         dstBox[(size_t)i].bindTo(vts, "mod" + idx + "Dst");
 
         uniButton[(size_t)i] = std::make_unique<GlowToggle>("UNI", PicoColors::babyBlue);
@@ -135,19 +135,20 @@ void ModPanel::setupCombo(juce::ComboBox& c, const juce::String& paramID)
         vts, paramID, c));
 }
 
-juce::PopupMenu ModPanel::buildDestMenu() const
+juce::PopupMenu ModPanel::buildDestMenu(int currentDst) const
 {
     const auto names = ModMatrix::getDestNames();
     juce::PopupMenu menu;
 
     // itemID は Dst値+1 (0はPopupMenuの「選択せず閉じた」を表す予約値のため)
+    // 現在選択中の項目にはチェックを付ける (どのサブメニューに居るか分かるように)
     auto addItem = [&](juce::PopupMenu& m, int dst)
     {
         if (dst >= 0 && dst < names.size())
-            m.addItem(dst + 1, names[dst]);
+            m.addItem(dst + 1, names[dst], true, dst == currentDst);
     };
 
-    menu.addItem((int)ModMatrix::DstNone + 1, "None");
+    menu.addItem((int)ModMatrix::DstNone + 1, "None", true, currentDst == (int)ModMatrix::DstNone);
 
     for (int slot = 0; slot < 8; ++slot)
     {
