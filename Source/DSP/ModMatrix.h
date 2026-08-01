@@ -396,6 +396,64 @@ public:
 
     static bool isBipolarSource(int s) noexcept { return s >= SrcLfo1 && s <= SrcLfo4; }
 
+    // ==================================================================
+    // MOD 量 (-1..+1) を「実際のパラメータ値」へ適用した結果を返す。
+    //
+    // 【なぜ必要か】
+    // get() が返す変調量は -1..+1 の抽象値で、行き先ごとに固有の倍率を
+    // 掛けてから加算される (Cutoff は ±4オクターブ、Master Pitch は ±24半音、
+    // Sat Pre-HPF は ±1000Hz …)。
+    // GUI 側で「変調レンジのアーク」を描くときにこの倍率を無視すると、
+    // 帯の幅が実際の変調量とまったく違うものになってしまう。
+    //
+    // 【重要】 PluginProcessor::processBlock の適用式と 1 対 1 で対応させること。
+    // 片方だけ倍率を変えるとアーク表示と実音がずれる。
+    // クランプ (jlimit) はここでは行わない。呼び出し側でノブのレンジに
+    // 収めればよく、GUI と DSP でクランプ方法を二重管理したくないため。
+    // ==================================================================
+    static double applyModToValue(int dst, double baseValue, double modAmount) noexcept
+    {
+        // Filter Cutoff だけは加算ではなく「オクターブ単位の指数変化」
+        if (dst == DstFltCutoff)   return baseValue * std::pow(2.0, modAmount * 4.0);
+
+        if (dst == DstMasterPitch) return baseValue + modAmount * 24.0;
+        if (dst == DstFltReso)     return baseValue + modAmount * 5.0;
+
+        if (dst == DstArpRate)     return baseValue + modAmount * 15.0;
+        if (dst == DstArpOctaves)  return baseValue + modAmount * 3.0;
+        if (dst == DstArpOffset)   return baseValue + modAmount * 12.0;
+        if (dst == DstArpRepeat)   return baseValue + modAmount * 3.0;
+
+        if (dst == DstSatDrive)    return baseValue + modAmount * 6.0;
+        if (dst == DstSatPreHz)    return baseValue + modAmount * 1000.0;
+        if (dst == DstSatTrim)     return baseValue + modAmount * 12.0;
+        if (dst == DstChoRate)     return baseValue + modAmount * 2.0;
+        if (dst == DstFrzSize)     return baseValue + modAmount * 500.0;
+
+        if (dst >= DstLfo1Rate && dst <= DstLfo4Rate) return baseValue + modAmount * 15.0;
+
+        // Filter Envelope (秒)
+        if (dst == DstFltEnvAttack || dst == DstFltEnvDecay) return baseValue + modAmount * 2.5;
+        if (dst == DstFltEnvRelease)                         return baseValue + modAmount * 5.0;
+        if (dst == DstFltEnvSustain)                         return baseValue + modAmount;
+
+        // 各スロットの Amp ADSR (A,D,S,R が4個ずつ並ぶ。秒)
+        if (dst >= DstS1AmpAttack && dst <= DstS8AmpRelease)
+        {
+            switch ((dst - DstS1AmpAttack) % 4)
+            {
+            case 0: case 1: return baseValue + modAmount * 2.5;  // Attack / Decay
+            case 2:         return baseValue + modAmount;        // Sustain (0..1)
+            default:        return baseValue + modAmount * 5.0;  // Release
+            }
+        }
+
+        // 残り (Start/End/L-Start/L-End/X-Fade, Pan, FX Amount, Depth/Width,
+        //       Feedback/Duck/Damp, Formant/CombMix, Arp Gate/Swing/Accent …)
+        // はすべて 0..1 もしくは -1..1 レンジで 1:1 加算。
+        return baseValue + modAmount;
+    }
+
 private:
     struct LfoState
     {

@@ -407,10 +407,23 @@ void PicoSamplerAudioProcessorEditor::timerCallback()
         props.set("mod_active", active);
         if (active)
         {
-            const float normVal = (float)knob.valueToProportionOfLength(knob.getValue());
-            const float liveVal = juce::jlimit(0.0f, 1.0f, normVal + liveOffset);
-            props.set("mod_min", juce::jlimit(0.0f, 1.0f, normVal + minOffset));
-            props.set("mod_max", juce::jlimit(0.0f, 1.0f, normVal + maxOffset));
+            // ------------------------------------------------------------------
+            // 【重要】 変調量 (-1..+1) はノブの正規化値に直接足せない。
+            // 行き先ごとに固有の倍率 (Cutoff は ±4オクターブ、Master Pitch は
+            // ±24半音、Sat Pre-HPF は ±1000Hz …) が掛かるため、
+            // 「値の空間」で加算してから正規化し直す必要がある。
+            // 旧実装は正規化値へ直接足していたので、0..1 レンジ以外の
+            // 約18個の行き先でアークの幅が実際の変調量と食い違っていた。
+            // ------------------------------------------------------------------
+            const double baseVal = knob.getValue();
+            auto toNorm = [&knob](double v)
+            {
+                return juce::jlimit(0.0f, 1.0f, (float)knob.valueToProportionOfLength(v));
+            };
+
+            const float liveVal = toNorm(ModMatrix::applyModToValue(dstIdx, baseVal, (double)liveOffset));
+            props.set("mod_min",  toNorm(ModMatrix::applyModToValue(dstIdx, baseVal, (double)minOffset)));
+            props.set("mod_max",  toNorm(ModMatrix::applyModToValue(dstIdx, baseVal, (double)maxOffset)));
             props.set("mod_live", liveVal);
 
             if (std::abs(liveVal - prevLive) > 0.0001f || !prevActive)

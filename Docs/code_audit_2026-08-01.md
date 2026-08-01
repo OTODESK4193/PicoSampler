@@ -16,7 +16,12 @@
 >     LFO でループ端が readPosition を追い越すとクロスフェードを通らずに
 >     位置がワープしてプチノイズが出ていた。
 >   + Pan / Volume ノブの Arc をスロットカラーに統一。
-> - ⬜ 段階3 未着手: 項目 8, 12（Arp Rate MOD / Arc 倍率）
+> - ✅ 段階3 完了: 項目 8, 12
+>   + 追加修正: ARP の Rate 変更時に `stepSampleCounter = 0` として即発音していた件
+>     （Rate に LFO をかけると連打になる）
+>   + 追加修正: Octaves / Offset / Repeat への MOD を四捨五入に
+> - ✅ 信号経路の修正: Master セクションを最終段へ移動（§9）。
+>   `全スロット合流 → Filter → FX → Master HPF/LPF → Out Gain → Limiter → 出力`
 
 
 作成日: 2026-08-01 / 対象コミット: `4c35009` (Filterカーブの縮尺を修正)
@@ -371,6 +376,44 @@ GUI フリーズ＋二重ライタークラッシュになる**地雷**です。
 ---
 
 ## 8. 推奨対応順
+
+## 9. ⚠️ Master セクションが Bypass スロットに掛かっていない（要判断）
+
+`SamplerEngine::renderNextBlock` は Master HPF/LPF・Out Gain・Limiter を
+**`normalBuffer` にしか適用していません**（`:215-241`）。
+一方 `PluginProcessor::processBlock` の合流順序は次のとおりです。
+
+```
+1. renderNextBlock()
+     normalBuffer      → Master HPF/LPF → Out Gain → Limiter  ★ここで完結
+     fltBypassBuffer   → 素通し
+     fxBypassBuffer    → 素通し
+     bothBypassBuffer  → 素通し
+2. PicoFilter          → buffer(=normal) と fxBypassBuffer に適用
+3. buffer += fltBypassBuffer
+4. FxChain             → buffer に適用
+5. buffer += fxBypassBuffer + bothBypassBuffer
+```
+
+結果として:
+
+| 症状 | 内容 |
+|---|---|
+| Out Gain が効かないスロットがある | FLT または FX を Bypass したスロットは Out Gain を通らない |
+| Master HPF/LPF が効かないスロットがある | 同上 |
+| **Limiter が最終段にいない** | Ceiling を通した後に Filter と FX が掛かるので、出力がクリップしうる。Bypass 音は Limiter を一切通らない |
+
+**あるべき順序**は「全スロットを合流 → Filter/FX → Master HPF/LPF → Out Gain →
+Limiter → 出力」だと思われますが、これは信号経路そのものの変更であり
+既存プリセットの音量・音色が変わります。指示があれば対応します。
+
+**修正案**: `SamplerEngine::renderNextBlock` から Master 区間を切り出して
+`processMaster(buffer)` として公開し、`processBlock` の最後
+（手順5の後）で呼ぶ。ボイスのレンダリングとルーティング自体は無変更で済みます。
+
+---
+
+## 10. 推奨対応順
 
 | # | 項目 | 重大度 | 想定工数 |
 |---|---|---|---|

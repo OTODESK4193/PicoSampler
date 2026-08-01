@@ -208,6 +208,16 @@ void SamplerEngine::renderNextBlock(juce::AudioBuffer<float>& normalBuffer,
         }
     }
 
+    // Master セクションはここでは掛けない。
+    // 全スロット (Bypass 経路を含む) を合流し Filter/FX を通し終えた後、
+    // PluginProcessor::processBlock の最後で processMaster() が呼ばれる。
+}
+
+void SamplerEngine::processMaster(juce::AudioBuffer<float>& buffer, const Params& p) noexcept
+{
+    const int numSamples = buffer.getNumSamples();
+    if (numSamples <= 0 || buffer.getNumChannels() < 1) return;
+
     filterL_HP.setCutoffAndType(p.masterHpfHz, TptSvfFilter::HighPass, p.is24dBFilter);
     filterR_HP.setCutoffAndType(p.masterHpfHz, TptSvfFilter::HighPass, p.is24dBFilter);
     filterL_LP.setCutoffAndType(p.masterLpfHz, TptSvfFilter::LowPass, p.is24dBFilter);
@@ -216,8 +226,8 @@ void SamplerEngine::renderNextBlock(juce::AudioBuffer<float>& normalBuffer,
     limiter.setReleaseMs(p.limReleaseMs);
     const float ceilingLin = juce::Decibels::decibelsToGain(p.ceilingDb);
 
-    float* outL = normalBuffer.getWritePointer(0);
-    float* outR = normalBuffer.getNumChannels() > 1 ? normalBuffer.getWritePointer(1) : outL;
+    float* outL = buffer.getWritePointer(0);
+    float* outR = buffer.getNumChannels() > 1 ? buffer.getWritePointer(1) : outL;
 
     // Out Gain はサンプル単位で補間する (ブロック単位だと段差が聴こえる)
     smMasterGain.setTargetValue(juce::Decibels::decibelsToGain(p.outGainDb));

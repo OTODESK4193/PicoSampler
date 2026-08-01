@@ -311,10 +311,28 @@ void PicoSamplerAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
     //  Rate 等へのMODアサインが永久に無効になる。ArpのMOD元がArp自身の出力ノート
     //  [velocity/note] を参照する設計上、1ブロック分のレイテンシが生じるが
     //  実用上は問題にならない。)
-    arpParams.rateFreeHz = juce::jlimit(1.0f, 30.0f, arpParams.rateFreeHz + modMatrix.get(ModMatrix::DstArpRate) * 15.0f);
-    arpParams.octaves    = juce::jlimit(1, 4, (int)(arpParams.octaves + modMatrix.get(ModMatrix::DstArpOctaves) * 3.0f));
-    arpParams.offset     = juce::jlimit(-12, 12, (int)(arpParams.offset + modMatrix.get(ModMatrix::DstArpOffset) * 12.0f));
-    arpParams.repeat     = juce::jlimit(1, 4, (int)(arpParams.repeat + modMatrix.get(ModMatrix::DstArpRepeat) * 3.0f));
+    const float arpRateMod = modMatrix.get(ModMatrix::DstArpRate);
+
+    arpParams.rateFreeHz = juce::jlimit(1.0f, 30.0f, arpParams.rateFreeHz + arpRateMod * 15.0f);
+
+    // ------------------------------------------------------------------
+    // Sync ON のときは rateFreeHz が一切使われない (calculateStepSamples が
+    // beatsTable[rateSync] しか見ない)。arpSync の既定値は true なので、
+    // 旧実装では初期状態で Arp Rate に MOD をアサインしても完全に無反応だった。
+    // Sync 中は音価インデックスを「遅い→速い」順位の空間でずらす。
+    // ------------------------------------------------------------------
+    if (arpParams.sync && std::abs(arpRateMod) > 0.0001f)
+    {
+        const int rank = Arpeggiator::syncRateToRank(arpParams.rateSync);
+        arpParams.rateSync = Arpeggiator::rankToSyncRate(rank + juce::roundToInt(arpRateMod * 6.0f));
+    }
+
+    // 整数ノブへの MOD は四捨五入する。
+    // (int) の切り捨ては 0 方向へ丸まるため、Offset のような双極パラメータでは
+    // 正負で挙動が非対称になり、Octaves/Repeat では最大値がほぼ到達不能になる。
+    arpParams.octaves    = juce::jlimit(1, 4, juce::roundToInt(arpParams.octaves + modMatrix.get(ModMatrix::DstArpOctaves) * 3.0f));
+    arpParams.offset     = juce::jlimit(-12, 12, juce::roundToInt(arpParams.offset + modMatrix.get(ModMatrix::DstArpOffset) * 12.0f));
+    arpParams.repeat     = juce::jlimit(1, 4, juce::roundToInt(arpParams.repeat + modMatrix.get(ModMatrix::DstArpRepeat) * 3.0f));
     arpParams.accent     = juce::jlimit(-1.0f, 1.0f, arpParams.accent + modMatrix.get(ModMatrix::DstArpAccent));
     arpParams.swing      = juce::jlimit(0.0f, 0.75f, arpParams.swing + modMatrix.get(ModMatrix::DstArpSwing));
     arpParams.gatePct    = juce::jlimit(0.1f, 1.0f, arpParams.gatePct + modMatrix.get(ModMatrix::DstArpGate));
@@ -520,12 +538,25 @@ void PicoSamplerAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
 
     fxChain.process(buffer, fxP);
 
-    // 5. FX Bypass音 (fxBypassBuffer, bothBypassBuffer) をマスター出力に合流
+    // 5. FX Bypass音 (fxBypassBuffer, bothBypassBuffer) を合流
     for (int ch = 0; ch < numChannels; ++ch)
     {
         buffer.addFrom(ch, 0, fxBypassBuffer, ch, 0, numSamples);
         buffer.addFrom(ch, 0, bothBypassBuffer, ch, 0, numSamples);
     }
+
+    // ------------------------------------------------------------------
+    // 6. Master セクション (Master HPF → LPF → Out Gain → Limiter)
+    //
+    // 全スロットが合流し Filter/FX も通し終えた「本当の最終段」で掛ける。
+    // v1.1.0 以前は SamplerEngine::renderNextBlock の中で normalBuffer に
+    // だけ適用していたため、
+    //   ・FLT / FX を Bypass したスロットには Out Gain も Master HPF/LPF も
+    //     Limiter も一切掛からない
+    //   ・Limiter の後段に Filter と FX が居るので出力保護にならない
+    // という状態だった。
+    // ------------------------------------------------------------------
+    samplerEngine.processMaster(buffer, engineParams);
 }
 
 void PicoSamplerAudioProcessor::requestLoadFile(int slotIdx, const juce::File& file, bool autoSlice)

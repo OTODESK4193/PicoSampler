@@ -80,10 +80,14 @@ void Arpeggiator::process(juce::MidiBuffer& midi, int numSamples, const Params& 
         prevSyncState = p.sync;
         prevRateFree = p.rateFreeHz;
         prevRateSync = p.rateSync;
-        if (stepSampleCounter > stepSamples)
-        {
-            stepSampleCounter = 0;
-        }
+
+        // 新しいステップ長より長く待っている場合だけ切り詰める。
+        //
+        // 旧実装はここで 0 にしていたため「その場で即発音」していた。
+        // Rate に LFO をアサインすると値がブロックごとに変わり、
+        // 速くなる方向へ動くたびにこの分岐へ入って連打状態になっていた。
+        // 上限を新ステップ長に丸めるだけなら、リズムを崩さずに追従できる。
+        stepSampleCounter = juce::jmin(stepSampleCounter, stepSamples);
     }
 
     int samplesProcessed = 0;
@@ -345,6 +349,29 @@ void Arpeggiator::rebuildSequence(int pattern, int octaves, int offset, int key,
             playSequence[idx].velocity = juce::jlimit(0.05f, 1.0f, playSequence[idx].velocity * factor);
         }
     }
+}
+
+namespace
+{
+    // 音価の長い順 (遅い→速い) に並べた getSyncRateNames() のインデックス。
+    //   1/1(4.0) 1/2(2.0) 1/4.(1.5) 1/2T(1.333) 1/4(1.0) 1/8.(0.75) 1/4T(0.667)
+    //   1/8(0.5) 1/16.(0.375) 1/8T(0.333) 1/16(0.25) 1/16T(0.167) 1/32(0.125)
+    constexpr int kSyncOrderSlowToFast[Arpeggiator::kNumSyncRates] =
+        { 0, 1, 4, 2, 3, 7, 5, 6, 10, 8, 9, 11, 12 };
+}
+
+int Arpeggiator::syncRateToRank(int idx) noexcept
+{
+    idx = juce::jlimit(0, kNumSyncRates - 1, idx);
+    for (int r = 0; r < kNumSyncRates; ++r)
+        if (kSyncOrderSlowToFast[r] == idx)
+            return r;
+    return 0;
+}
+
+int Arpeggiator::rankToSyncRate(int rank) noexcept
+{
+    return kSyncOrderSlowToFast[juce::jlimit(0, kNumSyncRates - 1, rank)];
 }
 
 int Arpeggiator::calculateStepSamples(const Params& p, int) const noexcept

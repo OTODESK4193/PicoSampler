@@ -43,6 +43,20 @@ public:
         return { "Gate %", "1/32", "1/16", "1/8", "1/4" };
     }
 
+    static constexpr int kNumSyncRates = 13;
+
+    // ------------------------------------------------------------------
+    // Sync 音価インデックス ⇔ 「遅い→速い」順位 の相互変換。
+    //
+    // getSyncRateNames() の並びは「ストレート / 付点 / 3連」でグループ化
+    // されており、実際の音価の長さ順ではない
+    // (例: index 3 = 1/4 は 1拍、index 4 = 1/4. は 1.5拍で index 3 より遅い)。
+    // そのため MOD で「速く / 遅く」を直感的に動かすには、いったん
+    // 音価順の順位へ変換してから増減させる必要がある。
+    // ------------------------------------------------------------------
+    static int syncRateToRank(int idx) noexcept;
+    static int rankToSyncRate(int rank) noexcept;
+
     struct Params
     {
         bool enable = false;

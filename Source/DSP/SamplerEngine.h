@@ -125,6 +125,21 @@ public:
     }
 
     void handleMidi(const juce::MidiBuffer& midi, const Params& p) noexcept;
+
+    // ------------------------------------------------------------------
+    // Master セクション (Master HPF → LPF → Out Gain → Limiter)。
+    //
+    // v1.1.0 以前は renderNextBlock() の中で normalBuffer にだけ適用していた。
+    // その結果、FLT BYPASS / FX BYPASS を有効にしたスロットには
+    // Out Gain も Master HPF/LPF も Limiter も一切掛からず、さらに
+    // Limiter が Filter/FX より前にいたため最終段の保護になっていなかった。
+    //
+    // 現在は全スロットを合流し Filter/FX を通し終えた後、
+    // processBlock の最後でこれを呼ぶ。
+    //   全スロット合流 → Filter → FX → Master HPF/LPF → Out Gain → Limiter → 出力
+    // ------------------------------------------------------------------
+    void processMaster(juce::AudioBuffer<float>& buffer, const Params& p) noexcept;
+
     void renderNextBlock(juce::AudioBuffer<float>& normalBuffer,
                          juce::AudioBuffer<float>& fltBypassBuffer,
                          juce::AudioBuffer<float>& fxBypassBuffer,
