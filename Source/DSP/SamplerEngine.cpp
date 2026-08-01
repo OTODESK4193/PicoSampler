@@ -218,7 +218,9 @@ void SamplerEngine::renderNextBlock(juce::AudioBuffer<float>& normalBuffer,
 
     float* outL = normalBuffer.getWritePointer(0);
     float* outR = normalBuffer.getNumChannels() > 1 ? normalBuffer.getWritePointer(1) : outL;
-    const float masterGain = juce::Decibels::decibelsToGain(p.outGainDb);
+
+    // Out Gain はサンプル単位で補間する (ブロック単位だと段差が聴こえる)
+    smMasterGain.setTargetValue(juce::Decibels::decibelsToGain(p.outGainDb));
 
     for (int s = 0; s < numSamples; ++s)
     {
@@ -228,6 +230,7 @@ void SamplerEngine::renderNextBlock(juce::AudioBuffer<float>& normalBuffer,
         float r = filterR_HP.processSample(outR[s]);
         r = filterR_LP.processSample(r);
 
+        const float masterGain = smMasterGain.getNextValue();
         l *= masterGain;
         r *= masterGain;
 

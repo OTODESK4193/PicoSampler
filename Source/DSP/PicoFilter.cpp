@@ -39,6 +39,11 @@ void PicoFilter::getVowelFreqs(float formant01, float cutoffHz, float sampleRate
 void PicoFilter::prepare(double sampleRate, int) noexcept
 {
     sr = sampleRate > 1000.0 ? sampleRate : 44100.0;
+
+    // 時定数 12ms の一次ローパス。ノブを回した時に段差が聴こえず、
+    // かつ LFO の変調にはきちんと追従する妥協点。
+    smCoef = 1.0f - std::exp(-1.0f / (0.012f * (float)sr));
+
     ladderL.prepare(sr);
     ladderR.prepare(sr);
     reset();
@@ -56,30 +61,68 @@ void PicoFilter::reset() noexcept
     apPrev[0] = apPrev[1] = 0.0f;
     ladderL.reset();
     ladderR.reset();
+
+    // 次のブロックで現在のパラメータ値へスナップさせる
+    smInitialised = false;
 }
 
 void PicoFilter::process(juce::AudioBuffer<float>& buffer, const Params& p) noexcept
 {
-    if (!p.enable) return;
+    if (!p.enable)
+    {
+        // OFF の間もスムーザは現在値へ張り付かせておく。
+        // こうしないと OFF 中に動かしたノブの分だけ ON 直後に滑って聴こえる。
+        smCutoff = p.cutoff;
+        smRes = p.res;
+        smFormant = p.formant;
+        smCombMix = p.combMix;
+        smInitialised = true;
+        return;
+    }
 
     const int numSamples = buffer.getNumSamples();
     const int numCh = buffer.getNumChannels();
     float* channelL = buffer.getWritePointer(0);
     float* channelR = numCh > 1 ? buffer.getWritePointer(1) : channelL;
 
+    if (!smInitialised)
+    {
+        smCutoff = p.cutoff;
+        smRes = p.res;
+        smFormant = p.formant;
+        smCombMix = p.combMix;
+        smInitialised = true;
+    }
+
+    // サンプル単位で平滑化した値を入れる作業用コピー。
+    // type / slope24 / enable は離散値なので p のまま使う。
+    Params sp = p;
+
     // LadderLPF はカットオフ / レゾナンスをブロック先頭で一度だけ設定する
+    // (setParameters が重いため)。平滑化済みの値を渡すので、
+    // ノブを急に回しても段差ではなく滑らかな軌跡をたどる。
     if (p.type == LadderLPF)
     {
-        const float resN = res01(p.res);
-        ladderL.setParameters(juce::jlimit(20.0f, 20000.0f, p.cutoff), resN);
-        ladderR.setParameters(juce::jlimit(20.0f, 20000.0f, p.cutoff), resN);
+        const float resN = res01(smRes);
+        ladderL.setParameters(juce::jlimit(20.0f, 20000.0f, smCutoff), resN);
+        ladderR.setParameters(juce::jlimit(20.0f, 20000.0f, smCutoff), resN);
     }
 
     for (int s = 0; s < numSamples; ++s)
     {
-        channelL[s] = processSample(0, channelL[s], p);
+        smCutoff  += smCoef * (p.cutoff  - smCutoff);
+        smRes     += smCoef * (p.res     - smRes);
+        smFormant += smCoef * (p.formant - smFormant);
+        smCombMix += smCoef * (p.combMix - smCombMix);
+
+        sp.cutoff  = smCutoff;
+        sp.res     = smRes;
+        sp.formant = smFormant;
+        sp.combMix = smCombMix;
+
+        channelL[s] = processSample(0, channelL[s], sp);
         if (numCh > 1)
-            channelR[s] = processSample(1, channelR[s], p);
+            channelR[s] = processSample(1, channelR[s], sp);
     }
 }
 

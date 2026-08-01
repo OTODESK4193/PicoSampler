@@ -112,6 +112,14 @@ void PicoVoice::startNote(int midiNoteNumber, float noteVelocity, int slotIdx,
         // L-Start/L-End 間のループに入る仕様。Legato で音を継続する場合は
         // 既にループに入っているかもしれないため状態を維持する。
         hasEnteredLoop = false;
+
+        // ゲインは Note-On で現在値へスナップさせる。
+        // ここを 0 から滑らせると Attack 0 のワンショットで
+        // アタックが鈍ってしまう。
+        const float pan0 = juce::jlimit(-1.0f, 1.0f, p.pan);
+        const float g0   = velocity * juce::Decibels::decibelsToGain(p.slotGainDb);
+        smGainL.setCurrentAndTargetValue(std::sqrt(0.5f * (1.0f - pan0)) * g0);
+        smGainR.setCurrentAndTargetValue(std::sqrt(0.5f * (1.0f + pan0)) * g0);
     }
 }
 
@@ -251,8 +259,9 @@ void PicoVoice::renderNextBlock(juce::AudioBuffer<float>& outputBuffer, int star
     };
 
     const float pan = juce::jlimit(-1.0f, 1.0f, p.pan);
-    const float gainL = std::sqrt(0.5f * (1.0f - pan)) * velocity * juce::Decibels::decibelsToGain(p.slotGainDb);
-    const float gainR = std::sqrt(0.5f * (1.0f + pan)) * velocity * juce::Decibels::decibelsToGain(p.slotGainDb);
+    const float slotG = velocity * juce::Decibels::decibelsToGain(p.slotGainDb);
+    smGainL.setTargetValue(std::sqrt(0.5f * (1.0f - pan)) * slotG);
+    smGainR.setTargetValue(std::sqrt(0.5f * (1.0f + pan)) * slotG);
 
     const float blockSec = 1.0f / (float)sampleRate;
     float* outL = outputBuffer.getWritePointer(0, startSample);
@@ -463,8 +472,20 @@ void PicoVoice::renderNextBlock(juce::AudioBuffer<float>& outputBuffer, int star
             sR *= edgeGain;
         }
 
-        outL[s] += sL * gainL * envValue;
-        outR[s] += sR * gainR * envValue;
+        const float gL = smGainL.getNextValue();
+        const float gR = smGainR.getNextValue();
+
+        if (outL == outR)
+        {
+            // モノ出力バスでは outL と outR が同じポインタを指す。
+            // 2回加算すると音量が2倍になるため、L/R をミックスして1回だけ足す。
+            outL[s] += (sL * gL + sR * gR) * 0.5f * envValue;
+        }
+        else
+        {
+            outL[s] += sL * gL * envValue;
+            outR[s] += sR * gR * envValue;
+        }
 
         readPosition += pitchInc;
     }

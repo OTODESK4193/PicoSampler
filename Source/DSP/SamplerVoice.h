@@ -55,7 +55,16 @@ public:
     PicoVoice() = default;
     ~PicoVoice() = default;
 
-    void prepare(double sr) noexcept { sampleRate = sr > 1000.0 ? sr : 44100.0; }
+    void prepare(double sr) noexcept
+    {
+        sampleRate = sr > 1000.0 ? sr : 44100.0;
+
+        // Pan / Slot Gain のジッパーノイズ対策。
+        // Pan は MOD のアサイン先でもあるため、ブロック単位のままだと
+        // LFO をかけた時に定位が階段状に動いてしまう。
+        smGainL.reset(sampleRate, 0.01);
+        smGainR.reset(sampleRate, 0.01);
+    }
 
     void startNote(int midiNoteNumber, float noteVelocity, int slotIdx,
                    const SampleSlot& slot, const SamplerVoiceParams& p) noexcept;
@@ -119,6 +128,11 @@ private:
     // ------------------------------------------------------------------
     bool useAnchor = false;
     int activeAnchorSemis = 0;
+
+    // Pan / Slot Gain / Velocity をまとめた最終ゲイン (L/R)。
+    // Note-On では現在値へスナップさせる (立ち上がりを鈍らせないため)。
+    juce::LinearSmoothedValue<float> smGainL { 0.0f };
+    juce::LinearSmoothedValue<float> smGainR { 0.0f };
 
     EnvStage envStage = EnvStage::Idle;
     float envValue = 0.0f;

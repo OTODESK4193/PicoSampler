@@ -237,9 +237,12 @@ void PicoSamplerAudioProcessor::prepareToPlay(double sampleRate, int samplesPerB
     fxChain.prepareToPlay(sampleRate);
     filterAdsr.setSampleRate(sampleRate);
 
-    smoothedCutoff.reset(sampleRate, 0.02); // 20ms スムージングランプ
-    smoothedReso.reset(sampleRate, 0.02);
-    smoothedGain.reset(sampleRate, 0.02);
+    // ルーティング用バッファを先に確保しておく (processBlock で確保しないため)。
+    // ステレオ固定で取っておけば、モノ構成でも余分に持つだけで足りなくならない。
+    const int maxBlock = juce::jmax(1, samplesPerBlock);
+    fltBypassBuffer.setSize(2, maxBlock, false, true, false);
+    fxBypassBuffer.setSize(2, maxBlock, false, true, false);
+    bothBypassBuffer.setSize(2, maxBlock, false, true, false);
 }
 
 void PicoSamplerAudioProcessor::releaseResources() {}
@@ -440,9 +443,13 @@ void PicoSamplerAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
     guiFilterEnvValue.store(envVal, std::memory_order_relaxed);
 
     const int numChannels = buffer.getNumChannels();
-    juce::AudioBuffer<float> fltBypassBuffer(numChannels, numSamples);
-    juce::AudioBuffer<float> fxBypassBuffer(numChannels, numSamples);
-    juce::AudioBuffer<float> bothBypassBuffer(numChannels, numSamples);
+
+    // メンバのバッファを使い回す。avoidReallocating=true なので、
+    // prepareToPlay で確保した容量に収まる限りヒープ確保は起きない。
+    // (ホストが宣言より大きいブロックを送ってきた時だけ再確保される)
+    fltBypassBuffer.setSize(numChannels, numSamples, false, false, true);
+    fxBypassBuffer.setSize(numChannels, numSamples, false, false, true);
+    bothBypassBuffer.setSize(numChannels, numSamples, false, false, true);
 
     fltBypassBuffer.clear();
     fxBypassBuffer.clear();
@@ -462,14 +469,11 @@ void PicoSamplerAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
         const float octaveShift = envVal * envAmt * 4.0f + modMatrix.get(ModMatrix::DstFltCutoff) * 4.0f;
         targetCutoff = baseCutoff * std::pow(2.0f, octaveShift);
     }
-    targetCutoff = juce::jlimit(20.0f, 20000.0f, targetCutoff);
-    smoothedCutoff.setTargetValue(targetCutoff);
-
-    const float targetReso = juce::jlimit(0.1f, 10.0f, filterParamsCache.res->load() + modMatrix.get(ModMatrix::DstFltReso) * 5.0f);
-    smoothedReso.setTargetValue(targetReso);
-
-    fltParams.cutoff  = smoothedCutoff.getNextValue();
-    fltParams.res     = smoothedReso.getNextValue();
+    // 目標値をそのまま渡す。平滑化は PicoFilter 内でサンプル単位に行う
+    // (旧実装はここで LinearSmoothedValue をブロックに1回しか進めておらず、
+    //  実効スムージング時間がバッファサイズ倍に伸びてしまっていた)。
+    fltParams.cutoff  = juce::jlimit(20.0f, 20000.0f, targetCutoff);
+    fltParams.res     = juce::jlimit(0.1f, 10.0f, filterParamsCache.res->load() + modMatrix.get(ModMatrix::DstFltReso) * 5.0f);
     fltParams.type    = (int)filterParamsCache.type->load();
     fltParams.slope24 = filterParamsCache.slope->load() > 0.5f;
     fltParams.formant = juce::jlimit(0.0f, 1.0f, filterParamsCache.formant->load() + modMatrix.get(ModMatrix::DstFltFormant));

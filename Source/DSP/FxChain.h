@@ -726,6 +726,14 @@ public:
         delay.prepareToPlay(sr);
         freeze.prepareToPlay(sr);
         reverb.prepareToPlay(sr);
+
+        // 時定数 12ms。ノブ操作でも MOD でも段差が出ない程度に速く、
+        // かつ可聴なジッパーが残らない値。
+        smCoef = 1.0f - std::exp(-1.0f / (0.012f * (float)sr));
+        smInitialised = false;
+
+        satHpX1L = satHpY1L = 0.0f;
+        satHpX1R = satHpY1R = 0.0f;
     }
 
     void process(juce::AudioBuffer<float>& buffer, const Params& p) noexcept
@@ -734,38 +742,69 @@ public:
         float* channelL = buffer.getWritePointer(0);
         float* channelR = buffer.getNumChannels() > 1 ? buffer.getWritePointer(1) : channelL;
 
+        if (!smInitialised)
+        {
+            snapSmoothed(p);
+            smInitialised = true;
+        }
+
+        // ------------------------------------------------------------------
+        // Saturation 前段ハイパス (Sat Pre-HPF)。
+        // 係数計算に exp/除算が入るのでブロック単位で更新する。
+        // 既定の 20Hz 付近では実質バイパス扱いにして無駄な処理を省く。
+        // ------------------------------------------------------------------
+        const float preFc = juce::jlimit(20.0f, 2000.0f, sm.satPreHz);
+        const float rc    = 1.0f / (2.0f * juce::MathConstants<float>::pi * preFc);
+        const float dt    = 1.0f / (float)sr;
+        const float hpA   = rc / (rc + dt);
+        const bool  preHpfActive = (preFc > 25.0f);
+
         for (int s = 0; s < numSamples; ++s)
         {
+            advanceSmoothed(p);
+
             float l = channelL[s];
             float r = channelR[s];
 
             for (int slot = 0; slot < kNumSlots; ++slot)
             {
                 const int type = p.type[(size_t)slot];
-                const float amt = p.amount[(size_t)slot];
+                const float amt = sm.amount[(size_t)slot];
 
                 switch (type)
                 {
                 case Saturation:
-                    if (amt > 0.0f)
+                    // amount は Saturation では ON/OFF ゲートとして働く仕様。
+                    // 平滑値ではなく生値で判定して、切り替えを鈍らせない。
+                    if (p.amount[(size_t)slot] > 0.0f)
                     {
                         const int algoType = satAlgoToType(p.satAlgo);
-                        const float trimG = juce::Decibels::decibelsToGain(p.satTrimDb);
-                        l = gfx::processSaturationSampleADAA(l, algoType, p.satDrive, satStateL) * trimG;
-                        r = gfx::processSaturationSampleADAA(r, algoType, p.satDrive, satStateR) * trimG;
+                        const float trimG = juce::Decibels::decibelsToGain(sm.satTrimDb);
+
+                        float satInL = l;
+                        float satInR = r;
+
+                        if (preHpfActive)
+                        {
+                            satHpY1L = hpA * (satHpY1L + l - satHpX1L); satHpX1L = l; satInL = satHpY1L;
+                            satHpY1R = hpA * (satHpY1R + r - satHpX1R); satHpX1R = r; satInR = satHpY1R;
+                        }
+
+                        l = gfx::processSaturationSampleADAA(satInL, algoType, sm.satDrive, satStateL) * trimG;
+                        r = gfx::processSaturationSampleADAA(satInR, algoType, sm.satDrive, satStateR) * trimG;
                     }
                     break;
                 case Chorus:
-                    chorus.process(l, r, amt, p.choRate, p.choDepth, p.choWidth);
+                    chorus.process(l, r, amt, sm.choRate, sm.choDepth, sm.choWidth);
                     break;
                 case Delay:
-                    delay.process(l, r, amt, p.bpm, delayTimeToBeats(p.dlyTime), p.dlyFeedback, p.dlyDuck, p.dlyDamp);
+                    delay.process(l, r, amt, p.bpm, delayTimeToBeats(p.dlyTime), sm.dlyFeedback, sm.dlyDuck, sm.dlyDamp);
                     break;
                 case Freeze:
-                    freeze.process(l, r, amt, p.frzSize, p.frzFeedback, p.frzDamp);
+                    freeze.process(l, r, amt, sm.frzSize, sm.frzFeedback, sm.frzDamp);
                     break;
                 case Reverb:
-                    reverb.process(l, r, amt, p.revDecay, p.revShimmer, p.revDamp, p.revMod);
+                    reverb.process(l, r, amt, sm.revDecay, sm.revShimmer, sm.revDamp, sm.revMod);
                     break;
                 default:
                     break;
@@ -782,10 +821,89 @@ public:
     }
 
 private:
+    // ------------------------------------------------------------------
+    // パラメータスムージング。
+    // process() はサンプル単位ループだが、旧実装は Params の値を毎サンプル
+    // そのまま使っていたため、ノブや MOD の変化がブロック境界の段差として
+    // 現れていた (特に FX Amount / Chorus Depth / Sat Drive)。
+    // Delay / Freeze / Reverb は内部にも平滑化を持つが、二重に掛かっても
+    // 追従がわずかに緩むだけで害はない。
+    //
+    // type / satAlgo / dlyTime は離散値なので平滑化しない。
+    // ------------------------------------------------------------------
+    struct SmoothedParams
+    {
+        std::array<float, kNumSlots> amount {};
+
+        float satDrive = 2.0f;
+        float satPreHz = 20.0f;
+        float satTrimDb = 0.0f;
+
+        float choRate = 0.8f;
+        float choDepth = 0.5f;
+        float choWidth = 1.0f;
+
+        float dlyFeedback = 0.45f;
+        float dlyDuck = 0.5f;
+        float dlyDamp = 0.3f;
+
+        float frzSize = 100.0f;
+        float frzFeedback = 0.9f;
+        float frzDamp = 0.2f;
+
+        float revDecay = 0.7f;
+        float revShimmer = 0.5f;
+        float revDamp = 0.3f;
+        float revMod = 0.4f;
+    };
+
+    void snapSmoothed(const Params& p) noexcept
+    {
+        for (int i = 0; i < kNumSlots; ++i) sm.amount[(size_t)i] = p.amount[(size_t)i];
+        sm.satDrive = p.satDrive;   sm.satPreHz = p.satPreHz;   sm.satTrimDb = p.satTrimDb;
+        sm.choRate = p.choRate;     sm.choDepth = p.choDepth;   sm.choWidth = p.choWidth;
+        sm.dlyFeedback = p.dlyFeedback; sm.dlyDuck = p.dlyDuck; sm.dlyDamp = p.dlyDamp;
+        sm.frzSize = p.frzSize;     sm.frzFeedback = p.frzFeedback; sm.frzDamp = p.frzDamp;
+        sm.revDecay = p.revDecay;   sm.revShimmer = p.revShimmer;
+        sm.revDamp = p.revDamp;     sm.revMod = p.revMod;
+    }
+
+    inline void advanceSmoothed(const Params& p) noexcept
+    {
+        const float c = smCoef;
+        for (int i = 0; i < kNumSlots; ++i)
+            sm.amount[(size_t)i] += c * (p.amount[(size_t)i] - sm.amount[(size_t)i]);
+
+        sm.satDrive    += c * (p.satDrive    - sm.satDrive);
+        sm.satPreHz    += c * (p.satPreHz    - sm.satPreHz);
+        sm.satTrimDb   += c * (p.satTrimDb   - sm.satTrimDb);
+        sm.choRate     += c * (p.choRate     - sm.choRate);
+        sm.choDepth    += c * (p.choDepth    - sm.choDepth);
+        sm.choWidth    += c * (p.choWidth    - sm.choWidth);
+        sm.dlyFeedback += c * (p.dlyFeedback - sm.dlyFeedback);
+        sm.dlyDuck     += c * (p.dlyDuck     - sm.dlyDuck);
+        sm.dlyDamp     += c * (p.dlyDamp     - sm.dlyDamp);
+        sm.frzSize     += c * (p.frzSize     - sm.frzSize);
+        sm.frzFeedback += c * (p.frzFeedback - sm.frzFeedback);
+        sm.frzDamp     += c * (p.frzDamp     - sm.frzDamp);
+        sm.revDecay    += c * (p.revDecay    - sm.revDecay);
+        sm.revShimmer  += c * (p.revShimmer  - sm.revShimmer);
+        sm.revDamp     += c * (p.revDamp     - sm.revDamp);
+        sm.revMod      += c * (p.revMod      - sm.revMod);
+    }
+
     double sr = 44100.0;
     gfx::SaturationState satStateL, satStateR;
     gfx::EnsembleChorus chorus;
     gfx::TapeDelay delay;
     gfx::FreezeSmear freeze;
     gfx::ShimmerReverb reverb;
+
+    SmoothedParams sm;
+    bool  smInitialised = false;
+    float smCoef = 0.0015f;
+
+    // Saturation 前段の1次ハイパス (Sat Pre-HPF) 状態
+    float satHpX1L = 0.0f, satHpY1L = 0.0f;
+    float satHpX1R = 0.0f, satHpY1R = 0.0f;
 };

@@ -90,6 +90,12 @@ public:
         filterL_LP.prepare(sampleRate);
         filterR_LP.prepare(sampleRate);
         limiter.prepare(sampleRate);
+
+        // Master Out Gain のジッパーノイズ対策。ノブは -36..+12dB と
+        // レンジが広く、ブロック単位で切り替えると段差が耳に付く。
+        // (Master HPF/LPF は TptSvfFilter が内部で係数 g をサンプル単位に
+        //  平滑化しているため、ここでの対応は不要)
+        smMasterGain.reset(sampleRate, 0.02);
     }
 
     void reset() noexcept
@@ -142,6 +148,7 @@ private:
     TptSvfFilter filterL_HP, filterR_HP;
     TptSvfFilter filterL_LP, filterR_LP;
     BrickLimiter limiter;
+    juce::LinearSmoothedValue<float> smMasterGain { 1.0f };
     juce::Random rng;
 
     struct HeldNote { int note; float velocity; };

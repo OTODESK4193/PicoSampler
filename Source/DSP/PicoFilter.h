@@ -73,6 +73,23 @@ private:
 
     double sr = 44100.0;
 
+    // ------------------------------------------------------------------
+    // パラメータスムージング (ジッパーノイズ対策)
+    //
+    // 旧実装は PluginProcessor 側の juce::LinearSmoothedValue を
+    // 「1ブロックにつき getNextValue() 1回」しか進めていなかったため、
+    // 実効スムージング時間が 20ms × バッファサイズ
+    // (512サンプル設定なら約10秒) になり、Cutoff ノブがほとんど追従しなかった。
+    // ここでサンプル単位に平滑化する形へ移し、ノブ操作にも MOD にも
+    // 正しい速度で追従させる。
+    // ------------------------------------------------------------------
+    float smCoef    = 0.0015f;   // prepare() でサンプルレートから算出
+    float smCutoff  = 2000.0f;
+    float smRes     = 0.707f;
+    float smFormant = 0.0f;
+    float smCombMix = 0.5f;
+    bool  smInitialised = false;
+
     // --- SVF 状態変数 (LPF/HPF/BPF/Notch, 2段まで) ---
     float svf_s1[2][2] = {};
     float svf_s2[2][2] = {};

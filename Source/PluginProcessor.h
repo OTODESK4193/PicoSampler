@@ -213,9 +213,20 @@ private:
 
     void initializeParameterCache();
 
-    juce::LinearSmoothedValue<float> smoothedCutoff { 2000.0f };
-    juce::LinearSmoothedValue<float> smoothedReso   { 0.707f };
-    juce::LinearSmoothedValue<float> smoothedGain   { 1.0f };
+    // ------------------------------------------------------------------
+    // ルーティング用の作業バッファ。
+    // 旧実装は processBlock 内でローカル変数として毎ブロック3本
+    // new/delete していた。オーディオスレッドでのヒープ確保は
+    // ロックを伴いうるためドロップアウトの原因になる。
+    // prepareToPlay で確保し、以降は使い回す。
+    // ------------------------------------------------------------------
+    juce::AudioBuffer<float> fltBypassBuffer;
+    juce::AudioBuffer<float> fxBypassBuffer;
+    juce::AudioBuffer<float> bothBypassBuffer;
+
+    // NOTE: Cutoff / Reso のスムージングは PicoFilter 側 (サンプル単位) へ移動した。
+    //       Master Out Gain は SamplerEngine 側で平滑化している。
+    //       Master HPF/LPF は TptSvfFilter が内部で係数を平滑化している。
 
     // ローダースレッドへ渡す仕事。
     // Reanalyze は 49 本のアンカーバッファを作り直すため数秒かかる。
