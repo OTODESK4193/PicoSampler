@@ -361,3 +361,19 @@ MigrationBackup/
 
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
+
+# ============================================================================
+#  PicoSampler ビルド生成物
+#
+#  out/build/x64-Release/ が Visual Studio の CMake 統合 (Ninja) の出力先。
+#  CMakeSettings.json の buildRoot = ${projectDir}\out\build\${name} で決まる。
+#  完成した VST3 は下記に出る:
+#    out/build/x64-Release/PicoSampler_artefacts/Release/VST3/PicoSampler.vst3
+#
+#  build/ は VS ジェネレータで手動構成した場合の出力先。
+#  古いビルドが残っていると DAW がそちらを掴んで
+#  「修正が反映されない」原因になるので追跡しない。
+# ============================================================================
+/out/
+/build/
+/install/
