@@ -224,6 +224,22 @@ juce::AudioProcessorValueTreeState::ParameterLayout PicoSamplerAudioProcessor::c
         params.push_back(std::make_unique<juce::AudioParameterBool>("mod" + s + "Uni", "Mod " + s + " Uni", false));
     }
 
+    // ------------------------------------------------------------------
+    // Amp ADSR Link
+    //
+    // 旧実装では MainPanel の bool メンバでしかなく、
+    //   ・エディタを閉じて開き直すと解除される
+    //   ・プリセットにも DAW プロジェクトにも保存されない
+    //   ・ベース値をコピーするだけで MOD は S1 にしか掛からない
+    // という状態だった。パラメータ化して保存させ、
+    // processBlock 側でも「S1 の Amp ADSR 変調を全スロットへ配る」ようにする。
+    //
+    // 【重要】 新しいパラメータは必ずここ (末尾) へ追加すること。
+    // 途中に挿入すると VST3 のパラメータ索引がずれ、
+    // 既存プロジェクトのオートメーションが別のノブに繋がってしまう。
+    // ------------------------------------------------------------------
+    params.push_back(std::make_unique<juce::AudioParameterBool>("envLink", "Amp Env Link", false));
+
     return { params.begin(), params.end() };
 }
 
@@ -337,12 +353,15 @@ void PicoSamplerAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
     arpParams.swing      = juce::jlimit(0.0f, 0.75f, arpParams.swing + modMatrix.get(ModMatrix::DstArpSwing));
     arpParams.gatePct    = juce::jlimit(0.1f, 1.0f, arpParams.gatePct + modMatrix.get(ModMatrix::DstArpGate));
 
-    juce::MidiBuffer processedMidi;
+    // ARP はブロック全体を一度に処理して、サンプル位置つきの MIDI を生成する。
+    // (ステップの発火位置を保ったまま、後段のサブブロックループへ配る)
+    processedMidi.clear();
     if (arpParams.enable)
     {
         processedMidi.addEvents(midiMessages, 0, numSamples, 0);
         arpeggiator.process(processedMidi, numSamples, arpParams);
     }
+    const juce::MidiBuffer& activeMidi = arpParams.enable ? processedMidi : midiMessages;
 
     // 2. ModMatrix パラメータ取得 ＆ 計算
     ModMatrix::Params modParams;
@@ -370,180 +389,223 @@ void PicoSamplerAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
         modParams.slot[(size_t)i].uni = modParamsCache.modUni[(size_t)i]->load() > 0.5f;
     }
 
-    const auto& activeMidiForMod = arpParams.enable ? processedMidi : midiMessages;
-    modMatrix.handleMidi(activeMidiForMod);
-    modMatrix.processBlock(numSamples, modParams);
-
-    // 3. サンプラーエンジンパラメータ構築 (Mod変調含む)
-    const float rawMasterPitch = pMasterPitch->load() + modMatrix.get(ModMatrix::DstMasterPitch) * 24.0f;
     const int keyVal = juce::roundToInt(arpParamsCache.key->load());
     const int scaleVal = juce::roundToInt(arpParamsCache.scale->load());
-
-    float effectiveMasterPitch = rawMasterPitch;
-    if (scaleVal > 0)
-    {
-        const int rootNote = (keyVal >= 1) ? (keyVal - 1) : 0;
-        const float quantizedTarget = ScaleQuantizer::quantize(60.0f + (float)rootNote + rawMasterPitch, rootNote, scaleVal);
-        effectiveMasterPitch = quantizedTarget - (60.0f + (float)rootNote);
-    }
-
-    for (int i = 0; i < 8; ++i)
-    {
-        const juce::String s = juce::String(i);
-        auto& sp = engineParams.slotParams[(size_t)i];
-
-        // Amp ADSR: DstS1AmpAttack.. は S1..S8 の順で4個ずつ並んでいる
-        const int ampDstBase = ModMatrix::DstS1AmpAttack + i * 4;
-        sp.attack  = juce::jlimit(0.001f, 5.0f,  slotParamsCache[(size_t)i].attack->load()  + modMatrix.get(ampDstBase + 0) * 2.5f);
-        sp.decay   = juce::jlimit(0.001f, 5.0f,  slotParamsCache[(size_t)i].decay->load()   + modMatrix.get(ampDstBase + 1) * 2.5f);
-        sp.sustain = juce::jlimit(0.0f,   1.0f,  slotParamsCache[(size_t)i].sustain->load() + modMatrix.get(ampDstBase + 2));
-        sp.release = juce::jlimit(0.001f, 10.0f, slotParamsCache[(size_t)i].release->load() + modMatrix.get(ampDstBase + 3) * 5.0f);
-
-        sp.octave   = juce::roundToInt(slotParamsCache[(size_t)i].octave->load());
-        sp.semitone = juce::roundToInt(slotParamsCache[(size_t)i].pitchSt->load()) + (int)std::round(effectiveMasterPitch);
-        sp.fineTune = slotParamsCache[(size_t)i].fineTune->load() + (effectiveMasterPitch - std::round(effectiveMasterPitch)) * 100.0f;
-        // Pan もモジュレーション対象 (Dst = S1/Pan .. S8/Pan)。
-        // パラメータは -1..+1 なので、変調量もそのままのスケールで加算する。
-        sp.pan      = juce::jlimit(-1.0f, 1.0f,
-                          slotParamsCache[(size_t)i].pan->load()
-                        + modMatrix.get(ModMatrix::DstS1Pan + i));
-        sp.slotGainDb = slotParamsCache[(size_t)i].slotGain->load();
-
-        const int dstBase = ModMatrix::DstS1Start + i * 5;
-        sp.sampleStartRatio = juce::jlimit(0.0f, 1.0f, slotParamsCache[(size_t)i].sampleStart->load() + modMatrix.get(dstBase + 0));
-        sp.sampleEndRatio   = juce::jlimit(0.01f, 1.0f, slotParamsCache[(size_t)i].sampleEnd->load() + modMatrix.get(dstBase + 1));
-        sp.loopStartRatio   = juce::jlimit(0.0f, 1.0f, slotParamsCache[(size_t)i].loopStart->load() + modMatrix.get(dstBase + 2));
-        sp.loopEndRatio     = juce::jlimit(0.01f, 1.0f, slotParamsCache[(size_t)i].loopEnd->load() + modMatrix.get(dstBase + 3));
-        sp.crossfadeRatio   = juce::jlimit(0.0f, 0.5f, slotParamsCache[(size_t)i].crossfade->load() + modMatrix.get(dstBase + 4));
-
-        sp.edgeFadeInMs  = slotParamsCache[(size_t)i].edgeFadeIn  != nullptr ? slotParamsCache[(size_t)i].edgeFadeIn->load()  : 2.0f;
-        sp.edgeFadeOutMs = slotParamsCache[(size_t)i].edgeFadeOut != nullptr ? slotParamsCache[(size_t)i].edgeFadeOut->load() : 3.0f;
-
-        sp.isLooping = slotParamsCache[(size_t)i].isLooping->load() > 0.5f;
-        sp.isStretchMode = slotParamsCache[(size_t)i].isStretchMode->load() > 0.5f;
-        sp.isReverse = slotParamsCache[(size_t)i].isReverse->load() > 0.5f;
-        sp.isFilterBypass = slotParamsCache[(size_t)i].filterBypass->load() > 0.5f;
-        sp.isFxBypass = slotParamsCache[(size_t)i].fxBypass->load() > 0.5f;
-        sp.rootKeyOverride = juce::roundToInt(slotParamsCache[(size_t)i].rootKeyOverride->load());
-        sp.lowNote = juce::roundToInt(slotParamsCache[(size_t)i].slotLowNote->load());
-        sp.highNote = juce::roundToInt(slotParamsCache[(size_t)i].slotHighNote->load());
-    }
-
-    if (arpParams.enable)
-        samplerEngine.handleMidi(processedMidi, engineParams);
-    else
-        samplerEngine.handleMidi(midiMessages, engineParams);
-
-    // Filter ADSR トリガー制御
-    const auto& activeMidi = arpParams.enable ? processedMidi : midiMessages;
-    for (const auto metadata : activeMidi)
-    {
-        const auto msg = metadata.getMessage();
-        if (msg.isNoteOn()) filterAdsr.noteOn();
-        else if (msg.isNoteOff()) filterAdsr.noteOff();
-    }
-
-    juce::ADSR::Parameters adsrP;
-    adsrP.attack  = juce::jlimit(0.001f, 5.0f,  filterParamsCache.envAttack->load()  + modMatrix.get(ModMatrix::DstFltEnvAttack)  * 2.5f);
-    adsrP.decay   = juce::jlimit(0.001f, 5.0f,  filterParamsCache.envDecay->load()   + modMatrix.get(ModMatrix::DstFltEnvDecay)   * 2.5f);
-    adsrP.sustain = juce::jlimit(0.0f,   1.0f,  filterParamsCache.envSustain->load() + modMatrix.get(ModMatrix::DstFltEnvSustain));
-    adsrP.release = juce::jlimit(0.001f, 10.0f, filterParamsCache.envRelease->load() + modMatrix.get(ModMatrix::DstFltEnvRelease) * 5.0f);
-    filterAdsr.setParameters(adsrP);
-
-    // ★バグ修正: 以前は getNextSample() をブロックにつき1回しか呼んでいなかったため、
-    //   ADSR が「1ブロック = 1サンプル」のペースでしか進まず、Attack/Decay/Release が
-    //   ノブの設定値よりブロックサイズ倍（512サンプルバッファなら約512倍）遅く進んでいた。
-    //   実際の再生時間に合わせてブロック内のサンプル数ぶんだけ進める。
-    float envVal = 0.0f;
-    for (int i = 0; i < numSamples; ++i)
-        envVal = filterAdsr.getNextSample();
     const float envAmt = filterParamsCache.envAmt->load();
-    guiFilterEnvValue.store(envVal, std::memory_order_relaxed);
 
     const int numChannels = buffer.getNumChannels();
+    if (numChannels <= 0 || numSamples <= 0) return;
 
     // メンバのバッファを使い回す。avoidReallocating=true なので、
     // prepareToPlay で確保した容量に収まる限りヒープ確保は起きない。
-    // (ホストが宣言より大きいブロックを送ってきた時だけ再確保される)
     fltBypassBuffer.setSize(numChannels, numSamples, false, false, true);
     fxBypassBuffer.setSize(numChannels, numSamples, false, false, true);
     bothBypassBuffer.setSize(numChannels, numSamples, false, false, true);
 
-    fltBypassBuffer.clear();
-    fxBypassBuffer.clear();
-    bothBypassBuffer.clear();
+    // サブブロックごとに部分ビュー (AudioBuffer) を作るためのチャンネル先頭ポインタ。
+    // AudioBuffer の「外部データを参照する」コンストラクタは 32ch までなら
+    // ヒープ確保しないので、オーディオスレッドで作って構わない。
+    float* mainCh[2] { nullptr, nullptr };
+    float* fltCh [2] { nullptr, nullptr };
+    float* fxCh  [2] { nullptr, nullptr };
+    float* bothCh[2] { nullptr, nullptr };
 
-    // 1. 各スロットのボイスをルーティングに応じて各バッファにレンダリング
-    samplerEngine.renderNextBlock(buffer, fltBypassBuffer, fxBypassBuffer, bothBypassBuffer, engineParams, &visualizerData);
-
-    // 2. PicoFilter (LPF/HPF/BPF/Notch/Comb/LadderLPF/Vowel/CombPlus/Phaser) 適用 (FLT BYPASSがオフのスロット音声に適用)
-    PicoFilter::Params fltParams;
-    fltParams.enable  = filterParamsCache.enable->load() > 0.5f;
-
-    const float baseCutoff = filterParamsCache.cutoff->load();
-    float targetCutoff = baseCutoff;
-    if (std::abs(envAmt) > 0.001f || std::abs(modMatrix.get(ModMatrix::DstFltCutoff)) > 0.001f)
+    for (int ch = 0; ch < numChannels && ch < 2; ++ch)
     {
-        const float octaveShift = envVal * envAmt * 4.0f + modMatrix.get(ModMatrix::DstFltCutoff) * 4.0f;
-        targetCutoff = baseCutoff * std::pow(2.0f, octaveShift);
-    }
-    // 目標値をそのまま渡す。平滑化は PicoFilter 内でサンプル単位に行う
-    // (旧実装はここで LinearSmoothedValue をブロックに1回しか進めておらず、
-    //  実効スムージング時間がバッファサイズ倍に伸びてしまっていた)。
-    fltParams.cutoff  = juce::jlimit(20.0f, 20000.0f, targetCutoff);
-    fltParams.res     = juce::jlimit(0.1f, 10.0f, filterParamsCache.res->load() + modMatrix.get(ModMatrix::DstFltReso) * 5.0f);
-    fltParams.type    = juce::roundToInt(filterParamsCache.type->load());
-    fltParams.slope24 = filterParamsCache.slope->load() > 0.5f;
-    fltParams.formant = juce::jlimit(0.0f, 1.0f, filterParamsCache.formant->load() + modMatrix.get(ModMatrix::DstFltFormant));
-    fltParams.combMix = juce::jlimit(0.0f, 1.0f, filterParamsCache.combMix->load() + modMatrix.get(ModMatrix::DstFltCombMix));
-
-    if (fltParams.enable)
-    {
-        mainFilter.process(buffer, fltParams);
-        fxBypassFilter.process(fxBypassBuffer, fltParams);
+        mainCh[ch] = buffer.getWritePointer(ch);
+        fltCh [ch] = fltBypassBuffer.getWritePointer(ch);
+        fxCh  [ch] = fxBypassBuffer.getWritePointer(ch);
+        bothCh[ch] = bothBypassBuffer.getWritePointer(ch);
     }
 
-    // 3. Filter Bypass音 (fltBypassBuffer) を FX前バッファ (buffer) に合流
-    for (int ch = 0; ch < numChannels; ++ch)
-    {
-        buffer.addFrom(ch, 0, fltBypassBuffer, ch, 0, numSamples);
-    }
+    float envVal = 0.0f;
 
-    // 4. FX Rack 適用 (FX Bypassがオフの音声: buffer)
-    FxChain::Params fxP;
-    for (int i = 0; i < 5; ++i)
+    // ==================================================================
+    // サブブロックループ
+    //
+    // ModMatrix / パラメータ構築 / 発音 / レンダリング / Filter / FX を
+    // kControlBlockSize サンプルごとに回す。
+    // これにより LFO の更新レートがバッファサイズから独立し (44.1kHz で
+    // 2756Hz)、MIDI もこの粒度で処理されるため ARP のタイミング精度も上がる。
+    //
+    // Master セクションだけはループの外で、ブロック全体に一度だけ掛ける。
+    // ==================================================================
+    for (int blockStart = 0; blockStart < numSamples; blockStart += kControlBlockSize)
     {
-        fxP.type[(size_t)i]   = juce::roundToInt(fxParamsCache.type[(size_t)i]->load());
-        fxP.amount[(size_t)i] = juce::jlimit(0.0f, 1.0f, fxParamsCache.amount[(size_t)i]->load() + modMatrix.get(ModMatrix::DstFx1Amount + i));
-    }
-    fxP.bpm        = arpParams.bpm;
-    fxP.satAlgo    = juce::roundToInt(fxParamsCache.satAlgo->load());
-    fxP.satDrive   = juce::jlimit(1.0f, 12.0f, fxParamsCache.satDrive->load() + modMatrix.get(ModMatrix::DstSatDrive) * 6.0f);
-    fxP.satPreHz   = juce::jlimit(20.0f, 2000.0f, fxParamsCache.satPreHz->load() + modMatrix.get(ModMatrix::DstSatPreHz) * 1000.0f);
-    fxP.satTrimDb  = juce::jlimit(-12.0f, 12.0f, fxParamsCache.satTrim->load() + modMatrix.get(ModMatrix::DstSatTrim) * 12.0f);
-    fxP.choRate    = juce::jlimit(0.05f, 4.0f, fxParamsCache.choRate->load() + modMatrix.get(ModMatrix::DstChoRate) * 2.0f);
-    fxP.choDepth   = juce::jlimit(0.0f, 1.0f, fxParamsCache.choDepth->load() + modMatrix.get(ModMatrix::DstChoDepth));
-    fxP.choWidth   = juce::jlimit(0.0f, 1.0f, fxParamsCache.choWidth->load() + modMatrix.get(ModMatrix::DstChoWidth));
-    fxP.dlyTime    = juce::roundToInt(fxParamsCache.dlyTime->load());
-    fxP.dlyFeedback= juce::jlimit(0.0f, 0.95f, fxParamsCache.dlyFeedback->load() + modMatrix.get(ModMatrix::DstDlyFeedback));
-    fxP.dlyDuck    = juce::jlimit(0.0f, 1.0f, fxParamsCache.dlyDuck->load() + modMatrix.get(ModMatrix::DstDlyDuck));
-    fxP.dlyDamp    = juce::jlimit(0.0f, 1.0f, fxParamsCache.dlyDamp->load() + modMatrix.get(ModMatrix::DstDlyDamp));
-    fxP.frzSize    = juce::jlimit(20.0f, 1000.0f, fxParamsCache.frzSize->load() + modMatrix.get(ModMatrix::DstFrzSize) * 500.0f);
-    fxP.frzFeedback= juce::jlimit(0.0f, 0.99f, fxParamsCache.frzFeedback->load() + modMatrix.get(ModMatrix::DstFrzFeedback));
-    fxP.frzDamp    = juce::jlimit(0.0f, 1.0f, fxParamsCache.frzDamp->load() + modMatrix.get(ModMatrix::DstFrzDamp));
-    fxP.revDecay   = juce::jlimit(0.0f, 1.0f, fxParamsCache.revDecay->load() + modMatrix.get(ModMatrix::DstRevDecay));
-    fxP.revShimmer = juce::jlimit(0.0f, 1.0f, fxParamsCache.revShimmer->load() + modMatrix.get(ModMatrix::DstRevShimmer));
-    fxP.revDamp    = juce::jlimit(0.0f, 1.0f, fxParamsCache.revDamp->load() + modMatrix.get(ModMatrix::DstRevDamp));
-    fxP.revMod     = juce::jlimit(0.0f, 1.0f, fxParamsCache.revMod->load() + modMatrix.get(ModMatrix::DstRevMod));
+        const int len = juce::jmin(kControlBlockSize, numSamples - blockStart);
 
-    fxChain.process(buffer, fxP);
+        juce::AudioBuffer<float> subMain (mainCh, numChannels, blockStart, len);
+        juce::AudioBuffer<float> subFlt  (fltCh,  numChannels, blockStart, len);
+        juce::AudioBuffer<float> subFx   (fxCh,   numChannels, blockStart, len);
+        juce::AudioBuffer<float> subBoth (bothCh, numChannels, blockStart, len);
 
-    // 5. FX Bypass音 (fxBypassBuffer, bothBypassBuffer) を合流
-    for (int ch = 0; ch < numChannels; ++ch)
-    {
-        buffer.addFrom(ch, 0, fxBypassBuffer, ch, 0, numSamples);
-        buffer.addFrom(ch, 0, bothBypassBuffer, ch, 0, numSamples);
-    }
+        subFlt.clear();
+        subFx.clear();
+        subBoth.clear();
+
+        // この区間に属する MIDI イベントだけを取り出す (タイムスタンプは 0 起点へ)
+        subMidi.clear();
+        subMidi.addEvents(activeMidi, blockStart, len, -blockStart);
+
+        modMatrix.handleMidi(subMidi);
+        modMatrix.processBlock(len, modParams);
+
+        // 3. サンプラーエンジンパラメータ構築 (Mod変調含む)
+        const float rawMasterPitch = pMasterPitch->load() + modMatrix.get(ModMatrix::DstMasterPitch) * 24.0f;
+
+        float effectiveMasterPitch = rawMasterPitch;
+        if (scaleVal > 0)
+        {
+            const int rootNote = (keyVal >= 1) ? (keyVal - 1) : 0;
+            const float quantizedTarget = ScaleQuantizer::quantize(60.0f + (float)rootNote + rawMasterPitch, rootNote, scaleVal);
+            effectiveMasterPitch = quantizedTarget - (60.0f + (float)rootNote);
+        }
+
+        // Amp ADSR Link: 点灯中は全スロットが S1 の Amp ADSR 変調に追従する。
+        // (ベース値は GUI 側が既に揃えているので、変調だけ配れば
+        //  「8スロットで1つのエンベロープを共有している」挙動になる)
+        const bool envLinked = (pEnvLink != nullptr) && (pEnvLink->load() > 0.5f);
+
+        for (int i = 0; i < 8; ++i)
+        {
+            auto& sp = engineParams.slotParams[(size_t)i];
+
+            // Amp ADSR: DstS1AmpAttack.. は S1..S8 の順で4個ずつ並んでいる
+            const int ampDstBase = ModMatrix::DstS1AmpAttack + (envLinked ? 0 : i) * 4;
+            sp.attack  = juce::jlimit(0.001f, 5.0f,  slotParamsCache[(size_t)i].attack->load()  + modMatrix.get(ampDstBase + 0) * 2.5f);
+            sp.decay   = juce::jlimit(0.001f, 5.0f,  slotParamsCache[(size_t)i].decay->load()   + modMatrix.get(ampDstBase + 1) * 2.5f);
+            sp.sustain = juce::jlimit(0.0f,   1.0f,  slotParamsCache[(size_t)i].sustain->load() + modMatrix.get(ampDstBase + 2));
+            sp.release = juce::jlimit(0.001f, 10.0f, slotParamsCache[(size_t)i].release->load() + modMatrix.get(ampDstBase + 3) * 5.0f);
+
+            sp.octave   = juce::roundToInt(slotParamsCache[(size_t)i].octave->load());
+            sp.semitone = juce::roundToInt(slotParamsCache[(size_t)i].pitchSt->load()) + (int)std::round(effectiveMasterPitch);
+            sp.fineTune = slotParamsCache[(size_t)i].fineTune->load() + (effectiveMasterPitch - std::round(effectiveMasterPitch)) * 100.0f;
+            // Pan もモジュレーション対象 (Dst = S1/Pan .. S8/Pan)。
+            // パラメータは -1..+1 なので、変調量もそのままのスケールで加算する。
+            sp.pan      = juce::jlimit(-1.0f, 1.0f,
+                              slotParamsCache[(size_t)i].pan->load()
+                            + modMatrix.get(ModMatrix::DstS1Pan + i));
+            sp.slotGainDb = slotParamsCache[(size_t)i].slotGain->load();
+
+            const int dstBase = ModMatrix::DstS1Start + i * 5;
+            sp.sampleStartRatio = juce::jlimit(0.0f, 1.0f, slotParamsCache[(size_t)i].sampleStart->load() + modMatrix.get(dstBase + 0));
+            sp.sampleEndRatio   = juce::jlimit(0.01f, 1.0f, slotParamsCache[(size_t)i].sampleEnd->load() + modMatrix.get(dstBase + 1));
+            sp.loopStartRatio   = juce::jlimit(0.0f, 1.0f, slotParamsCache[(size_t)i].loopStart->load() + modMatrix.get(dstBase + 2));
+            sp.loopEndRatio     = juce::jlimit(0.01f, 1.0f, slotParamsCache[(size_t)i].loopEnd->load() + modMatrix.get(dstBase + 3));
+            sp.crossfadeRatio   = juce::jlimit(0.0f, 0.5f, slotParamsCache[(size_t)i].crossfade->load() + modMatrix.get(dstBase + 4));
+
+            sp.edgeFadeInMs  = slotParamsCache[(size_t)i].edgeFadeIn  != nullptr ? slotParamsCache[(size_t)i].edgeFadeIn->load()  : 2.0f;
+            sp.edgeFadeOutMs = slotParamsCache[(size_t)i].edgeFadeOut != nullptr ? slotParamsCache[(size_t)i].edgeFadeOut->load() : 3.0f;
+
+            sp.isLooping = slotParamsCache[(size_t)i].isLooping->load() > 0.5f;
+            sp.isStretchMode = slotParamsCache[(size_t)i].isStretchMode->load() > 0.5f;
+            sp.isReverse = slotParamsCache[(size_t)i].isReverse->load() > 0.5f;
+            sp.isFilterBypass = slotParamsCache[(size_t)i].filterBypass->load() > 0.5f;
+            sp.isFxBypass = slotParamsCache[(size_t)i].fxBypass->load() > 0.5f;
+            sp.rootKeyOverride = juce::roundToInt(slotParamsCache[(size_t)i].rootKeyOverride->load());
+            sp.lowNote = juce::roundToInt(slotParamsCache[(size_t)i].slotLowNote->load());
+            sp.highNote = juce::roundToInt(slotParamsCache[(size_t)i].slotHighNote->load());
+        }
+
+        samplerEngine.handleMidi(subMidi, engineParams);
+
+        // Filter ADSR トリガー制御
+        for (const auto metadata : subMidi)
+        {
+            const auto msg = metadata.getMessage();
+            if (msg.isNoteOn()) filterAdsr.noteOn();
+            else if (msg.isNoteOff()) filterAdsr.noteOff();
+        }
+
+        juce::ADSR::Parameters adsrP;
+        adsrP.attack  = juce::jlimit(0.001f, 5.0f,  filterParamsCache.envAttack->load()  + modMatrix.get(ModMatrix::DstFltEnvAttack)  * 2.5f);
+        adsrP.decay   = juce::jlimit(0.001f, 5.0f,  filterParamsCache.envDecay->load()   + modMatrix.get(ModMatrix::DstFltEnvDecay)   * 2.5f);
+        adsrP.sustain = juce::jlimit(0.0f,   1.0f,  filterParamsCache.envSustain->load() + modMatrix.get(ModMatrix::DstFltEnvSustain));
+        adsrP.release = juce::jlimit(0.001f, 10.0f, filterParamsCache.envRelease->load() + modMatrix.get(ModMatrix::DstFltEnvRelease) * 5.0f);
+        filterAdsr.setParameters(adsrP);
+
+        // ADSR は実際の再生時間に合わせてサブブロックのサンプル数ぶん進める。
+        for (int i = 0; i < len; ++i)
+            envVal = filterAdsr.getNextSample();
+
+        // 1. 各スロットのボイスをルーティングに応じて各バッファにレンダリング
+        //    ビジュアライザへの push はブロック先頭の1回だけにする
+        //    (サブブロックごとに送るとリングバッファが溢れて表示が壊れる)
+        samplerEngine.renderNextBlock(subMain, subFlt, subFx, subBoth, engineParams,
+                                      (blockStart == 0) ? &visualizerData : nullptr);
+
+        // 2. PicoFilter (LPF/HPF/BPF/Notch/Comb/LadderLPF/Vowel/CombPlus/Phaser) 適用 (FLT BYPASSがオフのスロット音声に適用)
+        PicoFilter::Params fltParams;
+        fltParams.enable  = filterParamsCache.enable->load() > 0.5f;
+
+        const float baseCutoff = filterParamsCache.cutoff->load();
+        float targetCutoff = baseCutoff;
+        if (std::abs(envAmt) > 0.001f || std::abs(modMatrix.get(ModMatrix::DstFltCutoff)) > 0.001f)
+        {
+            const float octaveShift = envVal * envAmt * 4.0f + modMatrix.get(ModMatrix::DstFltCutoff) * 4.0f;
+            targetCutoff = baseCutoff * std::pow(2.0f, octaveShift);
+        }
+        // 目標値をそのまま渡す。平滑化は PicoFilter 内でサンプル単位に行う
+        // (旧実装はここで LinearSmoothedValue をブロックに1回しか進めておらず、
+        //  実効スムージング時間がバッファサイズ倍に伸びてしまっていた)。
+        fltParams.cutoff  = juce::jlimit(20.0f, 20000.0f, targetCutoff);
+        fltParams.res     = juce::jlimit(0.1f, 10.0f, filterParamsCache.res->load() + modMatrix.get(ModMatrix::DstFltReso) * 5.0f);
+        fltParams.type    = juce::roundToInt(filterParamsCache.type->load());
+        fltParams.slope24 = filterParamsCache.slope->load() > 0.5f;
+        fltParams.formant = juce::jlimit(0.0f, 1.0f, filterParamsCache.formant->load() + modMatrix.get(ModMatrix::DstFltFormant));
+        fltParams.combMix = juce::jlimit(0.0f, 1.0f, filterParamsCache.combMix->load() + modMatrix.get(ModMatrix::DstFltCombMix));
+
+        if (fltParams.enable)
+        {
+            mainFilter.process(subMain, fltParams);
+            fxBypassFilter.process(subFx, fltParams);
+        }
+
+        // 3. Filter Bypass音 (fltBypassBuffer) を FX前バッファ (buffer) に合流
+        for (int ch = 0; ch < numChannels; ++ch)
+        {
+            subMain.addFrom(ch, 0, subFlt, ch, 0, len);
+        }
+
+        // 4. FX Rack 適用 (FX Bypassがオフの音声: buffer)
+        FxChain::Params fxP;
+        for (int i = 0; i < 5; ++i)
+        {
+            fxP.type[(size_t)i]   = juce::roundToInt(fxParamsCache.type[(size_t)i]->load());
+            fxP.amount[(size_t)i] = juce::jlimit(0.0f, 1.0f, fxParamsCache.amount[(size_t)i]->load() + modMatrix.get(ModMatrix::DstFx1Amount + i));
+        }
+        fxP.bpm        = arpParams.bpm;
+        fxP.satAlgo    = juce::roundToInt(fxParamsCache.satAlgo->load());
+        fxP.satDrive   = juce::jlimit(1.0f, 12.0f, fxParamsCache.satDrive->load() + modMatrix.get(ModMatrix::DstSatDrive) * 6.0f);
+        fxP.satPreHz   = juce::jlimit(20.0f, 2000.0f, fxParamsCache.satPreHz->load() + modMatrix.get(ModMatrix::DstSatPreHz) * 1000.0f);
+        fxP.satTrimDb  = juce::jlimit(-12.0f, 12.0f, fxParamsCache.satTrim->load() + modMatrix.get(ModMatrix::DstSatTrim) * 12.0f);
+        fxP.choRate    = juce::jlimit(0.05f, 4.0f, fxParamsCache.choRate->load() + modMatrix.get(ModMatrix::DstChoRate) * 2.0f);
+        fxP.choDepth   = juce::jlimit(0.0f, 1.0f, fxParamsCache.choDepth->load() + modMatrix.get(ModMatrix::DstChoDepth));
+        fxP.choWidth   = juce::jlimit(0.0f, 1.0f, fxParamsCache.choWidth->load() + modMatrix.get(ModMatrix::DstChoWidth));
+        fxP.dlyTime    = juce::roundToInt(fxParamsCache.dlyTime->load());
+        fxP.dlyFeedback= juce::jlimit(0.0f, 0.95f, fxParamsCache.dlyFeedback->load() + modMatrix.get(ModMatrix::DstDlyFeedback));
+        fxP.dlyDuck    = juce::jlimit(0.0f, 1.0f, fxParamsCache.dlyDuck->load() + modMatrix.get(ModMatrix::DstDlyDuck));
+        fxP.dlyDamp    = juce::jlimit(0.0f, 1.0f, fxParamsCache.dlyDamp->load() + modMatrix.get(ModMatrix::DstDlyDamp));
+        fxP.frzSize    = juce::jlimit(20.0f, 1000.0f, fxParamsCache.frzSize->load() + modMatrix.get(ModMatrix::DstFrzSize) * 500.0f);
+        fxP.frzFeedback= juce::jlimit(0.0f, 0.99f, fxParamsCache.frzFeedback->load() + modMatrix.get(ModMatrix::DstFrzFeedback));
+        fxP.frzDamp    = juce::jlimit(0.0f, 1.0f, fxParamsCache.frzDamp->load() + modMatrix.get(ModMatrix::DstFrzDamp));
+        fxP.revDecay   = juce::jlimit(0.0f, 1.0f, fxParamsCache.revDecay->load() + modMatrix.get(ModMatrix::DstRevDecay));
+        fxP.revShimmer = juce::jlimit(0.0f, 1.0f, fxParamsCache.revShimmer->load() + modMatrix.get(ModMatrix::DstRevShimmer));
+        fxP.revDamp    = juce::jlimit(0.0f, 1.0f, fxParamsCache.revDamp->load() + modMatrix.get(ModMatrix::DstRevDamp));
+        fxP.revMod     = juce::jlimit(0.0f, 1.0f, fxParamsCache.revMod->load() + modMatrix.get(ModMatrix::DstRevMod));
+
+        fxChain.process(subMain, fxP);
+
+        // 5. FX Bypass音 (fxBypassBuffer, bothBypassBuffer) を合流
+        for (int ch = 0; ch < numChannels; ++ch)
+        {
+            subMain.addFrom(ch, 0, subFx, ch, 0, len);
+            subMain.addFrom(ch, 0, subBoth, ch, 0, len);
+        }
+
+    } // ← サブブロックループ終わり
+
+    guiFilterEnvValue.store(envVal, std::memory_order_relaxed);
 
     // ------------------------------------------------------------------
     // 6. Master セクション (Master HPF → LPF → Out Gain → Limiter)
@@ -1174,6 +1236,7 @@ void PicoSamplerAudioProcessor::initializeParameterCache()
     pAutoSliceEnable = apvts.getRawParameterValue("autoSliceEnable");
     pSliceSensitivity = apvts.getRawParameterValue("sliceSensitivity");
     pStretchMode = apvts.getRawParameterValue("stretchMode");
+    pEnvLink = apvts.getRawParameterValue("envLink");
 
     for (int i = 0; i < 8; ++i) {
         auto s = juce::String(i);

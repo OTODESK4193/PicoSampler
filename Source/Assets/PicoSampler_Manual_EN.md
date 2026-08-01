@@ -227,6 +227,8 @@ Five slots in **series**.
 
 **Saturation algorithms:** Soft Tanh, Hard Clip, Triode, Tape, Transformer, JFET, BJT, Wavefold, Exciter, Cubic
 
+**About PRE-HPF:** Only the band above the set frequency is driven; everything below passes through clean and is mixed back in. Use it to add harmonics to the upper range while keeping the low end solid. At the minimum setting of 20 Hz the whole signal is driven (effectively bypassed).
+
 ---
 
 ## 7. CONFIG Tab

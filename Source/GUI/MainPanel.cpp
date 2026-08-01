@@ -84,12 +84,16 @@ MainPanel::MainPanel(juce::AudioProcessorValueTreeState& apvts) : vts(apvts)
     };
 
     // ADSR Link Button (ダイアログなしでSlot1現在値に即時リンク・同期)
+    //
+    // 状態は APVTS の "envLink" が持つ。ButtonAttachment に任せるので
+    // ここで setToggleState を呼ぶ必要はない (呼ぶと二重更新になる)。
+    // これによりリンクのオン/オフがプリセットと DAW プロジェクトへ保存される。
     addAndMakeVisible(btnLinkEnv);
-    btnLinkEnv.onClick = [this] {
-        isEnvLinked = !isEnvLinked;
-        btnLinkEnv.setToggleState(isEnvLinked, juce::dontSendNotification);
+    envLinkAttach = std::make_unique<ButtonAttach>(vts, "envLink", btnLinkEnv);
 
-        if (isEnvLinked && !isUpdatingFromLink)
+    btnLinkEnv.onClick = [this] {
+        // 点灯した瞬間だけ、Slot 1 の現在値を Slot 2〜8 へ焼き込む
+        if (isEnvLinked() && !isUpdatingFromLink)
         {
             isUpdatingFromLink = true;
             // Slot 1 (index 0) の正規化値を Slot 2~8 に即時同期
@@ -112,7 +116,7 @@ MainPanel::MainPanel(juce::AudioProcessorValueTreeState& apvts) : vts(apvts)
     // ADSR ノブ変更時の連動 (APVTS 正規化値 0.0~1.0 を使用 & 再帰防止)
     auto setupEnvCallback = [this](LabeledKnob& lk, const juce::String& pBaseName) {
         lk.knob.onValueChange = [this, pBaseName] {
-            if (isEnvLinked && !isUpdatingFromLink)
+            if (isEnvLinked() && !isUpdatingFromLink)
             {
                 isUpdatingFromLink = true;
                 const juce::String activeSlotStr = juce::String(currentBoundSlot >= 0 ? currentBoundSlot : 0);

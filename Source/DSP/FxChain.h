@@ -749,9 +749,21 @@ public:
         }
 
         // ------------------------------------------------------------------
-        // Saturation 前段ハイパス (Sat Pre-HPF)。
-        // 係数計算に exp/除算が入るのでブロック単位で更新する。
-        // 既定の 20Hz 付近では実質バイパス扱いにして無駄な処理を省く。
+        // Sat Pre-HPF (スプリットバンド・サチュレーション)
+        //
+        // 1次ハイパスで信号を高域/低域に分け、
+        //   ・高域だけをサチュレーターへ通す
+        //   ・低域は歪ませずそのまま合流させる
+        // という構成にしている。低域 = 入力 - 高域 なので、両者を足すと
+        // Drive が 1.0 のときは元の信号に完全に戻る (相補フィルター)。
+        //
+        // これにより「ベースの芯は残したまま、上の帯域にだけ倍音を足す」
+        // という一般的なサチュレーターの Pre-HPF の使い方ができる。
+        // 直列に挿すだけの構成だと低域そのものが痩せてしまう。
+        //
+        // 係数計算に除算が入るのでブロック単位で更新する。
+        // 既定の 20Hz 付近では実質バイパス扱いにして無駄な処理を省く
+        // (このとき低域成分は 0、高域 = 入力そのものとなり従来と同じ挙動)。
         // ------------------------------------------------------------------
         const float preFc = juce::jlimit(20.0f, 2000.0f, sm.satPreHz);
         const float rc    = 1.0f / (2.0f * juce::MathConstants<float>::pi * preFc);
@@ -781,17 +793,24 @@ public:
                         const int algoType = satAlgoToType(p.satAlgo);
                         const float trimG = juce::Decibels::decibelsToGain(sm.satTrimDb);
 
-                        float satInL = l;
-                        float satInR = r;
+                        // 歪ませる帯域 (高域) と、素通しする帯域 (低域) に分ける
+                        float satInL = l, satInR = r;
+                        float lowL = 0.0f, lowR = 0.0f;
 
                         if (preHpfActive)
                         {
-                            satHpY1L = hpA * (satHpY1L + l - satHpX1L); satHpX1L = l; satInL = satHpY1L;
-                            satHpY1R = hpA * (satHpY1R + r - satHpX1R); satHpX1R = r; satInR = satHpY1R;
+                            satHpY1L = hpA * (satHpY1L + l - satHpX1L); satHpX1L = l;
+                            satHpY1R = hpA * (satHpY1R + r - satHpX1R); satHpX1R = r;
+
+                            satInL = satHpY1L;  lowL = l - satHpY1L;
+                            satInR = satHpY1R;  lowR = r - satHpY1R;
                         }
 
-                        l = gfx::processSaturationSampleADAA(satInL, algoType, sm.satDrive, satStateL) * trimG;
-                        r = gfx::processSaturationSampleADAA(satInR, algoType, sm.satDrive, satStateR) * trimG;
+                        // Trim は合流後に掛ける。こうすると Pre-HPF がバイパス
+                        // (既定 20Hz) のとき従来と完全に同じ式になり、
+                        // 既存プリセットの音が変わらない。
+                        l = (gfx::processSaturationSampleADAA(satInL, algoType, sm.satDrive, satStateL) + lowL) * trimG;
+                        r = (gfx::processSaturationSampleADAA(satInR, algoType, sm.satDrive, satStateR) + lowR) * trimG;
                     }
                     break;
                 case Chorus:

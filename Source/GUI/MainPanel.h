@@ -97,9 +97,12 @@ private:
     GlowToggle btnSnap    { "SNAP" };
 
     // ADSR Link Toggle
+    // 状態は APVTS の "envLink" パラメータが持つ (プリセット / DAW プロジェクトに保存される)。
+    // ボタン自身の toggle state は ButtonAttachment がパラメータと同期させる。
     GlowToggle btnLinkEnv { "LINK" };
-    bool isEnvLinked = false;
     bool isUpdatingFromLink = false;
+
+    bool isEnvLinked() const { return btnLinkEnv.getToggleState(); }
 
     // Labeled Knobs
     LabeledKnob knobSampleStart { "Start",   PicoColors::peach };
@@ -140,6 +143,7 @@ private:
     std::unique_ptr<ButtonAttach> snapAttach;
     std::unique_ptr<ButtonAttach> fltBypassAttach;
     std::unique_ptr<ButtonAttach> fxBypassAttach;
+    std::unique_ptr<ButtonAttach> envLinkAttach;   // スロット切替で貼り替えない (全体設定)
 
     std::unique_ptr<Attachment> masterPitchAttach;
     std::unique_ptr<Attachment> masterHpfAttach;

@@ -208,10 +208,38 @@ private:
     std::atomic<float>* pAutoSliceEnable;
     std::atomic<float>* pSliceSensitivity;
     std::atomic<float>* pStretchMode;
+    std::atomic<float>* pEnvLink;   // Amp ADSR Link (全スロット連動)
     // Edge Fade は v1.1 でスロット毎(edgeFadeIn_0..7 / edgeFadeOut_0..7)に変更。
     // 値本体は slotParamsCache[i].edgeFadeIn / edgeFadeOut で保持する。
 
     void initializeParameterCache();
+
+    // ------------------------------------------------------------------
+    // モジュレーションの更新単位 (サンプル)。
+    //
+    // v1.1.0 以前は ModMatrix をオーディオブロックにつき1回しか回して
+    // いなかったため、LFO の出力が 1 周期あたりブロック数ぶんしか得られず、
+    // バッファ 1024 なら 5Hz で 8.6 点、30Hz では 1.4 点しか出ていなかった。
+    // 周期に対してサンプリング点がずれていく「うなり」が起き、
+    // 頂点付近で 2 点続くと止まって聴こえる (= 一周ごとに「間」がある)。
+    //
+    // 16 サンプル単位に分割すると 44.1kHz で 2756Hz 更新となり、
+    // 30Hz の LFO でも 92 点/周期が確保できる。
+    // あわせて MIDI もこの粒度で処理されるため、ARP のタイミング量子化が
+    // バッファサイズ依存 (512 サンプルで約 11.6ms) から約 0.36ms へ縮む。
+    //
+    // 値の 16 は Wavetable プロジェクトの DualFilterEngine::kCoefInterval と
+    // 揃えてある。あちらも「16 サンプルごとに係数を更新し、間は線形補間」で
+    // 実績があるため、LadderFilter の driftAlpha (1サンプル想定の時定数) が
+    // 想定する追従速度もそこで一致する。
+    // ------------------------------------------------------------------
+    static constexpr int kControlBlockSize = 16;
+
+    // processBlock 内で使い回す MIDI バッファ。
+    // ローカル変数にするとブロックごとに内部配列を確保しうるため
+    // メンバとして持ち、clear() で容量を維持する。
+    juce::MidiBuffer processedMidi;
+    juce::MidiBuffer subMidi;
 
     // ------------------------------------------------------------------
     // ルーティング用の作業バッファ。

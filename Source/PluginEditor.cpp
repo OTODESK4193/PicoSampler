@@ -455,8 +455,12 @@ void PicoSamplerAudioProcessorEditor::timerCallback()
     updateKnobProps(mainPanel.getMasterPitchKnob(), ModMatrix::DstMasterPitch);
 
     // Amp ADSR (現在バインド中のスロットぶんのDstを都度切替える)
+    // Link 点灯中は全スロットが S1 の変調に追従するので、表示も S1 に固定する。
     {
-        const int ampDstBase = ModMatrix::DstS1AmpAttack + boundSlot * 4;
+        auto* pEnvLinkGui = audioProcessor.getAPVTS().getRawParameterValue("envLink");
+        const bool envLinked = (pEnvLinkGui != nullptr) && (pEnvLinkGui->load() > 0.5f);
+
+        const int ampDstBase = ModMatrix::DstS1AmpAttack + (envLinked ? 0 : boundSlot) * 4;
         updateKnobProps(mainPanel.getAttackKnob(),  ampDstBase + 0);
         updateKnobProps(mainPanel.getDecayKnob(),   ampDstBase + 1);
         updateKnobProps(mainPanel.getSustainKnob(), ampDstBase + 2);

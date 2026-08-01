@@ -227,6 +227,8 @@ Root Key は `Auto`（サンプルの判定結果を使用）または手動指�
 
 **Saturation の10アルゴリズム:** Soft Tanh / Hard Clip / Triode / Tape / Transformer / JFET / BJT / Wavefold / Exciter / Cubic
 
+**PRE-HPF について:** 設定した周波数より上だけを歪ませ、下の帯域は歪ませずにそのまま合流させます。低音の芯を残したまま上の帯域にだけ倍音を足したいときに使ってください。最小値の 20 Hz では全帯域が歪みます（実質バイパス）。
+
 ---
 
 ## 7. CONFIG タブ
