@@ -5,16 +5,34 @@
 #include "SamplerVoice.h"
 
 void PicoVoice::startNote(int midiNoteNumber, float noteVelocity, int slotIdx,
-                          const SampleSlot& slot, const SamplerVoiceParams& p) noexcept
+                          const SampleSlot& slot, const SamplerVoiceParams& p,
+                          uint64_t startStamp) noexcept
 {
-    bool isLegato = p.portaEnable && active && !releasing && (slotIndex == slotIdx);
+    const bool isLegato = p.portaEnable && active && !releasing && (slotIndex == slotIdx);
+
+    // ------------------------------------------------------------------
+    // 鳴っている最中のボイスを奪って別のノートで再スタートする場合、
+    // 出力が「直前の振幅」から「新しいノートの Attack 開始点 (=0)」へ
+    // 1サンプルで飛ぶ。この段差がプチノイズになり、Delay/Reverb の
+    // フィードバックに乗ると延々と繰り返される。
+    // 直前の出力値を数ミリ秒かけて 0 へ落とすテールを仕込んでおく。
+    // (レガートで音を継続する場合は不連続にならないので不要)
+    // ------------------------------------------------------------------
+    if (active && !isLegato && (std::abs(lastOutL) > 1.0e-5f || std::abs(lastOutR) > 1.0e-5f))
+    {
+        declickL   = lastOutL;
+        declickR   = lastOutR;
+        declickLen = juce::jmax(8, (int)(0.003 * sampleRate));   // 3ms
+        declickPos = 0;
+    }
 
     midiNote = midiNoteNumber;
     velocity = noteVelocity;
     slotIndex = slotIdx;
     active = true;
     releasing = false;
-    ageCounter++;
+    releaseRateOverride = 0.0f;
+    ageCounter = startStamp;
 
     // ここでもメタデータ / バッファを触るため、renderNextBlock と同様に
     // ローダースレッドの書き換えからガードする。
@@ -135,19 +153,47 @@ void PicoVoice::stopNote(bool allowTailOff) noexcept
 {
     if (!allowTailOff)
     {
-        reset();
+        // 旧実装は reset() で即座に切っていたため、鳴っている最中に
+        // All Notes Off が来ると必ずプチッと鳴っていた。
+        // 3ms の高速リリースなら聴感上は「即停止」のまま段差だけ消える。
+        if (!active) { reset(); return; }
+
+        releasing = true;
+        envStage = EnvStage::Release;
+        releaseRateOverride = 1.0f / juce::jmax(8.0f, 0.003f * (float)sampleRate);
     }
     else
     {
         releasing = true;
         envStage = EnvStage::Release;
+        releaseRateOverride = 0.0f;
     }
 }
 
 void PicoVoice::renderNextBlock(juce::AudioBuffer<float>& outputBuffer, int startSample, int numSamples,
                                  const SampleSlot& slot, const SamplerVoiceParams& p) noexcept
 {
-    if (!active) return;
+    if (outputBuffer.getNumChannels() < 1 || numSamples <= 0) return;
+
+    if (!active)
+    {
+        // ボイスは止まっているが、デクリックのテールが残っていれば出し切る。
+        // (ロード中スロットへの発音要求などで startNote が空振りした場合)
+        if (declickPos < declickLen)
+        {
+            float* tL = outputBuffer.getWritePointer(0, startSample);
+            float* tR = outputBuffer.getNumChannels() > 1
+                          ? outputBuffer.getWritePointer(1, startSample) : tL;
+
+            for (int s = 0; s < numSamples && declickPos < declickLen; ++s)
+            {
+                const float w = nextDeclickGain();
+                if (tL == tR) tL[s] += (declickL + declickR) * 0.5f * w;
+                else          { tL[s] += declickL * w; tR[s] += declickR * w; }
+            }
+        }
+        return;
+    }
 
     // このブロックを描画し終えるまでスロットのバッファが解放されないよう保持する。
     // 掴めなかった (= ロード中 / クリア中) 場合は何も出さずに戻る。
@@ -331,7 +377,10 @@ void PicoVoice::renderNextBlock(juce::AudioBuffer<float>& outputBuffer, int star
             envValue = p.sustain;
             break;
         case EnvStage::Release:
-            envValue -= blockSec / juce::jmax(0.001f, p.release);
+            // releaseRateOverride > 0 のときはボイス強制停止の高速フェード
+            envValue -= (releaseRateOverride > 0.0f)
+                            ? releaseRateOverride
+                            : (blockSec / juce::jmax(0.001f, p.release));
             if (envValue <= 0.0f) { envValue = 0.0f; envStage = EnvStage::Idle; active = false; break; }
             break;
         default:
@@ -515,17 +564,28 @@ void PicoVoice::renderNextBlock(juce::AudioBuffer<float>& outputBuffer, int star
         const float gL = smGainL.getNextValue();
         const float gR = smGainR.getNextValue();
 
+        const float contribL = sL * gL * envValue;
+        const float contribR = sR * gR * envValue;
+
+        // ボイス奪取時の段差を埋めるテール
+        const float dw = nextDeclickGain();
+
         if (outL == outR)
         {
             // モノ出力バスでは outL と outR が同じポインタを指す。
             // 2回加算すると音量が2倍になるため、L/R をミックスして1回だけ足す。
-            outL[s] += (sL * gL + sR * gR) * 0.5f * envValue;
+            outL[s] += (contribL + contribR) * 0.5f
+                     + (declickL + declickR) * 0.5f * dw;
         }
         else
         {
-            outL[s] += sL * gL * envValue;
-            outR[s] += sR * gR * envValue;
+            outL[s] += contribL + declickL * dw;
+            outR[s] += contribR + declickR * dw;
         }
+
+        // 次にボイスを奪われた時のデクリック開始値として保持する
+        lastOutL = contribL;
+        lastOutR = contribR;
 
         readPosition += pitchInc;
     }

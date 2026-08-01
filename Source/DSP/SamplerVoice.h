@@ -75,10 +75,15 @@ public:
         smXFade.reset(sampleRate, 0.01);
     }
 
+    // startStamp: SamplerEngine が発行する単調増加の通し番号。
+    // 「一番古いボイス」を正しく選ぶために使う (getAge() 参照)。
     void startNote(int midiNoteNumber, float noteVelocity, int slotIdx,
-                   const SampleSlot& slot, const SamplerVoiceParams& p) noexcept;
+                   const SampleSlot& slot, const SamplerVoiceParams& p,
+                   uint64_t startStamp) noexcept;
 
     void stopNote(bool allowTailOff) noexcept;
+
+    bool isReleasing() const noexcept { return releasing || envStage == EnvStage::Release; }
 
     void renderNextBlock(juce::AudioBuffer<float>& outputBuffer, int startSample, int numSamples,
                          const SampleSlot& slot, const SamplerVoiceParams& p) noexcept;
@@ -95,11 +100,18 @@ public:
         hasEnteredLoop = false;
         useAnchor = false;
         activeAnchorSemis = 0;
+        releaseRateOverride = 0.0f;
+        declickPos = 0;
+        declickLen = 0;
+        declickL = declickR = 0.0f;
+        lastOutL = lastOutR = 0.0f;
     }
 
     bool isActive() const noexcept { return active; }
     int getMidiNote() const noexcept { return midiNote; }
     int getSlotIndex() const noexcept { return slotIndex; }
+
+    // 発音開始時に割り当てられた通し番号。小さいほど古い。
     uint64_t getAge() const noexcept { return ageCounter; }
 
 private:
@@ -110,6 +122,15 @@ private:
         const float c2 = y0 - 2.5f * y1 + 2.0f * y2 - 0.5f * y3;
         const float c3 = 0.5f * (y3 - y0) + 1.5f * (y1 - y2);
         return ((c3 * frac + c2) * frac + c1) * frac + c0;
+    }
+
+    // デクリックテールのゲイン (1 → 0 の raised cosine)。呼ぶたびに1サンプル進む。
+    inline float nextDeclickGain() noexcept
+    {
+        if (declickPos >= declickLen) return 0.0f;
+        const float t = 1.0f - (float)declickPos / (float)declickLen;
+        ++declickPos;
+        return 0.5f - 0.5f * std::cos(t * juce::MathConstants<float>::pi);
     }
 
     double sampleRate = 44100.0;
@@ -152,6 +173,27 @@ private:
 
     EnvStage envStage = EnvStage::Idle;
     float envValue = 0.0f;
+
+    // ------------------------------------------------------------------
+    // デクリッカー
+    //
+    // ボイスが奪われて (voice stealing) 別のノートで再スタートすると、
+    // 直前まで出ていた振幅から一気に 0 (= 新しいノートの Attack 開始点) へ
+    // 飛ぶため、1サンプルの段差ができてプチッと鳴る。
+    // ARP を高速に回すとボイス数が足りず毎ステップ発生し、
+    // その段差が Delay / Reverb のフィードバックに入って延々と繰り返される。
+    //
+    // 対策として、切り替え直前の出力値を数ミリ秒かけて 0 まで
+    // raised cosine で落とす短いテールを加算し、段差を殺す。
+    // ------------------------------------------------------------------
+    float lastOutL = 0.0f, lastOutR = 0.0f;
+    float declickL = 0.0f, declickR = 0.0f;
+    int   declickPos = 0;
+    int   declickLen = 0;
+
+    // 0 より大きいとき、p.release ではなくこのレート (1サンプルあたりの
+    // 減衰量) でリリースする。ボイス強制停止時の高速フェード用。
+    float releaseRateOverride = 0.0f;
 
     // Loop ON時、Start->End の初回パスを最後まで再生してから
     // L-Start/L-End 間のループに入ったかどうかのフラグ。

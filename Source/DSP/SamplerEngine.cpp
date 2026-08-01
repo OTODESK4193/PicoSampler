@@ -122,13 +122,17 @@ void SamplerEngine::triggerSlotNote(int slotIdx, int midiNote, float velocity, c
         if (voices[(size_t)i].isActive()) activeVoices++;
     }
 
+    // ボイス選択の優先順位:
+    //   1. 空きボイス (発音数がポリフォニー上限未満のときのみ)
+    //   2. 既にリリース中で最も古いボイス (消えかけの音を切るのが一番目立たない)
+    //   3. 最も古いボイス
     int voiceIdx = -1;
-    if (activeVoices >= p.polyphonyLimit) {
-        voiceIdx = findOldestVoice();
-    } else {
+
+    if (activeVoices < p.polyphonyLimit)
         voiceIdx = findFreeVoice();
-        if (voiceIdx < 0) voiceIdx = findOldestVoice();
-    }
+
+    if (voiceIdx < 0) voiceIdx = findOldestReleasingVoice();
+    if (voiceIdx < 0) voiceIdx = findOldestVoice();
 
     if (voiceIdx < 0) return;
 
@@ -137,8 +141,8 @@ void SamplerEngine::triggerSlotNote(int slotIdx, int midiNote, float velocity, c
     voiceP.portaTime = p.portaTime;
     voiceP.portaStartMidiNote = lastPlayedNote;
 
-    voices[(size_t)voiceIdx].startNote(midiNote, velocity, slotIdx, slot, voiceP);
-    
+    voices[(size_t)voiceIdx].startNote(midiNote, velocity, slotIdx, slot, voiceP, ++noteStampCounter);
+
     lastPlayedNote = (float)midiNote;
 }
 
@@ -153,17 +157,38 @@ int SamplerEngine::findFreeVoice() const noexcept
 
 int SamplerEngine::findOldestVoice() const noexcept
 {
+    // getAge() は発音開始時の通し番号。小さいほど古い。
     int oldestIdx = -1;
-    uint64_t maxAge = 0;
+    uint64_t minStamp = 0;
 
     for (int i = 0; i < NUM_VOICES; ++i)
     {
         if (voices[(size_t)i].isActive())
         {
-            const uint64_t age = voices[(size_t)i].getAge();
-            if (oldestIdx == -1 || age > maxAge)
+            const uint64_t stamp = voices[(size_t)i].getAge();
+            if (oldestIdx == -1 || stamp < minStamp)
             {
-                maxAge = age;
+                minStamp = stamp;
+                oldestIdx = i;
+            }
+        }
+    }
+    return oldestIdx;
+}
+
+int SamplerEngine::findOldestReleasingVoice() const noexcept
+{
+    int oldestIdx = -1;
+    uint64_t minStamp = 0;
+
+    for (int i = 0; i < NUM_VOICES; ++i)
+    {
+        if (voices[(size_t)i].isActive() && voices[(size_t)i].isReleasing())
+        {
+            const uint64_t stamp = voices[(size_t)i].getAge();
+            if (oldestIdx == -1 || stamp < minStamp)
+            {
+                minStamp = stamp;
                 oldestIdx = i;
             }
         }

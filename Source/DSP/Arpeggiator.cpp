@@ -40,13 +40,33 @@ void Arpeggiator::process(juce::MidiBuffer& midi, int numSamples, const Params& 
 
     handleIncomingMidi(incomingMidi, p.latch);
 
+    // ------------------------------------------------------------------
     // 2. アクティブ出力ノートのゲート長を減衰カウントダウン
+    //
+    // 【重要】 Note-Off は「実際に切れるサンプル位置」へ置くこと。
+    //
+    // 旧実装はブロック末尾 (numSamples - 1) に固定で置いていた。
+    // MidiBuffer はタイムスタンプ順に読まれるため、同じブロック内で
+    // 次のステップの Note-On (オフセット小) が先、前のステップの
+    // Note-Off (ブロック末尾) が後、という順序になってしまう。
+    // 同じノート番号だと SamplerEngine::handleMidi の
+    //   「その音程で鳴っている全ボイスを stopNote」
+    // が走り、鳴り始めたばかりの音が即リリースへ叩き落とされていた。
+    //
+    // Gate を上げる (gateSamples が stepSamples に近づく) ほど、
+    // また Rate / Gate に MOD をかけて両者の関係が揺れるほど
+    // この衝突が「ときたま」発生し、その段差が Delay / Reverb の
+    // フィードバックに入って繰り返される。
+    // ------------------------------------------------------------------
     for (auto it = activeOutputs.begin(); it != activeOutputs.end();)
     {
+        // samplesRemaining はこのブロック先頭を 0 とした相対位置
+        const int offset = juce::jlimit(0, std::max(0, numSamples - 1), it->samplesRemaining);
+
         it->samplesRemaining -= numSamples;
         if (it->samplesRemaining <= 0)
         {
-            midi.addEvent(juce::MidiMessage::noteOff(1, it->noteNumber, 0.0f), std::max(0, numSamples - 1));
+            midi.addEvent(juce::MidiMessage::noteOff(1, it->noteNumber, 0.0f), offset);
             it = activeOutputs.erase(it);
         }
         else
@@ -110,7 +130,10 @@ void Arpeggiator::process(juce::MidiBuffer& midi, int numSamples, const Params& 
                 for (const auto& n : playSequence)
                 {
                     midi.addEvent(juce::MidiMessage::noteOn(1, n.noteNumber, n.velocity), samplesProcessed);
-                    activeOutputs.push_back({ n.noteNumber, gateSamples });
+                    // samplesRemaining はブロック先頭からの相対位置で持つ。
+                    // 発音がブロック途中なら、その分を足さないとゲート長が
+                    // 1ブロック分ぶれる (Rate に MOD をかけると顕著)。
+                    activeOutputs.push_back({ n.noteNumber, gateSamples + samplesProcessed });
                 }
             }
             else
@@ -119,7 +142,7 @@ void Arpeggiator::process(juce::MidiBuffer& midi, int numSamples, const Params& 
                 const auto& n = playSequence[sequenceIndex];
 
                 midi.addEvent(juce::MidiMessage::noteOn(1, n.noteNumber, n.velocity), samplesProcessed);
-                activeOutputs.push_back({ n.noteNumber, gateSamples });
+                activeOutputs.push_back({ n.noteNumber, gateSamples + samplesProcessed });
 
                 if (p.pattern == RandomPattern)
                 {

@@ -154,9 +154,20 @@ private:
     int findFreeVoice() const noexcept;
     int findOldestVoice() const noexcept;
 
+    // 既にリリース中 (= 減衰しきる途中) のボイスを優先的に奪う。
+    // 鳴りきっている音より聴こえなくなる直前の音を切ったほうが目立たない。
+    int findOldestReleasingVoice() const noexcept;
+
     double sr = 44100.0;
     int lastRandomSlot = -1;
     float lastPlayedNote = -1.0f;
+
+    // ボイスへ渡す単調増加の通し番号。
+    // 旧実装は各ボイスが「自分が何回発音したか」を数えていただけで、
+    // findOldestVoice() が「一番よく使われたボイス」を返していた。
+    // その結果、鳴り始めたばかりの音を優先的に奪ってしまい、
+    // ARP を高速に回すとノート抜けとプチノイズが多発していた。
+    uint64_t noteStampCounter = 0;
     std::array<SampleSlot, NUM_SLOTS> slots;
     std::array<PicoVoice, NUM_VOICES> voices;
 
