@@ -6,7 +6,7 @@ cmake_minimum_required(VERSION 3.22)
 #  Single / Layer / Random Mode / ArcDial GUI / 5-FX Chain / ModMatrix
 #  最適化: AVX2 SIMD, /fp:fast
 # ============================================================================
-project(PicoSampler VERSION 1.0.0 LANGUAGES C CXX)
+project(PicoSampler VERSION 1.1.0 LANGUAGES C CXX)
 
 # ----------------------------------------------------------------------------
 #  C++20
@@ -37,7 +37,7 @@ juce_add_plugin(PicoSampler
     EDITOR_WANTS_KEYBOARD_FOCUS FALSE
     VST3_AUTO_MANIFEST       FALSE
     COPY_PLUGIN_AFTER_BUILD  TRUE
-    VERSION                  "1.0.0"
+    VERSION                  "1.1.0"
 )
 
 # ----------------------------------------------------------------------------
@@ -81,8 +81,6 @@ target_sources(PicoSampler PRIVATE
     Source/GUI/FilterCurveComponent.cpp
     Source/GUI/MainPanel.h
     Source/GUI/MainPanel.cpp
-    Source/GUI/SlotPanel.h
-    Source/GUI/SlotPanel.cpp
     Source/GUI/ValueKnob.h
     Source/GUI/GlowToggle.h
     Source/GUI/ArpPanel.h
@@ -145,7 +143,7 @@ target_compile_definitions(PicoSampler PRIVATE
     JUCE_VST3_CAN_REPLACE_VST2=0
     JUCE_DISPLAY_SPLASH_SCREEN=0
     JUCE_STRICT_REFCOUNTEDPOINTER=1
-    PICOSAMPLER_VERSION="1.0.0"
+    PICOSAMPLER_VERSION="1.1.0"
 )
 
 # ----------------------------------------------------------------------------

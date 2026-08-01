@@ -16,7 +16,11 @@ void PicoVoice::startNote(int midiNoteNumber, float noteVelocity, int slotIdx,
     releasing = false;
     ageCounter++;
 
-    if (!slot.isReady())
+    // ここでもメタデータ / バッファを触るため、renderNextBlock と同様に
+    // ローダースレッドの書き換えからガードする。
+    // (isReady() を見た直後に clear()/loadFromFile() が走ると無効になる)
+    const SampleSlot::ReadGuard slotGuard(slot);
+    if (!slotGuard.isValid())
     {
         active = false;
         return;
@@ -32,7 +36,30 @@ void PicoVoice::startNote(int midiNoteNumber, float noteVelocity, int slotIdx,
         else currentAnchorSemis = 0;
     }
 
-    const auto* buffer = p.isStretchMode ? slot.getAnchorBuffer(currentAnchorSemis) : &slot.getOriginalBuffer();
+    // ------------------------------------------------------------------
+    // アンカーは遅延生成。まだ出来ていなければ生成を予約し、このノートは
+    // 原音リサンプリングで鳴らす (activeAnchorSemis = 0)。
+    // ------------------------------------------------------------------
+    const juce::AudioBuffer<float>* buffer = nullptr;
+    useAnchor = false;
+    activeAnchorSemis = 0;
+
+    if (p.isStretchMode)
+    {
+        buffer = slot.getAnchorBuffer(currentAnchorSemis);
+        if (buffer != nullptr)
+        {
+            useAnchor = true;
+            activeAnchorSemis = currentAnchorSemis;
+        }
+        else
+        {
+            slot.requestAnchor(currentAnchorSemis);
+        }
+    }
+
+    if (buffer == nullptr)
+        buffer = &slot.getOriginalBuffer();
 
     if (!buffer || buffer->getNumSamples() < 4 || buffer->getNumChannels() < 1)
     {
@@ -42,29 +69,20 @@ void PicoVoice::startNote(int midiNoteNumber, float noteVelocity, int slotIdx,
 
     if (!isLegato)
     {
+        // activeAnchorSemis は「実際に鳴らすバッファが既に何半音ずれているか」。
+        // 非 Stretch / アンカー未生成のフォールバック時は 0 になるため、
+        // 従来の分岐と同じ結果になる。
         if (p.portaEnable && p.portaStartMidiNote >= 0.0f)
         {
-            float startSemis = 0.0f;
-            if (p.isStretchMode)
-            {
-                startSemis = p.portaStartMidiNote - (float)effectiveRoot + (p.octave * 12) + p.semitone - currentAnchorSemis + (p.fineTune / 100.0f);
-            }
-            else
-            {
-                startSemis = p.portaStartMidiNote - (float)effectiveRoot + (p.octave * 12) + p.semitone + (p.fineTune / 100.0f);
-            }
+            const float startSemis = p.portaStartMidiNote - (float)effectiveRoot
+                                   + (p.octave * 12) + p.semitone
+                                   - (float)activeAnchorSemis + (p.fineTune / 100.0f);
             currentPitchRatio = std::pow(2.0, (double)startSemis / 12.0);
         }
         else
         {
-            if (p.isStretchMode)
-            {
-                currentPitchRatio = std::pow(2.0, (double)(stOffset - currentAnchorSemis + (p.fineTune / 100.0f)) / 12.0);
-            }
-            else
-            {
-                currentPitchRatio = std::pow(2.0, (double)(stOffset + (p.fineTune / 100.0f)) / 12.0);
-            }
+            currentPitchRatio = std::pow(2.0,
+                (double)((float)(stOffset - activeAnchorSemis) + (p.fineTune / 100.0f)) / 12.0);
         }
 
         const int bufLen = buffer->getNumSamples();
@@ -124,8 +142,22 @@ void PicoVoice::renderNextBlock(juce::AudioBuffer<float>& outputBuffer, int star
     const int effectiveRoot = (p.rootKeyOverride >= 0) ? p.rootKeyOverride : meta.rootKey;
     const int stOffset = midiNote - effectiveRoot + (p.octave * 12) + p.semitone;
 
-    const int anchorSemis = p.isStretchMode ? currentAnchorSemis : 0;
-    const auto* buffer = p.isStretchMode ? slot.getAnchorBuffer(anchorSemis) : &slot.getOriginalBuffer();
+    // Note-On で確定した再生ソースを使う。
+    // useAnchor が立っていてもスロットが再ロードされていれば nullptr が
+    // 返るので、その場合だけ原音へ降格する。
+    const juce::AudioBuffer<float>* buffer = nullptr;
+
+    if (useAnchor)
+    {
+        buffer = slot.getAnchorBuffer(currentAnchorSemis);
+        if (buffer != nullptr) activeAnchorSemis = currentAnchorSemis;
+        else                   { useAnchor = false; activeAnchorSemis = 0; }
+    }
+
+    if (buffer == nullptr)
+        buffer = &slot.getOriginalBuffer();
+
+    const int anchorSemis = activeAnchorSemis;
 
     if (!buffer || buffer->getNumSamples() < 4 || buffer->getNumChannels() < 1)
     {
@@ -139,17 +171,10 @@ void PicoVoice::renderNextBlock(juce::AudioBuffer<float>& outputBuffer, int star
     const double fileSR = meta.fileSampleRate > 1000.0 ? meta.fileSampleRate : 44100.0;
     const double srRatio = fileSR / sampleRate;
 
-    double targetPitchRatio = 1.0;
-    if (p.isStretchMode)
-    {
-        const float residualSemis = (float)(stOffset - anchorSemis) + (p.fineTune / 100.0f);
-        targetPitchRatio = std::pow(2.0, (double)residualSemis / 12.0);
-    }
-    else
-    {
-        const float totalSemis = (float)stOffset + (p.fineTune / 100.0f);
-        targetPitchRatio = std::pow(2.0, (double)totalSemis / 12.0);
-    }
+    // anchorSemis はアンカー未使用時 0 なので、非 Stretch 時の
+    // 「totalSemis = stOffset + fine」と同じ式に収束する。
+    const float residualSemis = (float)(stOffset - anchorSemis) + (p.fineTune / 100.0f);
+    const double targetPitchRatio = std::pow(2.0, (double)residualSemis / 12.0);
 
     double portaMultiplier = 1.0;
     if (p.portaEnable && currentPitchRatio != targetPitchRatio)

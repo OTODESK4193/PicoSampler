@@ -75,6 +75,8 @@ public:
         pitchInc = 1.0;
         currentPitchRatio = 1.0;
         hasEnteredLoop = false;
+        useAnchor = false;
+        activeAnchorSemis = 0;
     }
 
     bool isActive() const noexcept { return active; }
@@ -104,6 +106,20 @@ private:
     double pitchInc = 1.0;     // ★ メンバーに昇格 (SR補正を含む)
     double currentPitchRatio = 1.0;
     int currentAnchorSemis = 0;
+
+    // ------------------------------------------------------------------
+    // アンカー遅延生成への対応。
+    // Note-On 時点で必要なアンカーがまだ出来ていなければ、原音の
+    // リサンプリング再生にフォールバックする (音は途切れない)。
+    //   useAnchor         : このノートがアンカーを使っているか
+    //   activeAnchorSemis : 実際に使っているアンカーの半音数
+    //                       (フォールバック中は 0 = 原音そのもの)
+    // ノート途中で音色が切り替わると不自然なため、判定は Note-On で確定させ、
+    // 途中で昇格はさせない (スロット再ロード等で無効化された時のみ降格する)。
+    // ------------------------------------------------------------------
+    bool useAnchor = false;
+    int activeAnchorSemis = 0;
+
     EnvStage envStage = EnvStage::Idle;
     float envValue = 0.0f;
 

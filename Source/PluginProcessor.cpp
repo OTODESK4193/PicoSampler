@@ -25,6 +25,9 @@ PicoSamplerAudioProcessor::PicoSamplerAudioProcessor()
 
 PicoSamplerAudioProcessor::~PicoSamplerAudioProcessor()
 {
+    // 先に「もう居ない」と宣言する。ローダースレッドが投げた
+    // callAsync が後から実行されても、これを見て何もしない。
+    aliveFlag->store(false, std::memory_order_release);
     stopThread(4000);
 }
 
@@ -538,6 +541,14 @@ void PicoSamplerAudioProcessor::requestLoadFile(int slotIdx, const juce::File& f
     }
 
     const juce::ScopedLock lock(jobLock);
+
+    // 同じスロットへの未処理ジョブは捨てて最新のものだけ残す。
+    // 連続ドラッグ&ドロップで「もう表示すらされないサンプル」を
+    // 何本もロードして時間とメモリを浪費するのを防ぐ。
+    for (int i = pendingJobs.size(); --i >= 0;)
+        if (pendingJobs.getReference(i).slotIndex == slotIdx)
+            pendingJobs.remove(i);
+
     pendingJobs.add(job);
 }
 
@@ -547,6 +558,12 @@ void PicoSamplerAudioProcessor::autoSliceFile(const juce::File& file, int stretc
     // shouldAbort: プラグイン終了時にローダースレッドを即座に打ち切れるようにする。
     samplerEngine.getSlot(0).loadFromFile(file, stretchAlgo, [this] { return threadShouldExit(); });
     const auto& slot0 = samplerEngine.getSlot(0);
+
+    // 以降スロット0の生バッファを直接走査する。メッセージスレッドからの
+    // clear() / INIT / プリセット読込と衝突しないよう読み手として登録しておく。
+    const SampleSlot::ReadGuard slot0Guard(slot0);
+    if (!slot0Guard.isValid()) return;
+
     const int numSamples = slot0.getOriginalBuffer().getNumSamples();
     const int numChIn    = slot0.getOriginalBuffer().getNumChannels();
 
@@ -649,13 +666,24 @@ void PicoSamplerAudioProcessor::autoSliceFile(const juce::File& file, int stretc
 
     const int numSlices = (int)std::min((size_t)8, onsetSamples.size());
 
+    // ------------------------------------------------------------------
+    // パラメータ書き換えはローダースレッドから直接行わず、いったん集めて
+    // メッセージスレッドへまとめて投げる。
+    // setValueNotifyingHost はホストのオートメーション記録やリスナー通知を
+    // 起こすため、メッセージスレッドで実行するのが安全。
+    // ------------------------------------------------------------------
+    std::vector<std::pair<juce::String, float>> paramUpdates;
+    paramUpdates.reserve(48);
+
+    auto queueParam = [&paramUpdates](const juce::String& id, float normValue)
+    {
+        paramUpdates.emplace_back(id, normValue);
+    };
+
     // 検出スライス数が 8 未満でも、前回の解析や手動設定が残らないよう
     // 全 8 スロットの RootKey を先に Auto へ戻しておく。
     for (int i = 0; i < 8; ++i)
-    {
-        if (auto* p = apvts.getParameter("rootKey_" + juce::String(i)))
-            p->setValueNotifyingHost(0.0f);
-    }
+        queueParam("rootKey_" + juce::String(i), 0.0f);
 
     for (int i = 0; i < numSlices; ++i)
     {
@@ -685,9 +713,9 @@ void PicoSamplerAudioProcessor::autoSliceFile(const juce::File& file, int stretc
         }
         
         const juce::String s = juce::String(i);
-        if (auto* p = apvts.getParameter("sampleStart_" + s)) p->setValueNotifyingHost(startRatio);
-        if (auto* p = apvts.getParameter("sampleEnd_" + s)) p->setValueNotifyingHost(endRatio);
-        
+        queueParam("sampleStart_" + s, startRatio);
+        queueParam("sampleEnd_" + s, endRatio);
+
         // RootKey は必ず Auto (-1) に戻す。
         // AutoSlice はサンプルを時間で切り分けるだけで、各スライスのピッチは
         // 解析結果に任せるのが正しい。ここで手動 RootKey を焼き込むと
@@ -696,10 +724,21 @@ void PicoSamplerAudioProcessor::autoSliceFile(const juce::File& file, int stretc
         // 注意: rootKey_ は AudioParameterInt(-1 .. 127) なので、
         // 正規化値は (value - min) / (max - min) = (value + 1) / 128。
         // Auto(-1) は 0.0f になる。
-        if (auto* p = apvts.getParameter("rootKey_" + s)) p->setValueNotifyingHost(0.0f);
-        if (auto* p = apvts.getParameter("slotLowNote_" + s)) p->setValueNotifyingHost(0.0f);
-        if (auto* p = apvts.getParameter("slotHighNote_" + s)) p->setValueNotifyingHost(1.0f);
+        queueParam("rootKey_" + s, 0.0f);
+        queueParam("slotLowNote_" + s, 0.0f);
+        queueParam("slotHighNote_" + s, 1.0f);
     }
+
+    // まとめてメッセージスレッドへ。alive フラグでプロセッサ破棄後の実行を防ぐ。
+    auto alive = aliveFlag;
+    juce::MessageManager::callAsync([this, alive, paramUpdates]
+    {
+        if (!alive->load(std::memory_order_acquire)) return;
+
+        for (const auto& u : paramUpdates)
+            if (auto* p = apvts.getParameter(u.first))
+                p->setValueNotifyingHost(u.second);
+    });
 }
 
 void PicoSamplerAudioProcessor::reanalyzeSlot(int slotIdx)
@@ -719,6 +758,16 @@ void PicoSamplerAudioProcessor::reanalyzeSlot(int slotIdx)
     samplerEngine.getSlot(slotIdx).setAnalyzing(true);
 
     const juce::ScopedLock lock(jobLock);
+
+    // ボタン連打で同一スロットの再解析が何本も積み上がるのを防ぐ。
+    // (Load/AutoSlice は消さない。あちらが先に走るべき処理のため)
+    for (int i = pendingJobs.size(); --i >= 0;)
+    {
+        const auto& q = pendingJobs.getReference(i);
+        if (q.type == JobType::Reanalyze && q.slotIndex == slotIdx)
+            pendingJobs.remove(i);
+    }
+
     pendingJobs.add(job);
 }
 
@@ -815,8 +864,8 @@ bool PicoSamplerAudioProcessor::savePreset(const juce::String& category,
     {
         auto* sXml = new juce::XmlElement("Slot");
         sXml->setAttribute("index", i);
-        sXml->setAttribute("path", samplerEngine.getSlot(i).getMetadata().filePath);
-        sXml->setAttribute("fileName", samplerEngine.getSlot(i).getMetadata().fileName);
+        sXml->setAttribute("path", samplerEngine.getSlot(i).getFilePathSafe());
+        sXml->setAttribute("fileName", samplerEngine.getSlot(i).getFileNameSafe());
         slotsXml->addChildElement(sXml);
     }
     xml.addChildElement(slotsXml);
@@ -936,7 +985,7 @@ void PicoSamplerAudioProcessor::getStateInformation(juce::MemoryBlock& destData)
     {
         auto* sXml = new juce::XmlElement("Slot");
         sXml->setAttribute("index", i);
-        sXml->setAttribute("path", samplerEngine.getSlot(i).getMetadata().filePath);
+        sXml->setAttribute("path", samplerEngine.getSlot(i).getFilePathSafe());
         slotsXml->addChildElement(sXml);
     }
     xmlState.addChildElement(slotsXml);
@@ -1014,7 +1063,7 @@ void PicoSamplerAudioProcessor::run()
         if (hasJob)
         {
             const int stretchAlgo = (pStretchMode != nullptr) ? (int)pStretchMode->load() : 3;
-            // 終了操作 (stopThread) が来たら、重い renderAnchors 等をすぐに打ち切る。
+            // 終了操作 (stopThread) が来たら、重い解析処理をすぐに打ち切る。
             // これが無いと stopThread(4000) がタイムアウトして戻った後もこのスレッドが
             // 動き続け、破棄済みの SamplerEngine/SampleSlot へ書き込んでクラッシュしうる。
             auto shouldAbort = [this] { return threadShouldExit(); };
@@ -1023,6 +1072,10 @@ void PicoSamplerAudioProcessor::run()
             {
             case JobType::AutoSlice:
                 autoSliceFile(job.file, stretchAlgo, job.sensitivity);
+                // AutoSlice は途中で早期 return しうる (極短ファイル / 読み込み失敗)。
+                // ここで必ず解析中フラグを降ろさないと「Analyzing...」が永久に残る。
+                for (int i = 0; i < 8; ++i)
+                    samplerEngine.getSlot(i).setAnalyzing(false);
                 break;
 
             case JobType::Reanalyze:
@@ -1040,11 +1093,30 @@ void PicoSamplerAudioProcessor::run()
                 }
                 break;
             }
+
+            continue; // 溜まっているジョブを優先して捌く
         }
-        else
+
+        // --------------------------------------------------------------
+        // ジョブが無い時だけ、予約されたアンカー (Stretch用ピッチシフト済み
+        // バッファ) を1本ずつ生成する。
+        // ロード時に49本まとめて作らないことで、メモリ使用量とロード時間を
+        // 実使用ぶんまで落としている。生成中に新しいジョブが来たら
+        // SampleSlot 側の writeWanted フラグで即座に中断される。
+        // --------------------------------------------------------------
+        bool didAnchorWork = false;
+        for (int i = 0; i < 8 && !threadShouldExit(); ++i)
         {
-            wait(50);
+            if (samplerEngine.getSlot(i).hasPendingAnchor())
+            {
+                auto abortAnchor = [this] { return threadShouldExit(); };
+                if (samplerEngine.getSlot(i).renderPendingAnchor(abortAnchor))
+                    didAnchorWork = true;
+            }
         }
+
+        if (!didAnchorWork)
+            wait(50);
     }
 }
 

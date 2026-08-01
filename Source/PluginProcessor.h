@@ -234,5 +234,10 @@ private:
     juce::Array<AsyncLoadJob> pendingJobs;
     juce::CriticalSection jobLock;
 
+    // ローダースレッドから MessageManager::callAsync でメッセージスレッドへ
+    // 処理を投げる際、投げた後にプロセッサが破棄されても安全なようにする生存フラグ。
+    // (デストラクタで false にしてから stopThread する)
+    std::shared_ptr<std::atomic<bool>> aliveFlag { std::make_shared<std::atomic<bool>>(true) };
+
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PicoSamplerAudioProcessor)
 };

@@ -51,7 +51,10 @@ PicoSamplerAudioProcessorEditor::PicoSamplerAudioProcessorEditor(PicoSamplerAudi
     btnReAnalyze.onClick = [this] {
         const bool isAutoSlice = audioProcessor.getAPVTS().getRawParameterValue("autoSliceEnable")->load() > 0.5f;
         if (isAutoSlice) {
-            const juce::File file = audioProcessor.getSamplerEngine().getSlot(0).getMetadata().filePath;
+            // getMetadata().filePath を直接触ると、ローダースレッドが
+            // 同じ juce::String を書き換えている最中に参照カウントを
+            // 壊してクラッシュする。必ずロック付きのコピーを取る。
+            const juce::File file = audioProcessor.getSamplerEngine().getSlot(0).getFilePathSafe();
             if (file.existsAsFile()) {
                 audioProcessor.requestLoadFile(0, file, true);
             }
@@ -259,7 +262,7 @@ void PicoSamplerAudioProcessorEditor::paint(juce::Graphics& g)
 
     g.setColour(juce::Colours::white.withAlpha(0.9f));
     g.setFont(juce::FontOptions(11.5f, juce::Font::bold));
-    g.drawText("Slot " + juce::String(activeIdx + 1) + ": " + (slot.isReady() ? meta.fileName : "Empty"), 310, 8, 380, 15, juce::Justification::left, true);
+    g.drawText("Slot " + juce::String(activeIdx + 1) + ": " + (slot.isReady() ? slot.getFileNameSafe() : juce::String("Empty")), 310, 8, 380, 15, juce::Justification::left, true);
 
     g.setColour(PicoColors::mint);
     g.setFont(juce::FontOptions(10.5f, juce::Font::plain));
